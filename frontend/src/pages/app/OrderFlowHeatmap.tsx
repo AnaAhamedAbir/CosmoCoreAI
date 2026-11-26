@@ -74,7 +74,7 @@ import { TPOProfileRenderer } from '../../components/features/market/AdvancedMet
 import { DeltaDivergenceRenderer } from '../../components/features/market/AdvancedMetrics/DeltaDivergenceRenderer';
 import { MLPredictionCloudRenderer } from '../../components/features/market/AdvancedMetrics/MLPredictionCloudRenderer';
 import { botService } from '../../services/botService';
-import { manualTradeService } from '../../services/manualTradeService';
+import { manualTradeService, FastPositionResponse } from '../../services/manualTradeService';
 import { useWallHunterStatus } from '@/hooks/useWallHunterStatus';
 import { beginFloatingModalDrag, endFloatingModalDrag } from '@/hooks/useFloatingModalDrag';
 import { toast } from 'react-hot-toast';
@@ -82,6 +82,14 @@ import { useMarketStore } from '@/store/marketStore';
 import { useBotStore, CLEAN_INDICATOR_SETTINGS } from '@/store/botStore';
 import { useUIStore } from '@/store/uiStore';
 import { useOpenOrders, OpenLimitOrder } from '../../hooks/useOpenOrders';
+import { useActivePosition } from '../../hooks/useActivePosition';
+import { TradePositionOverlay, DragPnlPreview } from '../../components/features/market/TradePositionOverlay';
+import {
+    computeTradePnl,
+    formatCompactPnl,
+    resolveEffectiveEntryContext,
+    resolveOrderEntryContext,
+} from '../../utils/positionPnl';
 import { useAdvancedMetricsSettings, AdvancedMetricsSettings } from '../../hooks/useAdvancedMetricsSettings';
 import { useAdvancedMetrics } from '../../hooks/useAdvancedMetrics';
 import { TradingViewWidget } from '../../components/features/market/TradingViewWidget';
@@ -206,7 +214,7 @@ interface ChartDragBracketEntry {
 const chartDragBracketRegistry = new Map<string, ChartDragBracketEntry>();
 
 // Chart Component
-const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: string; interval: string; walls: { price: number, type: 'buy' | 'sell', size?: number }[]; currentPrice: number; showFootprint: boolean; showCVD: boolean; showVPVR: boolean; indicatorSettings: IndicatorSettings; tradeEvent: any; botStatus: any; openOrders: OpenLimitOrder[]; advancedMetrics: AdvancedMetricsSettings; advancedMetricsData: any; selectedApiKeyId: string | null; predictionResult: PredictionResult | null; activeMLModelId: string | null; onAIPredictClick?: (price: number) => void; onChartBackgroundClick?: (price: number) => void; showCrosshairAIPredict?: boolean; bestBid?: number; bestAsk?: number; showBidAsk?: boolean; isActiveChart?: boolean; totalChartsCount?: number; chartSlotIndex?: number; onToggleUTBotAlerts?: () => void; onSyncUTBotToBot?: () => void }>(({ chartId = 'main', exchange, symbol, interval, walls, currentPrice, showFootprint, showCVD, showVPVR, indicatorSettings, tradeEvent, botStatus, openOrders, advancedMetrics, advancedMetricsData, selectedApiKeyId, predictionResult, activeMLModelId, onAIPredictClick, onChartBackgroundClick, showCrosshairAIPredict = false, bestBid = 0, bestAsk = 0, showBidAsk = false, isActiveChart = true, totalChartsCount = 1, chartSlotIndex = 0, onToggleUTBotAlerts, onSyncUTBotToBot }) => {
+const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: string; interval: string; walls: { price: number, type: 'buy' | 'sell', size?: number }[]; currentPrice: number; showFootprint: boolean; showCVD: boolean; showVPVR: boolean; indicatorSettings: IndicatorSettings; tradeEvent: any; botStatus: any; openOrders: OpenLimitOrder[]; activePosition?: FastPositionResponse | null; advancedMetrics: AdvancedMetricsSettings; advancedMetricsData: any; selectedApiKeyId: string | null; predictionResult: PredictionResult | null; activeMLModelId: string | null; onAIPredictClick?: (price: number) => void; onChartBackgroundClick?: (price: number) => void; showCrosshairAIPredict?: boolean; bestBid?: number; bestAsk?: number; showBidAsk?: boolean; isActiveChart?: boolean; totalChartsCount?: number; chartSlotIndex?: number; onToggleUTBotAlerts?: () => void; onSyncUTBotToBot?: () => void }>(({ chartId = 'main', exchange, symbol, interval, walls, currentPrice, showFootprint, showCVD, showVPVR, indicatorSettings, tradeEvent, botStatus, openOrders, activePosition = null, advancedMetrics, advancedMetricsData, selectedApiKeyId, predictionResult, activeMLModelId, onAIPredictClick, onChartBackgroundClick, showCrosshairAIPredict = false, bestBid = 0, bestAsk = 0, showBidAsk = false, isActiveChart = true, totalChartsCount = 1, chartSlotIndex = 0, onToggleUTBotAlerts, onSyncUTBotToBot }) => {
     const { theme } = useTheme();
     const isDark = theme === 'dark';
     const chartContainerRef = useRef<HTMLDivElement>(null);
@@ -240,6 +248,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
     const botStatusIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const wallLinesRef = useRef<Map<string, any>>(new Map());
     const currentPriceLineRef = useRef<any>(null);
+    const liquidationLineRef = useRef<any>(null);
     const bidLineRef = useRef<any>(null);
     const askLineRef = useRef<any>(null);
     const mlEntryLineRef = useRef<any>(null);
@@ -1004,6 +1013,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             candlestickSeriesRef.current = null;
             markersPluginRef.current = null;
             currentPriceLineRef.current = null;
+            liquidationLineRef.current = null;
             bidLineRef.current = null;
             askLineRef.current = null;
             mlEntryLineRef.current = null;
@@ -2961,6 +2971,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
     const [isModifyingOrder, setIsModifyingOrder] = useState<boolean>(false);
     const [pendingModification, setPendingModification] = useState<PendingOrderModification | null>(null);
     const pendingModificationRef = useRef<PendingOrderModification | null>(null);
+    const [orderLineSyncTick, setOrderLineSyncTick] = useState<number>(0);
     const initialDontAsk = (() => {
         try {
             return localStorage.getItem('dontAskDragConfirm') === 'true';
@@ -2977,6 +2988,9 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
     const draggingOrderIdRef = useRef<string | null>(null);
     const ghostLineRef = useRef<any>(null);
     const openOrdersRef = useRef<OpenLimitOrder[]>([]);
+    const activePositionRef = useRef<FastPositionResponse | null>(activePosition ?? null);
+    const dragPreviewRef = useRef<DragPnlPreview | null>(null);
+    const dragOverlaySyncRef = useRef<(() => void) | null>(null);
     const isModifyingRef = useRef<boolean>(false);
     const currentPriceRef = useRef<number>(currentPrice);
     
@@ -2984,6 +2998,10 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
     useEffect(() => {
         currentPriceRef.current = currentPrice;
     }, [currentPrice]);
+
+    useEffect(() => {
+        activePositionRef.current = activePosition ?? null;
+    }, [activePosition]);
 
     // Keep a fresh ref to openOrders so DOM events can access it
     useEffect(() => {
@@ -3063,17 +3081,52 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                 }
             }
         }
-    }, [openOrders]);
+    }, [openOrders, orderLineSyncTick, candlesReadyTick]);
+
+    const getOrderLineVisualStyle = (order: OpenLimitOrder, price: number) => {
+        const isBuy = order.side === 'buy';
+        let color = isBuy ? 'rgba(34, 197, 94, 0.85)' : 'rgba(239, 68, 68, 0.85)';
+        if (order.isSoftwareSL) {
+            color = '#ef4444';
+        } else if (order.mode === 'TP') {
+            color = '#22c55e';
+        } else if (order.isIceberg) {
+            color = isBuy ? '#06b6d4' : '#f43f5e';
+        }
+        return {
+            color,
+            label: formatOrderLabel(order, price),
+        };
+    };
+
+    const migrateOrderPriceLine = (oldOrderId: string, newOrderId: string, activeLine: any) => {
+        if (!oldOrderId || !newOrderId || oldOrderId === newOrderId) return;
+        const oldKey = `order-${oldOrderId}`;
+        const newKey = `order-${newOrderId}`;
+        const collidingLine = wallLinesRef.current.get(newKey);
+        if (collidingLine && collidingLine !== activeLine) {
+            try { candlestickSeriesRef.current?.removePriceLine(collidingLine); } catch { /* ignore */ }
+            wallLinesRef.current.delete(newKey);
+        }
+        wallLinesRef.current.delete(oldKey);
+        if (activeLine) {
+            wallLinesRef.current.set(newKey, activeLine);
+        }
+    };
 
     const executeOrderModification = async (mod: PendingOrderModification) => {
         if (!selectedApiKeyId) return;
         setIsModifyingOrder(true);
         isModifyingRef.current = true;
         pendingModificationRef.current = mod;
-        const key = `order-${mod.orderId}`;
+        const oldId = String(mod.orderId);
+        const key = `order-${oldId}`;
         const line = wallLinesRef.current.get(key);
 
         try {
+            let resolvedOrderId = oldId;
+            let resolvedPrice = mod.newPrice;
+
             if (mod.isSL) {
                 const res = await manualTradeService.updateSoftwareSL(
                     parseInt(selectedApiKeyId),
@@ -3085,15 +3138,21 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                         amount: mod.targetOrder.amount
                     }
                 );
+                resolvedOrderId = res?.id ? String(res.id) : (res?.sl_id ? String(res.sl_id) : oldId);
+                const backendPx = Number(res?.price || res?.new_price || 0);
+                if (Number.isFinite(backendPx) && backendPx > 0) {
+                    resolvedPrice = backendPx;
+                }
+                migrateOrderPriceLine(oldId, resolvedOrderId, line);
                 const speedText = res?.execution_speed_ms !== undefined ? ` (${res.execution_speed_ms}ms ⚡)` : '';
                 window.dispatchEvent(new CustomEvent('optimisticSwapOpenOrder', {
                     detail: {
-                        oldOrderId: String(mod.orderId),
-                        newOrderId: String(mod.orderId),
-                        newPrice: mod.newPrice
+                        oldOrderId: oldId,
+                        newOrderId: resolvedOrderId,
+                        newPrice: resolvedPrice
                     }
                 }));
-                toast.success(`🎯 ${mod.modeName} Stop-Loss updated to ${mod.newPrice < 1 ? mod.newPrice.toFixed(6) : mod.newPrice.toFixed(4)}${speedText}`);
+                toast.success(`🎯 ${mod.modeName} Stop-Loss updated to ${resolvedPrice < 1 ? resolvedPrice.toFixed(6) : resolvedPrice.toFixed(4)}${speedText}`);
             } else {
                 const editAmount = mod.targetOrder.remaining > 0 ? mod.targetOrder.remaining : mod.targetOrder.amount;
                 const res = await manualTradeService.editOrder(
@@ -3106,41 +3165,31 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                         new_price: mod.newPrice
                     }
                 );
-                const newOrderId = res?.id ? String(res.id) : String(mod.orderId);
-                if (newOrderId !== String(mod.orderId)) {
-                    if (line) {
-                        wallLinesRef.current.delete(key);
-                        wallLinesRef.current.set(`order-${newOrderId}`, line);
-                    }
-                    mod.targetOrder.id = newOrderId;
+                resolvedOrderId = res?.id ? String(res.id) : oldId;
+                const backendPx = Number(res?.price || 0);
+                if (Number.isFinite(backendPx) && backendPx > 0) {
+                    resolvedPrice = backendPx;
                 }
+                migrateOrderPriceLine(oldId, resolvedOrderId, line);
                 window.dispatchEvent(new CustomEvent('optimisticSwapOpenOrder', {
                     detail: {
-                        oldOrderId: String(mod.orderId),
-                        newOrderId,
-                        newPrice: mod.newPrice
+                        oldOrderId: oldId,
+                        newOrderId: resolvedOrderId,
+                        newPrice: resolvedPrice
                     }
                 }));
                 const speedText = res?.execution_speed_ms ? ` (${res.execution_speed_ms}ms ⚡)` : '';
-                toast.success(`Order price updated to ${mod.newPrice < 1 ? mod.newPrice.toFixed(6) : mod.newPrice.toFixed(4)}${speedText}`);
+                toast.success(`Order price updated to ${resolvedPrice < 1 ? resolvedPrice.toFixed(6) : resolvedPrice.toFixed(4)}${speedText}`);
             }
 
-            // Optimistically update order price in state ref
-            mod.targetOrder.price = mod.newPrice;
-
-            // Update line on chart to new price with clean normal styling
-            const isBuy = mod.targetOrder.side === 'buy';
-            let color = isBuy ? 'rgba(34, 197, 94, 0.85)' : 'rgba(239, 68, 68, 0.85)';
-            if (mod.targetOrder.isSoftwareSL) {
-                color = '#ef4444';
-            } else if (mod.targetOrder.mode === 'TP') {
-                color = '#22c55e';
-            } else if (mod.targetOrder.isIceberg) {
-                color = isBuy ? '#06b6d4' : '#f43f5e';
-            }
-            const label = formatOrderLabel(mod.targetOrder, mod.newPrice);
+            const updatedOrderSnap: OpenLimitOrder = {
+                ...mod.targetOrder,
+                id: resolvedOrderId,
+                price: resolvedPrice,
+            };
+            const { color, label } = getOrderLineVisualStyle(updatedOrderSnap, resolvedPrice);
             line?.applyOptions({
-                price: mod.newPrice,
+                price: resolvedPrice,
                 title: label,
                 color,
                 lineWidth: 1,
@@ -3149,17 +3198,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         } catch (err: any) {
             console.error('Edit order failed', err);
             toast.error('Failed to update: ' + (err.response?.data?.detail || err.message));
-            // Revert modifying line on error
-            const isBuy = mod.targetOrder.side === 'buy';
-            let color = isBuy ? 'rgba(34, 197, 94, 0.85)' : 'rgba(239, 68, 68, 0.85)';
-            if (mod.targetOrder.isSoftwareSL) {
-                color = '#ef4444';
-            } else if (mod.targetOrder.mode === 'TP') {
-                color = '#22c55e';
-            } else if (mod.targetOrder.isIceberg) {
-                color = isBuy ? '#06b6d4' : '#f43f5e';
-            }
-            const label = formatOrderLabel(mod.targetOrder, mod.originalPrice);
+            const { color, label } = getOrderLineVisualStyle(mod.targetOrder, mod.originalPrice);
             line?.applyOptions({
                 price: mod.originalPrice,
                 title: label,
@@ -3172,6 +3211,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             setIsModifyingOrder(false);
             isModifyingRef.current = false;
             setPendingModification(null);
+            setOrderLineSyncTick(t => t + 1);
         }
     };
 
@@ -3179,17 +3219,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         const key = `order-${mod.orderId}`;
         const line = wallLinesRef.current.get(key);
 
-        // Revert back to original price & style
-        const isBuy = mod.targetOrder.side === 'buy';
-        let color = isBuy ? 'rgba(34, 197, 94, 0.85)' : 'rgba(239, 68, 68, 0.85)';
-        if (mod.targetOrder.isSoftwareSL) {
-            color = '#ef4444';
-        } else if (mod.targetOrder.mode === 'TP') {
-            color = '#22c55e';
-        } else if (mod.targetOrder.isIceberg) {
-            color = isBuy ? '#06b6d4' : '#f43f5e';
-        }
-        const label = formatOrderLabel(mod.targetOrder, mod.originalPrice);
+        const { color, label } = getOrderLineVisualStyle(mod.targetOrder, mod.originalPrice);
         line?.applyOptions({
             price: mod.originalPrice,
             title: label,
@@ -3200,6 +3230,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
 
         pendingModificationRef.current = null;
         setPendingModification(null);
+        setOrderLineSyncTick(t => t + 1);
         toast('Modification cancelled', { icon: '↩️' });
     };
 
@@ -3256,6 +3287,23 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             return bestOrder;
         };
 
+        const computeDragPnlSuffix = (order: OpenLimitOrder | undefined, targetPx: number): string => {
+            if (!order || (!order.isSoftwareSL && order.mode !== 'TP') || targetPx <= 0) return '';
+            const fallback = resolveEffectiveEntryContext(activePositionRef.current, openOrdersRef.current, symbol);
+            const ctx = resolveOrderEntryContext(order, fallback);
+            if (!ctx) return '';
+            const pnl = computeTradePnl({
+                entryPrice: ctx.entryPrice,
+                targetPrice: targetPx,
+                amount: ctx.amount,
+                side: ctx.side,
+                isInverse: ctx.isInverse,
+                contracts: ctx.contracts,
+                contractSize: ctx.contractSize,
+            });
+            return pnl ? ` | ${formatCompactPnl(pnl.pnlUsd, pnl.pnlPct)}` : '';
+        };
+
         const startDragAt = (clientX: number, clientY: number, isTouch: boolean, rawEvent: Event): boolean => {
             if (isModifyingRef.current || pendingModificationRef.current || !selectedApiKeyId) return false;
             const chartRect = container.getBoundingClientRect();
@@ -3283,6 +3331,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                 const color = isSL ? '#ef4444' : (isTP ? '#22c55e' : (isBuy ? 'rgba(34, 197, 94, 0.85)' : 'rgba(239, 68, 68, 0.85)'));
                 const modeName = clickedOrder.mode ? clickedOrder.mode.toUpperCase() : 'SL';
                 const labelPrefix = isSL ? `DRAG TO EDIT ${modeName} SL` : (isTP ? `DRAG TO EDIT TP` : `DRAG TO EDIT ${clickedOrder.side.toUpperCase()}`);
+                const pnlSuffix = computeDragPnlSuffix(clickedOrder, clickedOrder.price);
 
                 ghostLineRef.current = candlestickSeriesRef.current.createPriceLine({
                     price: clickedOrder.price,
@@ -3290,8 +3339,21 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                     lineWidth: 1,
                     lineStyle: LineStyle.Solid,
                     axisLabelVisible: true,
-                    title: `${labelPrefix} (${clickedOrder.price < 1 ? clickedOrder.price.toFixed(6) : clickedOrder.price.toFixed(4)})`,
+                    title: `${labelPrefix} (${clickedOrder.price < 1 ? clickedOrder.price.toFixed(6) : clickedOrder.price.toFixed(4)})${pnlSuffix}`,
                 });
+
+                if (isSL || isTP) {
+                    dragPreviewRef.current = {
+                        orderId: clickedOrder.id,
+                        price: clickedOrder.price,
+                        isSL,
+                        isTP,
+                        side: clickedOrder.side,
+                        amount: clickedOrder.remaining > 0 ? clickedOrder.remaining : clickedOrder.amount,
+                        entryPrice: clickedOrder.entryPrice,
+                    };
+                    dragOverlaySyncRef.current?.();
+                }
             }
             return true;
         };
@@ -3308,14 +3370,28 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                     if (rawEvent.cancelable) rawEvent.preventDefault();
                 }
                 const targetOrder = openOrdersRef.current.find(o => o.id === draggingOrderIdRef.current);
-                const isSL = targetOrder?.isSoftwareSL;
+                const isSL = Boolean(targetOrder?.isSoftwareSL);
+                const isTP = targetOrder?.mode === 'TP';
                 const modeName = targetOrder?.mode ? targetOrder.mode.toUpperCase() : 'SL';
-                const labelPrefix = isSL ? `DRAG TO EDIT ${modeName} SL` : `DRAG TO EDIT ${targetOrder?.side?.toUpperCase()}`;
+                const labelPrefix = isSL ? `DRAG TO EDIT ${modeName} SL` : (isTP ? `DRAG TO EDIT TP` : `DRAG TO EDIT ${targetOrder?.side?.toUpperCase()}`);
+                const pnlSuffix = computeDragPnlSuffix(targetOrder, Number(pointerPrice));
 
                 ghostLineRef.current.applyOptions({
                     price: pointerPrice,
-                    title: `${labelPrefix} (${pointerPrice < 1 ? pointerPrice.toFixed(6) : pointerPrice.toFixed(4)})`
+                    title: `${labelPrefix} (${pointerPrice < 1 ? pointerPrice.toFixed(6) : pointerPrice.toFixed(4)})${pnlSuffix}`
                 });
+                if (targetOrder && (isSL || isTP)) {
+                    dragPreviewRef.current = {
+                        orderId: targetOrder.id,
+                        price: Number(pointerPrice),
+                        isSL,
+                        isTP,
+                        side: targetOrder.side,
+                        amount: targetOrder.remaining > 0 ? targetOrder.remaining : targetOrder.amount,
+                        entryPrice: targetOrder.entryPrice,
+                    };
+                    dragOverlaySyncRef.current?.();
+                }
                 if (!isTouch) container.style.cursor = 'ns-resize';
             } else if (!isDown && !isTouch) {
                 const hoverOrder = findClosestOrderAtY(clientY - chartRect.top, 8);
@@ -3328,6 +3404,8 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         };
 
         const finishDragAt = async (clientY: number | null) => {
+            dragPreviewRef.current = null;
+            dragOverlaySyncRef.current?.();
             if (!isDown || !draggingOrderIdRef.current || !ghostLineRef.current) {
                 isDown = false;
                 draggingOrderIdRef.current = null;
@@ -3354,7 +3432,10 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                 ghostLineRef.current = null;
             } catch (err) {}
 
-            if (!newPrice || !targetOrder || !selectedApiKeyId) return;
+            if (!newPrice || newPrice <= 0 || !targetOrder || !selectedApiKeyId) {
+                setOrderLineSyncTick(t => t + 1);
+                return;
+            }
 
             const livePrice = currentPriceRef.current || currentPrice;
             const livePriceStr = livePrice < 1 ? livePrice.toFixed(6) : livePrice.toFixed(4);
@@ -3366,22 +3447,26 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                     // For Long position, SL is SELL side, and trigger price MUST be below current market price
                     if (targetOrder.side === 'sell' && newPrice >= livePrice) {
                         toast.error(`⚠️ Long Stop-Loss must be placed below market price (${livePriceStr})`);
+                        setOrderLineSyncTick(t => t + 1);
                         return;
                     }
                     // For Short position, SL is BUY side, and trigger price MUST be above current market price
                     if (targetOrder.side === 'buy' && newPrice <= livePrice) {
                         toast.error(`⚠️ Short Stop-Loss must be placed above market price (${livePriceStr})`);
+                        setOrderLineSyncTick(t => t + 1);
                         return;
                     }
                 } else if (isTpOrder) {
                     // For Long TP (SELL exit), target price MUST stay above current market price
                     if (targetOrder.side === 'sell' && newPrice <= livePrice) {
                         toast.error(`⚠️ Long Take-Profit must be placed above market price (${livePriceStr})`);
+                        setOrderLineSyncTick(t => t + 1);
                         return;
                     }
                     // For Short TP (BUY exit), target price MUST stay below current market price
                     if (targetOrder.side === 'buy' && newPrice >= livePrice) {
                         toast.error(`⚠️ Short Take-Profit must be placed below market price (${livePriceStr})`);
+                        setOrderLineSyncTick(t => t + 1);
                         return;
                     }
                 } else {
@@ -3397,7 +3482,10 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             }
 
             // Skip if moved less than a fraction
-            if (Math.abs(targetOrder.price - newPrice) < (targetOrder.price * 0.0001)) return;
+            if (Math.abs(targetOrder.price - newPrice) < (targetOrder.price * 0.0001)) {
+                setOrderLineSyncTick(t => t + 1);
+                return;
+            }
 
             const modeName = targetOrder.mode ? targetOrder.mode.toUpperCase() : (targetOrder.isSoftwareSL ? 'SL' : 'LIMIT');
             const resolvedAmount = !targetOrder.isSoftwareSL && targetOrder.remaining > 0
@@ -3457,6 +3545,8 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         let pinchMidRatio = 0.5;
 
         const cancelActiveLineDrag = () => {
+            dragPreviewRef.current = null;
+            dragOverlaySyncRef.current?.();
             if (!isDown) return;
             isDown = false;
             draggingOrderIdRef.current = null;
@@ -3546,6 +3636,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         window.addEventListener('touchcancel', handleTouchEnd);
 
         return () => {
+            cancelActiveLineDrag();
             container.removeEventListener('mousedown', handleMouseDown, { capture: true });
             container.removeEventListener('mousemove', handleMouseMove);
             window.removeEventListener('mouseup', handleMouseUp);
@@ -3556,6 +3647,55 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             window.removeEventListener('touchcancel', handleTouchEnd);
         };
     }, [symbol, selectedApiKeyId]);
+
+    // Active Futures Position Liquidation Price Line (non-draggable exchange warning line)
+    useEffect(() => {
+        const series = candlestickSeriesRef.current;
+        if (!series) return;
+
+        const isFuturesSym = Boolean(symbol && symbol.includes(':'));
+        const liqPrice = Number(activePosition?.liquidation_price || 0);
+        const posAmt = Number(activePosition?.amount || 0);
+        const posSide = String(activePosition?.side || 'none').toLowerCase();
+        const shouldShow = isFuturesSym && posAmt > 0 && (posSide === 'long' || posSide === 'short') && Number.isFinite(liqPrice) && liqPrice > 0;
+
+        if (!shouldShow) {
+            if (liquidationLineRef.current) {
+                try { series.removePriceLine(liquidationLineRef.current); } catch {}
+                liquidationLineRef.current = null;
+            }
+            return;
+        }
+
+        const formattedLiq = formatDisplayPrice(liqPrice);
+        const sideLabel = posSide === 'long' ? 'LONG' : 'SHORT';
+        const levLabel = activePosition?.leverage ? ` ${activePosition.leverage}x` : '';
+        const title = `💀 LIQ ${sideLabel}${levLabel} (${formattedLiq})`;
+
+        if (!liquidationLineRef.current) {
+            liquidationLineRef.current = series.createPriceLine({
+                price: liqPrice,
+                color: '#f97316',
+                lineWidth: 1,
+                lineStyle: LineStyle.Dashed,
+                axisLabelVisible: true,
+                title,
+                axisLabelColor: '#f97316',
+                axisLabelTextColor: '#ffffff',
+            });
+        } else {
+            liquidationLineRef.current.applyOptions({
+                price: liqPrice,
+                color: '#f97316',
+                lineWidth: 1,
+                lineStyle: LineStyle.Dashed,
+                axisLabelVisible: true,
+                title,
+                axisLabelColor: '#f97316',
+                axisLabelTextColor: '#ffffff',
+            });
+        }
+    }, [activePosition, symbol, candlesReadyTick]);
 
 
 
@@ -3732,6 +3872,21 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                     </button>
                 )}
                 <div className="absolute inset-0 z-10 pointer-events-none overflow-hidden" style={{ right: 60, bottom: 26 }}>
+                    <TradePositionOverlay
+                        chart={chartRef.current}
+                        series={candlestickSeriesRef.current}
+                        symbol={symbol}
+                        exchange={exchange}
+                        currentPrice={currentPrice}
+                        activePosition={activePosition}
+                        openOrders={openOrders}
+                        candlesReadyTick={candlesReadyTick}
+                        isDark={isDark}
+                        pendingModification={pendingModification}
+                        dragPreviewRef={dragPreviewRef}
+                        registerDragSyncRef={dragOverlaySyncRef}
+                        formatPrice={formatDisplayPrice}
+                    />
                     <GodModeHUD data={godModeData} visible={Boolean(indicatorSettings.showLiquidationHeatmap && isActiveChart)} />
                     {indicatorSettings.showDualEngine && <DualEngineDashboard settings={indicatorSettings} candles={allCandlesRef.current} currentPrice={currentPrice} />}
                     {indicatorSettings.showWatchlistScanner && <WatchlistScanner settings={indicatorSettings} exchange={exchange} interval={interval} />}
@@ -4279,6 +4434,33 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                                         ${pendingModification.livePrice < 1 ? pendingModification.livePrice.toFixed(6) : pendingModification.livePrice.toFixed(4)}
                                     </span>
                                 </div>
+
+                                {(() => {
+                                    const order = pendingModification.targetOrder;
+                                    if (!order.isSoftwareSL && order.mode !== 'TP') return null;
+                                    const fallback = resolveEffectiveEntryContext(activePosition, openOrders, symbol);
+                                    const ctx = resolveOrderEntryContext(order, fallback);
+                                    if (!ctx) return null;
+                                    const pnl = computeTradePnl({
+                                        entryPrice: ctx.entryPrice,
+                                        targetPrice: pendingModification.newPrice,
+                                        amount: ctx.amount,
+                                        side: ctx.side,
+                                        isInverse: ctx.isInverse,
+                                        contracts: ctx.contracts,
+                                        contractSize: ctx.contractSize,
+                                    });
+                                    if (!pnl) return null;
+                                    const isProfit = pnl.pnlUsd >= 0;
+                                    return (
+                                        <div className={`flex items-center justify-between text-xs px-3.5 py-2 rounded-xl border ${isProfit ? 'bg-emerald-50/70 dark:bg-emerald-950/25 border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300' : 'bg-rose-50/70 dark:bg-rose-950/25 border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300'}`}>
+                                            <span>Est. P/L vs Entry (${formatDisplayPrice(ctx.entryPrice)})</span>
+                                            <span className="font-mono font-bold">
+                                                {formatCompactPnl(pnl.pnlUsd, pnl.pnlPct)}
+                                            </span>
+                                        </div>
+                                    );
+                                })()}
 
                                 {/* "Don't ask again" Checkbox */}
                                 <label className="flex items-center gap-2.5 text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300 cursor-pointer select-none pt-1">
@@ -4908,6 +5090,7 @@ const OrderFlowChartPanel = React.memo<{
     parentBotStatus?: any;
     parentSymbol?: string;
     parentOpenOrders?: OpenLimitOrder[];
+    parentPosition?: FastPositionResponse | null;
     showCrosshairAIPredict?: boolean;
     showBidAsk?: boolean;
     renderFloatingTools?: React.ReactNode;
@@ -4945,6 +5128,7 @@ const OrderFlowChartPanel = React.memo<{
     parentBotStatus,
     parentSymbol,
     parentOpenOrders,
+    parentPosition,
     showCrosshairAIPredict = false,
     showBidAsk = false,
     renderFloatingTools,
@@ -5006,6 +5190,9 @@ const OrderFlowChartPanel = React.memo<{
     const usingParentOpenOrders = Boolean(parentOpenOrders && parentSymbol && config.symbol === parentSymbol);
     const ownOpenOrders = useOpenOrders(selectedApiKeyId, config.symbol, panelDeviceProfile.timings.openOrdersPollMs, !usingParentOpenOrders);
     const openOrders = usingParentOpenOrders ? parentOpenOrders! : ownOpenOrders;
+    const usingParentPosition = Boolean(parentPosition !== undefined && parentSymbol && config.symbol === parentSymbol);
+    const ownActivePosition = useActivePosition(selectedApiKeyId, config.symbol, panelDeviceProfile.timings.openOrdersPollMs, !usingParentPosition);
+    const activePosition = usingParentPosition ? (parentPosition ?? null) : ownActivePosition;
 
     // Report live currentPrice back up to parent ONLY for secondary split charts (!isMain)
     // so main chart ticks never trigger a duplicate setChartPrices re-render in parent.
@@ -5201,7 +5388,7 @@ const OrderFlowChartPanel = React.memo<{
                 ) : (
                     <OrderFlowChart 
                         chartId={config.id}
-                        exchange={config.exchange} symbol={config.symbol} interval={config.interval} walls={filteredWalls} currentPrice={currentPrice} showFootprint={showFootprint} showCVD={showCVD} showVPVR={showVPVR} indicatorSettings={indicatorSettings} tradeEvent={tradeEvent} botStatus={botStatus} openOrders={openOrders} advancedMetrics={advancedMetrics} advancedMetricsData={advancedMetricsData} selectedApiKeyId={selectedApiKeyId} predictionResult={predictionResult} activeMLModelId={activeMLModelId} showCrosshairAIPredict={showCrosshairAIPredict} bestBid={bestBid} bestAsk={bestAsk} showBidAsk={showBidAsk}
+                        exchange={config.exchange} symbol={config.symbol} interval={config.interval} walls={filteredWalls} currentPrice={currentPrice} showFootprint={showFootprint} showCVD={showCVD} showVPVR={showVPVR} indicatorSettings={indicatorSettings} tradeEvent={tradeEvent} botStatus={botStatus} openOrders={openOrders} activePosition={activePosition} advancedMetrics={advancedMetrics} advancedMetricsData={advancedMetricsData} selectedApiKeyId={selectedApiKeyId} predictionResult={predictionResult} activeMLModelId={activeMLModelId} showCrosshairAIPredict={showCrosshairAIPredict} bestBid={bestBid} bestAsk={bestAsk} showBidAsk={showBidAsk}
                         isActiveChart={isActive || allChartsCount === 1}
                         totalChartsCount={allChartsCount}
                         chartSlotIndex={chartSlotIndex}
@@ -5517,6 +5704,7 @@ const OrderFlowHeatmap: React.FC = () => {
     const { statusData: botStatus, isConnected: botWsConnected } = useWallHunterStatus(selectedHudBotId);
     const [selectedApiKeyId, setSelectedApiKeyId] = useState<string | null>(null);
     const openOrders = useOpenOrders(selectedApiKeyId, symbol, deviceProfile.timings.openOrdersPollMs);
+    const activePosition = useActivePosition(selectedApiKeyId, symbol, deviceProfile.timings.openOrdersPollMs, symbol.includes(':'));
 
     // Zero-extra-render synchronous price side tracking (avoids a 2nd full OrderFlowHeatmap render on every tick)
     const lastPriceSideRef = useRef<'buy' | 'sell'>('buy');
@@ -6592,6 +6780,7 @@ const OrderFlowHeatmap: React.FC = () => {
                                 parentBotStatus={botStatus}
                                 parentSymbol={symbol}
                                 parentOpenOrders={openOrders}
+                                parentPosition={activePosition}
                                 showCrosshairAIPredict={showCrosshairAIPredict}
                                 showBidAsk={showBidAsk}
                                 renderFloatingTools={hasFullscreenChart ? floatingToolsNode : undefined}

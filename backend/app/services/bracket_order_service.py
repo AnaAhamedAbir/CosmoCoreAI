@@ -37,6 +37,91 @@ class BracketOrderService:
     ENTRY_BRACKET_LOCKS = {}  # { entry_order_id: asyncio.Lock } to serialize partial-fill chunks of the same entry order
     ACTIVE_ENTRY_BRACKETS = {}  # { entry_order_id: { tp_order_id, amount, entry_price, symbol, side, api_key_id } }
     ACTIVE_ENTRY_MONITORS = {}  # { entry_order_id: { symbol, api_key_id, cancelled } }
+    _KNOWN_DISASTER_SL_IDS = {}  # { order_id_str: expire_ts }
+    _PENDING_DISASTER_SL_SCOPES = {}  # { (api_key_id_or_none, base_sym, is_futures, side): (count, expire_ts) }
+
+    @staticmethod
+    def _disaster_scope_key(api_key_id, symbol: str, side: Optional[str]) -> tuple:
+        sym_s = str(symbol or '').strip().upper()
+        is_fut = ':' in sym_s
+        base_sym = sym_s.split(':', 1)[0].replace('/', '')
+        norm_key = int(api_key_id) if api_key_id is not None else None
+        norm_side = str(side or '').strip().lower()
+        return (norm_key, base_sym, is_fut, norm_side)
+
+    @staticmethod
+    def _mark_pending_disaster_scope(api_key_id, symbol: str, side: Optional[str], ttl_seconds: float = 4.0) -> None:
+        key = BracketOrderService._disaster_scope_key(api_key_id, symbol, side)
+        now = time.time()
+        prev = BracketOrderService._PENDING_DISASTER_SL_SCOPES.get(key)
+        prev_cnt = prev[0] if (prev and prev[1] > now) else 0
+        BracketOrderService._PENDING_DISASTER_SL_SCOPES[key] = (prev_cnt + 1, now + ttl_seconds)
+
+    @staticmethod
+    def _clear_pending_disaster_scope(api_key_id, symbol: str, side: Optional[str]) -> None:
+        key = BracketOrderService._disaster_scope_key(api_key_id, symbol, side)
+        prev = BracketOrderService._PENDING_DISASTER_SL_SCOPES.get(key)
+        if not prev:
+            return
+        cnt, exp = prev
+        if cnt <= 1 or exp <= time.time():
+            BracketOrderService._PENDING_DISASTER_SL_SCOPES.pop(key, None)
+        else:
+            BracketOrderService._PENDING_DISASTER_SL_SCOPES[key] = (cnt - 1, exp)
+
+    @staticmethod
+    def _register_known_disaster_sl_id(order_id: Optional[str], ttl_seconds: float = 30.0) -> None:
+        if not order_id:
+            return
+        now = time.time()
+        if len(BracketOrderService._KNOWN_DISASTER_SL_IDS) > 512:
+            for k, exp in list(BracketOrderService._KNOWN_DISASTER_SL_IDS.items()):
+                if exp <= now:
+                    BracketOrderService._KNOWN_DISASTER_SL_IDS.pop(k, None)
+        BracketOrderService._KNOWN_DISASTER_SL_IDS[str(order_id)] = now + ttl_seconds
+
+    @staticmethod
+    def is_internal_disaster_sl_event(
+        api_key_id: Optional[int],
+        symbol: Optional[str],
+        side: Optional[str],
+        order_id: Optional[str],
+        raw_type: Optional[str] = None,
+    ) -> bool:
+        """
+        True when `order_id` is a backup Disaster SL / Native Trailing SL managed internally
+        by ACTIVE_SOFTWARE_SL, or an in-flight replacement conditional SL whose WS event beat HTTP.
+        """
+        if not order_id:
+            return False
+        oid_s = str(order_id)
+        now = time.time()
+
+        exp = BracketOrderService._KNOWN_DISASTER_SL_IDS.get(oid_s)
+        if exp is not None:
+            if exp > now:
+                return True
+            BracketOrderService._KNOWN_DISASTER_SL_IDS.pop(oid_s, None)
+
+        for sdata in list(BracketOrderService.ACTIVE_SOFTWARE_SL.values()):
+            km = sdata.get("api_key_id") is None or api_key_id is None or int(sdata.get("api_key_id")) == int(api_key_id)
+            if km and str(sdata.get("disaster_sl_order_id") or "") == oid_s:
+                return True
+
+        raw_t = str(raw_type or '').lower()
+        is_cond_sl = ('stop' in raw_t or 'trailing' in raw_t) and ('take_profit' not in raw_t)
+        if is_cond_sl and symbol:
+            cand_key = BracketOrderService._disaster_scope_key(api_key_id, symbol, side)
+            cand_key_any_api = BracketOrderService._disaster_scope_key(None, symbol, side)
+            for sc_key in (cand_key, cand_key_any_api):
+                pending = BracketOrderService._PENDING_DISASTER_SL_SCOPES.get(sc_key)
+                if pending:
+                    cnt, p_exp = pending
+                    if cnt > 0 and p_exp > now:
+                        BracketOrderService._register_known_disaster_sl_id(oid_s)
+                        return True
+                    BracketOrderService._PENDING_DISASTER_SL_SCOPES.pop(sc_key, None)
+        return False
 
     @staticmethod
     async def _fetch_ticker_fast(exchange, symbol: str, require_last: bool = False) -> dict:
@@ -1254,32 +1339,45 @@ class BracketOrderService:
                         curr_amt = sl_meta.get('amount') if sl_meta.get('amount') is not None else amount
                         prec_amount = BracketOrderService._safe_amount_to_precision(order_ex, symbol, curr_amt)
 
-                        # Cancel old disaster SL & place updated disaster SL concurrently in 1 RTT
-                        cancel_task = BracketOrderService._cancel_futures_order_universal(
-                            order_ex, curr_dis_id, symbol, is_conditional=True
-                        )
-                        place_task = BracketOrderService._place_futures_conditional_order(
-                            order_ex, symbol, 'STOP_MARKET', side, prec_amount,
-                            stop_price=disaster_price_prec, extra_params=disaster_params
-                        )
-                        _, d_res = await asyncio.gather(cancel_task, place_task, return_exceptions=True)
-                        if isinstance(d_res, Exception) or not isinstance(d_res, dict) or not d_res.get('id'):
-                            if sl_meta.get('_disaster_seq') == my_seq and not sl_meta.get('cancelled'):
-                                d_res = await BracketOrderService._place_futures_conditional_order(
+                        # Cancel old disaster SL & place updated disaster SL concurrently in 1 RTT.
+                        # Mark pending scope before placement and bind new ID immediately upon place completion
+                        # so WS watch_orders() never leaks the new disaster SL onto the chart mid-flight.
+                        scope_api_id = sl_meta.get('api_key_id')
+                        BracketOrderService._mark_pending_disaster_scope(scope_api_id, symbol, side, ttl_seconds=4.0)
+                        try:
+                            async def _place_and_bind_disaster(extra_p: dict):
+                                res = await BracketOrderService._place_futures_conditional_order(
                                     order_ex, symbol, 'STOP_MARKET', side, prec_amount,
-                                    stop_price=disaster_price_prec, extra_params=disaster_params
+                                    stop_price=disaster_price_prec, extra_params=extra_p
                                 )
-                        if isinstance(d_res, dict) and d_res.get('id'):
-                            sl_meta['disaster_sl_order_id'] = d_res.get('id')
-                            try:
-                                from app.services.manual_trade_persistence import schedule_update_monitor
-                                schedule_update_monitor(
-                                    sl_id,
-                                    fields={'disaster_sl_order_id': str(d_res.get('id'))},
-                                )
-                            except Exception:
-                                pass
-                            logger.info(f"🛡️ Replaced Native Disaster SL at {disaster_price_prec} (New ID: {d_res.get('id')})")
+                                if isinstance(res, dict) and res.get('id'):
+                                    new_dis_id = str(res.get('id'))
+                                    sl_meta['disaster_sl_order_id'] = new_dis_id
+                                    BracketOrderService._register_known_disaster_sl_id(new_dis_id)
+                                return res
+
+                            cancel_task = BracketOrderService._cancel_futures_order_universal(
+                                order_ex, curr_dis_id, symbol, is_conditional=True
+                            )
+                            place_task = _place_and_bind_disaster(disaster_params)
+                            _, d_res = await asyncio.gather(cancel_task, place_task, return_exceptions=True)
+                            if isinstance(d_res, Exception) or not isinstance(d_res, dict) or not d_res.get('id'):
+                                if sl_meta.get('_disaster_seq') == my_seq and not sl_meta.get('cancelled'):
+                                    d_res = await _place_and_bind_disaster(disaster_params)
+                            if isinstance(d_res, dict) and d_res.get('id'):
+                                sl_meta['disaster_sl_order_id'] = d_res.get('id')
+                                BracketOrderService._register_known_disaster_sl_id(str(d_res.get('id')))
+                                try:
+                                    from app.services.manual_trade_persistence import schedule_update_monitor
+                                    schedule_update_monitor(
+                                        sl_id,
+                                        fields={'disaster_sl_order_id': str(d_res.get('id'))},
+                                    )
+                                except Exception:
+                                    pass
+                                logger.info(f"🛡️ Replaced Native Disaster SL at {disaster_price_prec} (New ID: {d_res.get('id')})")
+                        finally:
+                            BracketOrderService._clear_pending_disaster_scope(scope_api_id, symbol, side)
                 except Exception as d_err:
                     logger.warning(f"⚠️ Failed to update native disaster SL: {d_err}")
 
@@ -2399,6 +2497,7 @@ class BracketOrderService:
                         and sl_mode == 'percentage'
                     ):
                         # Try Native Trailing Stop Market for Futures (Taker Exit)
+                        BracketOrderService._mark_pending_disaster_scope(api_key_id, symbol, opposite_side, ttl_seconds=4.0)
                         try:
                             logger.info(f"🚀 Bracket Monitor: Placing Native Trailing Stop for {symbol} (Futures)")
                             sl_params = await BracketOrderService._apply_futures_exit_params(
@@ -2408,6 +2507,8 @@ class BracketOrderService:
                                 order_ex, symbol, 'TRAILING_STOP_MARKET', opposite_side, final_amount,
                                 callback_rate=sl_val, extra_params=sl_params
                             )
+                            if sl_res and sl_res.get('id'):
+                                BracketOrderService._register_known_disaster_sl_id(str(sl_res.get('id')))
                             logger.info(f"✅ Native Trailing SL placed! ID: {sl_res.get('id')}")
                             placed_native = True
                             
@@ -2457,6 +2558,8 @@ class BracketOrderService:
                             )
                         except Exception as e:
                             logger.error(f"❌ Failed to place native Trailing SL: {e}. Falling back to software loop.")
+                        finally:
+                            BracketOrderService._clear_pending_disaster_scope(api_key_id, symbol, opposite_side)
                     
                     # Trailing Chase MUST run via Software Maker Loop (never native taker)
                     if is_trailing_chase:
@@ -2505,6 +2608,7 @@ class BracketOrderService:
 
                     disaster_sl_order_id = None
                     if is_futures:
+                        BracketOrderService._mark_pending_disaster_scope(api_key_id, symbol, opposite_side, ttl_seconds=4.0)
                         try:
                             eff_dis_pct = max(float(max_dev), float(anti_wick_disaster_pct)) if anti_wick_mode != 'instant' else float(max_dev)
                             disaster_price = final_sl_price * (1 - (eff_dis_pct / 100.0)) if opposite_side == 'sell' else final_sl_price * (1 + (eff_dis_pct / 100.0))
@@ -2517,9 +2621,13 @@ class BracketOrderService:
                                 stop_price=disaster_price_prec, extra_params=disaster_params
                             )
                             disaster_sl_order_id = d_res.get('id')
+                            if disaster_sl_order_id:
+                                BracketOrderService._register_known_disaster_sl_id(str(disaster_sl_order_id))
                             logger.info(f"🛡️ Bracket Monitor: Native Disaster SL placed at {disaster_price_prec} (ID: {disaster_sl_order_id})")
                         except Exception as d_err:
                             logger.warning(f"⚠️ Failed to place native disaster SL: {d_err}")
+                        finally:
+                            BracketOrderService._clear_pending_disaster_scope(api_key_id, symbol, opposite_side)
 
                     side_tag = "BUY (Buy-Back ⚡)" if opposite_side.lower() == 'buy' else "SELL (Long Exit 🛡️)"
                     tp_tag = f" | Linked TP: #{tp_order_id}" if tp_order_id else ""
@@ -2606,11 +2714,14 @@ class BracketOrderService:
                             order_ex, symbol, opposite_side, {'stopPrice': native_stop_px}
                         )
                         sl_res = None
+                        BracketOrderService._mark_pending_disaster_scope(api_key_id, symbol, opposite_side, ttl_seconds=4.0)
                         try:
                             sl_res = await BracketOrderService._place_futures_conditional_order(
                                 order_ex, symbol, 'STOP_MARKET', opposite_side, final_amount,
                                 stop_price=native_stop_px, extra_params=sl_params
                             )
+                            if sl_res and sl_res.get('id'):
+                                BracketOrderService._register_known_disaster_sl_id(str(sl_res.get('id')))
                             logger.info(
                                 f"✅ Bracket Monitor: SL placed at {native_stop_px}"
                                 f"{f' (Disaster cushion for {anti_wick_mode} @ {final_sl_price})' if anti_wick_mode != 'instant' else ''}! "
@@ -2650,6 +2761,8 @@ class BracketOrderService:
                                         user_id, symbol, "Stop-Loss (Native -> Software Fallback Active)", str(ex_e)
                                     )
                                 )
+                        finally:
+                            BracketOrderService._clear_pending_disaster_scope(api_key_id, symbol, opposite_side)
 
                         # Always spawn OCO Watchdog / Software SL Fallback (and Auto-Breakeven / Anti-Wick if enabled)
                         logger.info(
@@ -2728,6 +2841,7 @@ class BracketOrderService:
                     'remaining': float(final_amount),
                     'isSoftwareSL': False,
                     'mode': 'TP',
+                    'entryPrice': float(average_price) if average_price and float(average_price) > 0 else None,
                     'isPostOnly': bool(tp_order_type_cfg == 'limit'),
                 }
                 pushed_bracket_lines.append(tp_line)
@@ -2772,6 +2886,7 @@ class BracketOrderService:
                                 'isSoftwareSL': True,
                                 'mode': sdata.get('mode', 'SMART_CHASE'),
                                 'type': sdata.get('type', 'smart_chase'),
+                                'entryPrice': float(sdata.get('entry_price') or average_price or 0.0) or None,
                             })
 
             if api_key_id is not None:

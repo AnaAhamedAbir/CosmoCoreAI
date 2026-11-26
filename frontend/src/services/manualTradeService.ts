@@ -97,6 +97,9 @@ export interface FastPositionResponse {
   side: 'long' | 'short' | 'none';
   entry_price?: number;
   mark_price?: number;
+  liquidation_price?: number;
+  leverage?: number | null;
+  margin_mode?: string | null;
   unrealized_pnl?: number;
   pnl_pct?: number;
 }
@@ -182,12 +185,18 @@ export const manualTradeService = {
     );
   },
 
-  getActivePosition: async (apiKeyId: number, symbol: string) => {
+  getActivePosition: async (apiKeyId: number, symbol: string, forceRefresh: boolean = false) => {
     const key = `pos:${apiKeyId}:${symbol.trim().toUpperCase()}`;
-    return _coalescedPoll(key, async () => {
-      const response = await api.get(`/trading/api-key-position/${apiKeyId}?symbol=${encodeURIComponent(symbol)}`);
-      return response.data as FastPositionResponse;
-    });
+    return _coalescedPoll(
+      key,
+      async () => {
+        const response = await api.get(
+          `/trading/api-key-position/${apiKeyId}?symbol=${encodeURIComponent(symbol)}${forceRefresh ? '&force_refresh=true' : ''}`
+        );
+        return response.data as FastPositionResponse;
+      },
+      forceRefresh
+    );
   },
 
   placeOrder: async (order: OrderPayload) => {

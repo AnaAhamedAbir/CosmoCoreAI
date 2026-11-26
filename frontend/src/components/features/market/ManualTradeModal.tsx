@@ -1430,6 +1430,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       writeCachedBalance(selectedApi, activeSymbol, data);
       if (activeSymbol.includes(':')) {
         setPositionData(pos);
+      } else {
+        setPositionData(null);
       }
     } catch (e) {
       if (!isSilent && !readCachedBalance(selectedApi, activeSymbol)) {
@@ -5334,6 +5336,11 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                     <span className="text-[11px] font-mono font-bold text-gray-200">
                                       {isInverseFutures && positionData.contracts ? `${positionData.contracts} Cont (~${positionData.amount.toFixed(2)} ${baseCurrency})` : `${positionData.amount} ${baseCurrency}`}
                                     </span>
+                                    {Number(positionData.liquidation_price || 0) > 0 && (
+                                      <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-orange-500/20 text-orange-300 border border-orange-500/40">
+                                        Liq: ${formatDisplayPrice(Number(positionData.liquidation_price))}
+                                      </span>
+                                    )}
                                   </div>
                                   <span className="text-[9.5px] text-gray-400 font-mono">
                                     Instant Market Exit / Flatten

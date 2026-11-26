@@ -976,7 +976,15 @@ class ManualTradeService:
         is_futures = ':' in symbol
         if not is_futures:
             # Spot markets don't have "positions", just balances.
-            return {"amount": 0.0, "side": "none", "entry_price": 0.0, "mark_price": 0.0, "unrealized_pnl": 0.0, "pnl_pct": 0.0}
+            return {
+                "amount": 0.0,
+                "side": "none",
+                "entry_price": 0.0,
+                "mark_price": 0.0,
+                "liquidation_price": 0.0,
+                "unrealized_pnl": 0.0,
+                "pnl_pct": 0.0,
+            }
 
         cache_key = (int(api_key_id), str(symbol).strip().upper())
         now_ts = time.time()
@@ -1035,6 +1043,9 @@ class ManualTradeService:
                      "side": "none",
                      "entry_price": 0.0,
                      "mark_price": 0.0,
+                     "liquidation_price": 0.0,
+                     "leverage": None,
+                     "margin_mode": None,
                      "unrealized_pnl": 0.0,
                      "pnl_pct": 0.0,
                  }
@@ -1055,6 +1066,33 @@ class ManualTradeService:
             info_d = active_pos.get('info') if isinstance(active_pos.get('info'), dict) else {}
             mark_price = float(active_pos.get('markPrice') or info_d.get('markPrice') or 0.0)
             entry_price = float(active_pos.get('entryPrice') or info_d.get('entryPrice') or 0.0)
+            liquidation_price = 0.0
+            for liq_cand in (
+                active_pos.get('liquidationPrice'),
+                info_d.get('liquidationPrice'),
+                info_d.get('liqPrice'),
+            ):
+                if liq_cand is not None and liq_cand != '':
+                    try:
+                        liq_val = float(liq_cand)
+                        if liq_val > 0:
+                            liquidation_price = liq_val
+                            break
+                    except (TypeError, ValueError):
+                        continue
+            pos_leverage = None
+            for lev_cand in (active_pos.get('leverage'), info_d.get('leverage')):
+                if lev_cand is not None and lev_cand != '':
+                    try:
+                        lv = float(lev_cand)
+                        if lv > 0:
+                            pos_leverage = lv
+                            break
+                    except (TypeError, ValueError):
+                        continue
+            pos_margin_mode = str(
+                active_pos.get('marginMode') or info_d.get('marginType') or ''
+            ).strip().lower() or None
             unrealized_pnl = float(
                 active_pos.get('unrealizedPnl')
                 if active_pos.get('unrealizedPnl') is not None
@@ -1089,6 +1127,9 @@ class ManualTradeService:
                  "side": side,
                  "entry_price": float(entry_price),
                  "mark_price": float(mark_price),
+                 "liquidation_price": float(liquidation_price),
+                 "leverage": pos_leverage,
+                 "margin_mode": pos_margin_mode,
                  "unrealized_pnl": float(unrealized_pnl),
                  "pnl_pct": round(float(pnl_pct), 3),
             }
@@ -1182,9 +1223,10 @@ class ManualTradeService:
                 raw_orders = await exchange.fetch_open_orders(symbol)
 
             # Exclude internal disaster SL orders that belong to active software Smart Chases
-            # so the chart only displays the primary Smart Chase trigger line
+            # and index linked entry_price values for active TP orders (for Spot & multi-bracket P/L).
             active_disaster_ids = set()
             active_tp_ids = set()
+            tp_entry_price_map = {}
             try:
                 from app.services.bracket_order_service import BracketOrderService
                 active_tp_ids.update(BracketOrderService.KNOWN_TP_ORDER_IDS)
@@ -1194,7 +1236,21 @@ class ManualTradeService:
                         active_disaster_ids.add(str(d_id))
                     t_id = s_data.get('tp_order_id')
                     if t_id:
-                        active_tp_ids.add(str(t_id))
+                        t_id_s = str(t_id)
+                        active_tp_ids.add(t_id_s)
+                        ep_val = float(s_data.get('entry_price') or 0.0)
+                        if ep_val > 0 and t_id_s not in tp_entry_price_map:
+                            tp_entry_price_map[t_id_s] = ep_val
+                for eb_data in BracketOrderService.ACTIVE_ENTRY_BRACKETS.values():
+                    if eb_data.get('cancelled'):
+                        continue
+                    t_id = eb_data.get('tp_order_id')
+                    if t_id:
+                        t_id_s = str(t_id)
+                        active_tp_ids.add(t_id_s)
+                        ep_val = float(eb_data.get('entry_price') or 0.0)
+                        if ep_val > 0 and t_id_s not in tp_entry_price_map:
+                            tp_entry_price_map[t_id_s] = ep_val
                 from app.services.manual_smart_chase_executor import ACTIVE_SMART_CHASES
                 for c_data in ACTIVE_SMART_CHASES.values():
                     d_id = c_data.get('disaster_sl_order_id')
@@ -1202,7 +1258,11 @@ class ManualTradeService:
                         active_disaster_ids.add(str(d_id))
                     t_id = c_data.get('tp_order_id')
                     if t_id:
-                        active_tp_ids.add(str(t_id))
+                        t_id_s = str(t_id)
+                        active_tp_ids.add(t_id_s)
+                        ep_val = float(c_data.get('entry_price') or 0.0)
+                        if ep_val > 0 and t_id_s not in tp_entry_price_map:
+                            tp_entry_price_map[t_id_s] = ep_val
             except Exception as d_chk_err:
                 logger.debug(f"Disaster/TP ID check: {d_chk_err}")
 
@@ -1253,6 +1313,11 @@ class ManualTradeService:
                         or tif_upper == 'GTX'
                         or bool(o.get('postOnly'))
                     )
+                    linked_entry_px = tp_entry_price_map.get(order_id_str)
+                    if not linked_entry_px:
+                        prev_meta = ManualTradeService._ORDER_META_CACHE.get((int(api_key_id), order_id_str))
+                        if prev_meta and prev_meta[0].get('entryPrice'):
+                            linked_entry_px = float(prev_meta[0]['entryPrice'])
                     order_entry = {
                         'id': order_id_str,
                         'side': str(o.get('side') or '').lower(),  # 'buy' or 'sell'
@@ -1262,6 +1327,8 @@ class ManualTradeService:
                         'remaining': float(o.get('remaining') or o.get('amount') or info_dict.get('origQty') or 0.0),
                         'isSoftwareSL': is_stop,
                         'mode': 'TP' if is_tp else ('STOP' if is_stop else 'LIMIT'),
+                        'rawType': info_type or raw_type,
+                        'entryPrice': float(linked_entry_px) if linked_entry_px and float(linked_entry_px) > 0 else None,
                         'isPostOnly': is_post_only_order,
                         'isIceberg': raw_iceberg_qty > 0,
                         'icebergQty': raw_iceberg_qty if raw_iceberg_qty > 0 else None
@@ -2508,6 +2575,7 @@ class ManualTradeService:
                 )
 
                 ManualTradeService.invalidate_open_orders_cache(api_key_record.id, order_req.symbol)
+                ManualTradeService.invalidate_position_cache(api_key_record.id, order_req.symbol)
                 anchor_suffix = f" (Anchor: ${peg_anchor_price:,.4f})" if peg_anchor_price else ""
                 strat_tag = " [Wall-Aware]" if peg_strategy == 'wall_aware' else (" [Inside-Spread]" if peg_strategy == 'inside_spread' else "")
                 return {
@@ -3113,6 +3181,7 @@ class ManualTradeService:
                 )
 
             ManualTradeService.invalidate_open_orders_cache(api_key_record.id, order_req.symbol)
+            ManualTradeService.invalidate_position_cache(api_key_record.id, order_req.symbol)
 
             if response and response.get('id'):
                 oid_placed = str(response.get('id'))
@@ -3255,8 +3324,16 @@ class ManualTradeService:
             ex_params = {}
 
             if cached_order:
-                is_conditional_stop = bool(cached_order.get('isSoftwareSL'))
-                if is_conditional_stop:
+                raw_cached_t = str(cached_order.get('rawType') or '').lower()
+                is_cond_tp = (
+                    str(cached_order.get('mode') or '').upper() == 'TP'
+                    and 'take_profit' in raw_cached_t
+                    and 'limit' not in raw_cached_t
+                )
+                is_conditional_stop = bool(cached_order.get('isSoftwareSL')) or is_cond_tp
+                if is_cond_tp:
+                    order_type = 'TAKE_PROFIT_MARKET'
+                elif is_conditional_stop:
                     order_type = str(cached_order.get('mode') or 'STOP_MARKET')
                 elif cached_order.get('isPostOnly'):
                     ex_params['postOnly'] = True
@@ -4963,6 +5040,7 @@ class ManualTradeService:
                 )
 
                 ManualTradeService.invalidate_open_orders_cache(api_key_id, symbol)
+                ManualTradeService.invalidate_position_cache(api_key_id, symbol)
                 return {
                     "success": True,
                     "symbol": symbol,

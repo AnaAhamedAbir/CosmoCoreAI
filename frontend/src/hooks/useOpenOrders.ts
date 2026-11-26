@@ -12,6 +12,8 @@ export interface OpenLimitOrder {
   isSoftwareSL?: boolean;
   mode?: string;
   type?: string;
+  rawType?: string;
+  entryPrice?: number;
   isIceberg?: boolean;
   icebergQty?: number;
 }
@@ -83,6 +85,7 @@ export const useOpenOrders = (
 
         const limitOrders = (openOrdersData?.orders ?? (Array.isArray(openOrdersData) ? openOrdersData : [])).map((o: any) => ({
           ...o,
+          entryPrice: o.entryPrice ? Number(o.entryPrice) : undefined,
           isIceberg: Boolean(o.isIceberg),
           icebergQty: o.icebergQty ? Number(o.icebergQty) : undefined
         }));
@@ -98,7 +101,8 @@ export const useOpenOrders = (
             remaining: Number(sl.amount ?? 0),
             isSoftwareSL: true,
             mode: sl.mode,
-            type: sl.type
+            type: sl.type,
+            entryPrice: sl.entry_price ? Number(sl.entry_price) : undefined,
           }))
           .filter((sl: any) => sl.price > 0);
         const deduped = new Map<string, OpenLimitOrder>();
@@ -226,6 +230,12 @@ export const useOpenOrders = (
       const exp = Date.now() + 4500;
       for (const raw of incoming) {
         const oid = String(raw.id);
+        const existingOpt = optimisticOrdersRef.current.get(oid);
+        const existingCur = ordersRef.current.find((o) => String(o.id) === oid);
+        const preservedEntryPrice =
+          raw.entryPrice !== undefined ? raw.entryPrice : (existingOpt?.entryPrice ?? existingCur?.entryPrice);
+        const preservedRawType =
+          raw.rawType !== undefined ? raw.rawType : (existingOpt?.rawType ?? existingCur?.rawType);
         tombstoneMapRef.current.delete(oid);
         optimisticOrdersRef.current.set(oid, {
           ...raw,
@@ -234,6 +244,8 @@ export const useOpenOrders = (
           amount: Number(raw.amount ?? 0),
           filled: Number(raw.filled ?? 0),
           remaining: Number(raw.remaining ?? raw.amount ?? 0),
+          ...(preservedEntryPrice !== undefined ? { entryPrice: preservedEntryPrice } : {}),
+          ...(preservedRawType !== undefined ? { rawType: preservedRawType } : {}),
           _exp: exp,
         });
       }
@@ -247,6 +259,11 @@ export const useOpenOrders = (
         }
         for (const raw of incoming) {
           const oid = String(raw.id);
+          const existing = nextMap.get(oid);
+          const preservedEntryPrice =
+            raw.entryPrice !== undefined ? raw.entryPrice : existing?.entryPrice;
+          const preservedRawType =
+            raw.rawType !== undefined ? raw.rawType : existing?.rawType;
           nextMap.set(oid, {
             ...raw,
             id: oid,
@@ -254,6 +271,8 @@ export const useOpenOrders = (
             amount: Number(raw.amount ?? 0),
             filled: Number(raw.filled ?? 0),
             remaining: Number(raw.remaining ?? raw.amount ?? 0),
+            ...(preservedEntryPrice !== undefined ? { entryPrice: preservedEntryPrice } : {}),
+            ...(preservedRawType !== undefined ? { rawType: preservedRawType } : {}),
           });
         }
         return Array.from(nextMap.values());
@@ -273,38 +292,51 @@ export const useOpenOrders = (
     };
 
     const handleOptimisticSwap = (event: Event) => {
+      if (!enabled) return;
       const detail = (event as CustomEvent<{ oldOrderId?: string; newOrderId?: string; newPrice?: number }>).detail;
       const oldId = detail?.oldOrderId ? String(detail.oldOrderId) : '';
       const newId = detail?.newOrderId ? String(detail.newOrderId) : '';
       if (!oldId) return;
+      const resolvedId = newId || oldId;
+
+      if (oldId !== resolvedId) {
+        optimisticOrdersRef.current.delete(oldId);
+        tombstoneMapRef.current.set(oldId, Date.now() + 5000);
+      }
+
       const existing = ordersRef.current.find((o) => String(o.id) === oldId) || optimisticOrdersRef.current.get(oldId);
       if (existing) {
-        const resolvedId = newId || String(existing.id);
         const updatedOrder: OpenLimitOrder = {
           ...existing,
           id: resolvedId,
           price: typeof detail.newPrice === 'number' ? detail.newPrice : existing.price,
         };
-        if (oldId !== resolvedId) {
-          optimisticOrdersRef.current.delete(oldId);
-          tombstoneMapRef.current.set(oldId, Date.now() + 4500);
-        }
         tombstoneMapRef.current.delete(resolvedId);
         optimisticOrdersRef.current.set(resolvedId, {
           ...updatedOrder,
           _exp: Date.now() + 3500,
         });
       }
-      setOrders((prev) =>
-        prev.map((o) => {
-          if (String(o.id) !== oldId) return o;
-          return {
-            ...o,
-            id: newId || o.id,
-            price: typeof detail.newPrice === 'number' ? detail.newPrice : o.price,
-          };
-        })
-      );
+
+      setOrders((prev) => {
+        const nextMap = new Map<string, OpenLimitOrder>();
+        for (const o of prev) {
+          const oid = String(o.id);
+          if (oid === oldId) {
+            const updated: OpenLimitOrder = {
+              ...o,
+              id: resolvedId,
+              price: typeof detail.newPrice === 'number' ? detail.newPrice : o.price,
+            };
+            if (!nextMap.has(resolvedId)) {
+              nextMap.set(resolvedId, updated);
+            }
+          } else {
+            nextMap.set(oid, o);
+          }
+        }
+        return Array.from(nextMap.values());
+      });
     };
 
     window.addEventListener('refreshOpenOrders', handleRefresh);

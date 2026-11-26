@@ -100,7 +100,13 @@ def _resolve_market_mode(symbol: Optional[str], is_futures: bool) -> str:
     return "swap"
 
 
-def _is_internal_disaster_sl_id(api_key_id: int, oid: str) -> bool:
+def _is_internal_disaster_sl_id(
+    api_key_id: int,
+    oid: str,
+    symbol: Optional[str] = None,
+    side: Optional[str] = None,
+    raw_type: Optional[str] = None,
+) -> bool:
     """True when `oid` is an internal backup Disaster SL order (hidden from chart overlay)."""
     if not oid:
         return False
@@ -109,10 +115,14 @@ def _is_internal_disaster_sl_id(api_key_id: int, oid: str) -> bool:
         from app.services.bracket_order_service import BracketOrderService
         from app.services.manual_smart_chase_executor import ACTIVE_SMART_CHASES
 
-        for sdata in list(BracketOrderService.ACTIVE_SOFTWARE_SL.values()):
-            km = sdata.get("api_key_id") is None or int(sdata.get("api_key_id")) == int(api_key_id)
-            if km and str(sdata.get("disaster_sl_order_id") or "") == oid_s:
-                return True
+        if BracketOrderService.is_internal_disaster_sl_event(
+            api_key_id=api_key_id,
+            symbol=symbol,
+            side=side,
+            order_id=oid_s,
+            raw_type=raw_type,
+        ):
+            return True
 
         for cdata in list(ACTIVE_SMART_CHASES.values()):
             if str(cdata.get("disaster_sl_order_id") or "") == oid_s:
@@ -299,15 +309,27 @@ async def _stream_worker(
 
                         ManualTradeService.invalidate_open_orders_cache(api_key_id)
                         ManualTradeService.invalidate_wallet_balance_cache(api_key_id)
+                        if status in TERMINAL_STATUSES or filled_val > 0:
+                            ManualTradeService.invalidate_position_cache(api_key_id, sym or None)
 
                         if status in TERMINAL_STATUSES:
                             rep_exp = _replaced_order_ttl.pop(oid, 0.0)
                             if rep_exp and rep_exp > time.time() and status in ("canceled", "cancelled", "expired"):
                                 continue
                             # Cancelling/replacing a hidden backup Disaster SL must NEVER remove active TP or Smart Chase SL chart lines
-                            if status in ("canceled", "cancelled", "expired", "rejected") and _is_internal_disaster_sl_id(api_key_id, oid):
+                            if status in ("canceled", "cancelled", "expired", "rejected") and _is_internal_disaster_sl_id(
+                                api_key_id, oid, symbol=sym, side=o.get("side"), raw_type=o.get("type")
+                            ):
                                 continue
                             related_ids = _collect_related_bracket_ids(api_key_id, oid)
+                            try:
+                                from app.services.bracket_order_service import BracketOrderService
+                                BracketOrderService._mark_entry_bracket_closed(
+                                    entry_order_id=(oid if status in ("canceled", "cancelled", "expired", "rejected") else None),
+                                    tp_order_id=oid,
+                                )
+                            except Exception:
+                                pass
                             await publish_order_sync_event(
                                 user_id=user_id,
                                 event="order_removed",
@@ -318,31 +340,49 @@ async def _stream_worker(
                                 status=status,
                             )
                         elif status in OPEN_STATUSES:
+                            raw_t_open = str(o.get("type") or "").lower()
+                            if _is_internal_disaster_sl_id(
+                                api_key_id, oid, symbol=sym, side=o.get("side"), raw_type=raw_t_open
+                            ):
+                                continue
                             order_line = None
                             try:
                                 from app.services.bracket_order_service import BracketOrderService
-                                is_disaster = any(
-                                    str(s.get("disaster_sl_order_id") or "") == oid
-                                    for s in BracketOrderService.ACTIVE_SOFTWARE_SL.values()
-                                )
-                                if not is_disaster:
-                                    px = float(o.get("price") or o.get("stopPrice") or o.get("triggerPrice") or 0.0)
-                                    amt = float(o.get("amount") or 0.0)
-                                    rem = float(o.get("remaining") if o.get("remaining") is not None else max(0.0, amt - filled_val))
-                                    raw_t = str(o.get("type") or "").lower()
-                                    if px > 0 and amt > 0:
-                                        is_tp = ("take_profit" in raw_t) or (oid in BracketOrderService.KNOWN_TP_ORDER_IDS)
-                                        is_sl = (not is_tp) and ("stop" in raw_t or "trailing" in raw_t)
-                                        order_line = {
-                                            "id": oid,
-                                            "side": str(o.get("side") or "").lower(),
-                                            "price": px,
-                                            "amount": amt,
-                                            "filled": filled_val,
-                                            "remaining": rem,
-                                            "isSoftwareSL": is_sl,
-                                            "mode": "TP" if is_tp else ("STOP" if is_sl else "LIMIT"),
-                                        }
+                                px = float(o.get("price") or o.get("stopPrice") or o.get("triggerPrice") or 0.0)
+                                amt = float(o.get("amount") or 0.0)
+                                rem = float(o.get("remaining") if o.get("remaining") is not None else max(0.0, amt - filled_val))
+                                if px > 0 and amt > 0:
+                                    is_tp = ("take_profit" in raw_t_open) or (oid in BracketOrderService.KNOWN_TP_ORDER_IDS)
+                                    is_sl = (not is_tp) and ("stop" in raw_t_open or "trailing" in raw_t_open)
+                                    entry_px = 0.0
+                                    if is_tp:
+                                        for sdata in list(BracketOrderService.ACTIVE_SOFTWARE_SL.values()):
+                                            if str(sdata.get("tp_order_id") or "") == oid:
+                                                entry_px = float(sdata.get("entry_price") or 0.0)
+                                                if entry_px > 0:
+                                                    break
+                                        if entry_px <= 0:
+                                            for eb_data in list(BracketOrderService.ACTIVE_ENTRY_BRACKETS.values()):
+                                                if not eb_data.get("cancelled") and str(eb_data.get("tp_order_id") or "") == oid:
+                                                    entry_px = float(eb_data.get("entry_price") or 0.0)
+                                                    if entry_px > 0:
+                                                        break
+                                        if entry_px <= 0:
+                                            cached_entry = ManualTradeService._ORDER_META_CACHE.get((int(api_key_id), oid))
+                                            if cached_entry and isinstance(cached_entry[0], dict):
+                                                entry_px = float(cached_entry[0].get("entryPrice") or 0.0)
+                                    order_line = {
+                                        "id": oid,
+                                        "side": str(o.get("side") or "").lower(),
+                                        "price": px,
+                                        "amount": amt,
+                                        "filled": filled_val,
+                                        "remaining": rem,
+                                        "isSoftwareSL": is_sl,
+                                        "mode": "TP" if is_tp else ("STOP" if is_sl else "LIMIT"),
+                                        **({"rawType": str(o.get("type"))} if o.get("type") else {}),
+                                        **({"entryPrice": entry_px} if entry_px > 0 else {}),
+                                    }
                             except Exception:
                                 order_line = None
                             await publish_order_sync_event(

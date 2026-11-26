@@ -1460,13 +1460,14 @@ async def get_api_key_balance(
 async def get_api_key_position(
     api_key_id: int,
     symbol: str,
+    force_refresh: bool = False,
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_user)
 ):
     """Fetch active position for a specific API key & symbol"""
     try:
         from app.services.manual_trade_service import manual_trade_service
-        return await manual_trade_service.get_active_position(db, current_user.id, api_key_id, symbol)
+        return await manual_trade_service.get_active_position(db, current_user.id, api_key_id, symbol, force_refresh=force_refresh)
     except HTTPException as he:
         raise he
     except Exception as e:

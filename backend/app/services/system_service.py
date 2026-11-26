@@ -109,73 +109,77 @@ def _read_vps_cpu_temperature() -> Dict[str, Any]:
     return {"cpu_temp_c": None, "sensor_label": None, "available": False}
 
 class SystemService:
-    @staticmethod
-    async def check_health(db: Session):
+    _celery_health_cache: Optional[str] = None
+    _celery_health_cached_at: float = 0.0
+    _CELERY_HEALTH_CACHE_TTL_SEC: float = 10.0
+
+    @classmethod
+    async def check_health(cls, db: Session):
         """
         Check the health of critical system components: Database, Redis, Celery.
+        All synchronous I/O (DB SELECT 1, Celery inspect) is offloaded via asyncio.to_thread
+        so health checks can NEVER stall the FastAPI event loop.
         """
         services_status = {
             "database": "unknown",
             "redis": "unknown",
             "celery_worker": "unknown"
         }
-        
-        # 1. Database Check
+
+        # 1. Database Check (offloaded off event loop)
         try:
-            db.execute(text("SELECT 1"))
+            await asyncio.to_thread(db.execute, text("SELECT 1"))
             services_status["database"] = "online"
         except Exception as e:
             logger.error(f"Health Check - Database Error: {e}")
             services_status["database"] = "offline"
 
-        # 2. Redis Check
+        # 2. Redis Check (native async)
         try:
             redis_client = redis_manager.get_redis()
             if redis_client:
                 await redis_client.ping()
                 services_status["redis"] = "online"
             else:
-                # If client is None, it might not be initialized. 
-                # In a real app getting a request, it should be initialized.
                 services_status["redis"] = "offline"
         except Exception as e:
             logger.error(f"Health Check - Redis Error: {e}")
             services_status["redis"] = "offline"
 
-        # 3. Celery Worker Check
-        try:
-            # inspect() defaults to a small timeout if not specified, 
-            # but we should be explicit if possible. 
-            # However, standard Celery inspect() init accepts timeout.
-            inspector = celery_app.control.inspect(timeout=2.0)
-            stats = inspector.active()
-            
-            # stats is None if no workers replied.
-            # stats is a dict if workers replied (even if empty list of active tasks).
-            if stats is not None:
-                services_status["celery_worker"] = "online"
-            else:
-                services_status["celery_worker"] = "offline"
-        except Exception as e:
-            logger.error(f"Health Check - Celery Error: {e}")
-            services_status["celery_worker"] = "error"
+        # 3. Celery Worker Check (offloaded to worker thread + 10s TTL cache)
+        now = time.monotonic()
+        if (
+            cls._celery_health_cache is not None
+            and (now - cls._celery_health_cached_at) < cls._CELERY_HEALTH_CACHE_TTL_SEC
+        ):
+            services_status["celery_worker"] = cls._celery_health_cache
+        else:
+            def _inspect_celery_sync() -> str:
+                inspector = celery_app.control.inspect(timeout=1.5)
+                stats = inspector.active()
+                return "online" if stats is not None else "offline"
+
+            try:
+                celery_state = await asyncio.to_thread(_inspect_celery_sync)
+                services_status["celery_worker"] = celery_state
+                cls._celery_health_cache = celery_state
+                cls._celery_health_cached_at = time.monotonic()
+            except Exception as e:
+                logger.error(f"Health Check - Celery Error: {e}")
+                services_status["celery_worker"] = "error"
 
         # Determine overall status
-        # Critical services that cause UNHEALTHY state
         if services_status["database"] != "online" or services_status["redis"] != "online":
-             overall_status = "unhealthy"
+            overall_status = "unhealthy"
         elif services_status["celery_worker"] != "online":
-             # Non-critical but important
-             overall_status = "degraded"
+            overall_status = "degraded"
         else:
-             overall_status = "healthy"
+            overall_status = "healthy"
 
         return {
             "status": overall_status,
             "services": services_status,
-            # Timestamp can be added by the caller or here. 
-            # Using ISO format usually.
-            "timestamp": "now" # Placeholder, will be replaced or formatted in Pydantic schema if needed
+            "timestamp": "now"
         }
 
     @staticmethod
@@ -262,6 +266,41 @@ class SystemService:
     _binance_latency_cache: Optional[Dict[str, Any]] = None
     _binance_latency_cached_at: float = 0.0
     _BINANCE_CACHE_TTL_SEC: float = 8.0
+    _probe_sessions: Dict[int, Any] = {}
+
+    @classmethod
+    def _get_probe_session(cls) -> Optional[Any]:
+        """Reuse a persistent aiohttp ClientSession per event loop to avoid DNS/TLS overhead on every probe."""
+        if aiohttp is None:
+            return None
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return None
+        loop_id = id(loop)
+        sess = cls._probe_sessions.get(loop_id)
+        if sess is not None and not getattr(sess, "closed", True):
+            return sess
+        connector = aiohttp.TCPConnector(
+            limit=8,
+            ttl_dns_cache=300,
+            keepalive_timeout=55.0,
+            enable_cleanup_closed=True,
+        )
+        sess = aiohttp.ClientSession(connector=connector)
+        cls._probe_sessions[loop_id] = sess
+        return sess
+
+    @classmethod
+    async def close_probe_sessions(cls) -> None:
+        """Close persistent probe HTTP sessions cleanly on app shutdown."""
+        for sess in list(cls._probe_sessions.values()):
+            try:
+                if sess is not None and not getattr(sess, "closed", True):
+                    await sess.close()
+            except Exception:
+                pass
+        cls._probe_sessions.clear()
 
     @classmethod
     async def measure_binance_latency(cls, force: bool = False) -> Dict[str, Any]:
@@ -317,19 +356,12 @@ class SystemService:
         futures_ms: Optional[float] = None
         ws_ms: Optional[float] = None
 
-        if aiohttp is not None:
-            async with aiohttp.ClientSession() as session:
-                spot_ms, futures_ms, ws_ms = await asyncio.gather(
-                    _probe_http(session, "https://api.binance.com/api/v3/ping"),
-                    _probe_http(session, "https://fapi.binance.com/fapi/v1/ping"),
-                    _probe_tcp("stream.binance.com", 9443),
-                )
-        else:
-            spot_ms, futures_ms, ws_ms = await asyncio.gather(
-                _probe_http(None, "https://api.binance.com/api/v3/ping"),
-                _probe_http(None, "https://fapi.binance.com/fapi/v1/ping"),
-                _probe_tcp("stream.binance.com", 9443),
-            )
+        session = cls._get_probe_session()
+        spot_ms, futures_ms, ws_ms = await asyncio.gather(
+            _probe_http(session, "https://api.binance.com/api/v3/ping"),
+            _probe_http(session, "https://fapi.binance.com/fapi/v1/ping"),
+            _probe_tcp("stream.binance.com", 9443),
+        )
 
         samples = [v for v in (spot_ms, futures_ms, ws_ms) if v is not None]
         if not samples:

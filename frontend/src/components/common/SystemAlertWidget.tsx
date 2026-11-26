@@ -51,12 +51,15 @@ const LIGHT_LINE_COLOR: Record<LogLine['level'], string> = {
 };
 
 const CONTAINER_INFO: Record<string, { short: string; color: string; neon: string }> = {
-  cosmoquant_backend:  { short: 'API',    color: 'text-sky-300',    neon: '#38bdf8' },
-  cosmo_celery_worker: { short: 'CLR',    color: 'text-violet-300', neon: '#a78bfa' },
-  cosmo_celery_beat:   { short: 'SCH',    color: 'text-indigo-300', neon: '#818cf8' },
-  cosmoquant_redis:    { short: 'RDS',    color: 'text-rose-300',   neon: '#fb7185' },
-  cosmoquant_db:       { short: 'DB',     color: 'text-emerald-300',neon: '#34d399' },
-  cosmoquant_frontend: { short: 'WEB',    color: 'text-cyan-300',   neon: '#22d3ee' },
+  cosmoquant_backend:          { short: 'API', color: 'text-sky-300',     neon: '#38bdf8' },
+  cosmo_celery_worker:         { short: 'CLR', color: 'text-violet-300',  neon: '#a78bfa' },
+  cosmo_celery_worker_default: { short: 'CLR', color: 'text-violet-300',  neon: '#a78bfa' },
+  cosmo_celery_worker_heavy:   { short: 'HVY', color: 'text-fuchsia-300', neon: '#e879f9' },
+  cosmo_celery_beat:           { short: 'SCH', color: 'text-indigo-300',  neon: '#818cf8' },
+  cosmo_telegram_bot:          { short: 'BOT', color: 'text-amber-300',   neon: '#fbbf24' },
+  cosmoquant_redis:            { short: 'RDS', color: 'text-rose-300',    neon: '#fb7185' },
+  cosmoquant_db:               { short: 'DB',  color: 'text-emerald-300', neon: '#34d399' },
+  cosmoquant_frontend:         { short: 'WEB', color: 'text-cyan-300',    neon: '#22d3ee' },
 };
 
 // ─── Critical Toast ───────────────────────────────────────────────────────────
@@ -281,9 +284,9 @@ const LogTerminal: React.FC<{
   const src = filter ? (batches.has(filter) ? [batches.get(filter)!] : []) : Array.from(batches.values());
   for (const b of src) {
     const reversedLines = [...b.lines.slice(-60)].reverse();
-    for (const l of reversedLines) {
-      lines.push({ key: `${b.container}-${Math.random()}`, container: b.container, display: b.display_name, line: l.line, level: l.level });
-    }
+    reversedLines.forEach((l, idx) => {
+      lines.push({ key: `${b.container}-${idx}`, container: b.container, display: b.display_name, line: l.line, level: l.level });
+    });
   }
 
   const containers = Array.from(batches.keys());

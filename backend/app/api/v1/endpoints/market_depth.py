@@ -156,14 +156,16 @@ async def get_liquidity_sweep_absorption(
 async def websocket_market_depth(websocket: WebSocket, exchange_id: str, symbol: str):
     await websocket.accept()
     
-    # Ensure background stream is running and publishing to Redis
+    # Ensure background stream is running with refcount tracking so idle pairs auto-cleanup
+    acquired_stream_key = None
     if exchange_id.lower() == 'oanda':
         oanda_streamer.add_symbol(symbol)
     else:
-        await market_data_streamer.start_streaming(exchange_id, symbol)
+        acquired_stream_key = await market_data_streamer.acquire_stream(exchange_id, symbol)
     
     redis = redis_manager.get_redis()
     if not redis:
+        market_data_streamer.release_stream(acquired_stream_key)
         await websocket.close(code=1011, reason="Redis connection failed")
         return
         
@@ -200,23 +202,25 @@ async def websocket_market_depth(websocket: WebSocket, exchange_id: str, symbol:
     redis_task = asyncio.create_task(redis_listener())
     client_task = asyncio.create_task(client_listener())
     
-    done, pending = await asyncio.wait(
-        [redis_task, client_task],
-        return_when=asyncio.FIRST_COMPLETED
-    )
-    
-    for task in pending:
-        task.cancel()
+    try:
+        done, pending = await asyncio.wait(
+            [redis_task, client_task],
+            return_when=asyncio.FIRST_COMPLETED
+        )
         
-    try:
-        await pubsub.unsubscribe(channel_name)
-        await pubsub.close()
-    except Exception:
-        pass
-    try:
-        await websocket.close()
-    except Exception:
-        pass
+        for task in pending:
+            task.cancel()
+    finally:
+        market_data_streamer.release_stream(acquired_stream_key)
+        try:
+            await pubsub.unsubscribe(channel_name)
+            await pubsub.close()
+        except Exception:
+            pass
+        try:
+            await websocket.close()
+        except Exception:
+            pass
 
 @router.websocket("/ws/events")
 async def websocket_heatmap_events(websocket: WebSocket, symbol: str = None):

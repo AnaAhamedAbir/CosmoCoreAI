@@ -27,6 +27,8 @@ class L2DataCollector:
         self.futures_symbols: list[str] = []   # e.g. ["dogeusdt"]
         self.running = False
         self._tasks: list[asyncio.Task] = []
+        self._pending_rows: list[dict] = []
+        self._max_pending_rows: int = 500
 
     # ── Symbol Helpers ─────────────────────────────────────────────────────
 
@@ -138,34 +140,78 @@ class L2DataCollector:
         except Exception:
             return 0.0, 0.0, 0.0
 
-    # ── DB Save ────────────────────────────────────────────────────────────
+    # ── DB Save (Batched & Offloaded off Event Loop) ───────────────────────
+
+    @staticmethod
+    def _flush_batch_sync(rows: list[dict]) -> None:
+        if not rows:
+            return
+        db = SessionLocal()
+        try:
+            snaps = [OrderBookSnapshot(**r) for r in rows]
+            db.bulk_save_objects(snaps)
+            db.commit()
+        except Exception as e:
+            logger.error(f"[L2Collector] Batch DB save error ({len(rows)} rows): {e}")
+            db.rollback()
+        finally:
+            db.close()
+
+    async def _db_flush_loop(self) -> None:
+        """Flush buffered L2 snapshots once per second in a worker thread (never blocks event loop)."""
+        while self.running:
+            try:
+                await asyncio.sleep(1.0)
+                if not self._pending_rows:
+                    continue
+                batch = self._pending_rows
+                self._pending_rows = []
+                await asyncio.to_thread(self._flush_batch_sync, batch)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"[L2Collector] Flush loop error: {e}")
+
+    def _enqueue_snapshot(self, symbol: str, bids, asks,
+                          obi: float, spread: float, microprice: float,
+                          trade_count: int, buy_volume: float, sell_volume: float, trade_price: float,
+                          exchange: str) -> None:
+        if len(self._pending_rows) >= self._max_pending_rows:
+            # Drop oldest rows if DB lags so memory never grows unbounded
+            self._pending_rows = self._pending_rows[-(self._max_pending_rows // 2):]
+        self._pending_rows.append({
+            "exchange": exchange,
+            "symbol": symbol.upper(),
+            "bids": bids[:20],
+            "asks": asks[:20],
+            "obi": obi,
+            "spread": spread,
+            "microprice": microprice,
+            "trade_count": trade_count,
+            "buy_volume": buy_volume,
+            "sell_volume": sell_volume,
+            "trade_price": trade_price,
+        })
 
     async def _save_to_db(self, symbol: str, bids, asks,
                           obi: float, spread: float, microprice: float,
                           trade_count: int, buy_volume: float, sell_volume: float, trade_price: float,
                           exchange: str):
-        db = SessionLocal()
-        try:
-            snap = OrderBookSnapshot(
-                exchange=exchange,
-                symbol=symbol.upper(),   # stored as e.g. "DOGEUSDT"
-                bids=bids[:20],
-                asks=asks[:20],
-                obi=obi,
-                spread=spread,
-                microprice=microprice,
-                trade_count=trade_count,
-                buy_volume=buy_volume,
-                sell_volume=sell_volume,
-                trade_price=trade_price,
-            )
-            db.add(snap)
-            db.commit()
-        except Exception as e:
-            logger.error(f"[L2Collector] DB save error for {symbol}: {e}")
-            db.rollback()
-        finally:
-            db.close()
+        """Backward-compatible async helper; offloads sync SQLAlchemy commit to a worker thread."""
+        row = {
+            "exchange": exchange,
+            "symbol": symbol.upper(),
+            "bids": bids[:20],
+            "asks": asks[:20],
+            "obi": obi,
+            "spread": spread,
+            "microprice": microprice,
+            "trade_count": trade_count,
+            "buy_volume": buy_volume,
+            "sell_volume": sell_volume,
+            "trade_price": trade_price,
+        }
+        await asyncio.to_thread(self._flush_batch_sync, [row])
 
     # ── Stream Runner ──────────────────────────────────────────────────────
 
@@ -239,12 +285,10 @@ class L2DataCollector:
                                 buf["sell_vol"] = 0.0
                                 # keep last_price as is in case there are no trades in next second
                                 
-                                asyncio.create_task(
-                                    self._save_to_db(
-                                        sym, bids, asks, obi, spread, mp, 
-                                        trade_count, buy_vol, sell_vol, trade_price, 
-                                        label
-                                    )
+                                self._enqueue_snapshot(
+                                    sym, bids, asks, obi, spread, mp,
+                                    trade_count, buy_vol, sell_vol, trade_price,
+                                    label
                                 )
                                 last_save[sym] = now
 
@@ -280,6 +324,8 @@ class L2DataCollector:
                 self._run_stream(self._FUTURES_URL, self.futures_symbols, "Binance Futures")
             )
             self._tasks.append(t)
+
+        self._tasks.append(asyncio.create_task(self._db_flush_loop()))
 
         logger.debug(
             f"[L2Collector] Started — Spot: {self.spot_symbols} | "

@@ -399,13 +399,13 @@ class WallHunterBot(BaseWallHunterBot):
         }
         
         # Public instance for fetching market data without triggering auth checks (MEXC /api/v3/capital/config/getall)
-        self.public_exchange = exchange_class({'enableRateLimit': True})
+        self.public_exchange = exchange_class({'enableRateLimit': True, 'newUpdates': True})
         
         # Proxy Exchange Initialization (Cross-Exchange Routing)
         if self.enable_proxy_wall and hasattr(self, 'proxy_exchange') and self.proxy_exchange != self.exchange_id:
             try:
                 proxy_class = getattr(ccxt, self.proxy_exchange)
-                self.proxy_public_exchange = proxy_class({'enableRateLimit': True})
+                self.proxy_public_exchange = proxy_class({'enableRateLimit': True, 'newUpdates': True})
                 self.logger.info(f"🔄 Dual-Exchange Initialized: Native ({self.exchange_id}) | Proxy ({self.proxy_exchange})")
             except Exception as e:
                 self.logger.error(f"Failed to load proxy exchange {self.proxy_exchange}: {e}. Falling back to native.")

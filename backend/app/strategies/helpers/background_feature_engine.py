@@ -78,7 +78,10 @@ class BackgroundFeatureEngine:
                 async with BackgroundFeatureEngine._shared_lock:
                     if exchange_id not in BackgroundFeatureEngine._shared_exchanges:
                         exchange_class = getattr(ccxt_pro, exchange_id)
-                        BackgroundFeatureEngine._shared_exchanges[exchange_id] = exchange_class({'enableRateLimit': True})
+                        BackgroundFeatureEngine._shared_exchanges[exchange_id] = exchange_class({
+                            'enableRateLimit': True,
+                            'newUpdates': True,
+                        })
                     exchange = BackgroundFeatureEngine._shared_exchanges[exchange_id]
             initial = await exchange.fetch_trades(self.symbol, limit=500)
             if initial:
@@ -96,7 +99,10 @@ class BackgroundFeatureEngine:
         async with BackgroundFeatureEngine._shared_lock:
             if exchange_id not in BackgroundFeatureEngine._shared_exchanges:
                 exchange_class = getattr(ccxt_pro, exchange_id)
-                BackgroundFeatureEngine._shared_exchanges[exchange_id] = exchange_class({'enableRateLimit': True})
+                BackgroundFeatureEngine._shared_exchanges[exchange_id] = exchange_class({
+                    'enableRateLimit': True,
+                    'newUpdates': True,
+                })
             exchange = BackgroundFeatureEngine._shared_exchanges[exchange_id]
             
         from app.services.hybrid_deep_pipeline import calculate_trade_tick_features

@@ -90,3 +90,26 @@ celery_app.conf.update(
 
 # Auto-discover tasks in packages
 celery_app.autodiscover_tasks(["app.tasks", "app.forex"])
+
+# Stream Celery worker & beat logs into Sys Monitor -> Live Feed (no docker.sock needed)
+try:
+    from celery.signals import after_setup_logger, after_setup_task_logger
+
+    def _attach_celery_live_feed(logger=None, **kwargs):
+        try:
+            from app.utils import RedisLogHandler, detect_service_container_name
+            if logger is not None and not any(isinstance(h, RedisLogHandler) for h in logger.handlers):
+                h = RedisLogHandler(
+                    container_name=detect_service_container_name(),
+                    publish_bot_logs=False,
+                )
+                import logging as _logging
+                h.setFormatter(_logging.Formatter("%(message)s"))
+                logger.addHandler(h)
+        except Exception:
+            pass
+
+    after_setup_logger.connect(_attach_celery_live_feed, weak=False)
+    after_setup_task_logger.connect(_attach_celery_live_feed, weak=False)
+except Exception:
+    pass

@@ -239,9 +239,13 @@ async def get_vps_hardware_telemetry(
     current_user: models.User = Depends(deps.get_current_active_superuser)
 ):
     """Return live VPS host CPU, RAM, disk/ROM, uptime, temperature, and Binance network latency."""
+    import asyncio
     try:
-        data = SystemService.get_hardware_telemetry()
-        data["network"] = await SystemService.measure_binance_latency(force=refresh)
+        data, network = await asyncio.gather(
+            asyncio.to_thread(SystemService.get_hardware_telemetry),
+            SystemService.measure_binance_latency(force=refresh),
+        )
+        data["network"] = network
         data["timestamp"] = datetime.now(pytz.utc).isoformat()
         return data
     except Exception as e:

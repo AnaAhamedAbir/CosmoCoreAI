@@ -200,49 +200,77 @@ async def subscribe_to_block_trades():
 
 
 async def subscribe_to_system_alerts():
-    """Listens to 'system_alerts' Redis channel published by log_monitor_service.
-    Broadcasts each alert to all frontend clients connected to /ws/system-alerts.
-    """
+    """Listens to 'system_alerts' Redis channel with auto-reconnect and broadcasts to /ws/system-alerts."""
     print("🚨 Listening to System Alert Stream...")
-    redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
-    pubsub = redis.pubsub()
-    await pubsub.subscribe("system_alerts")
+    while True:
+        redis = None
+        pubsub = None
+        try:
+            redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+            pubsub = redis.pubsub()
+            await pubsub.subscribe("system_alerts")
 
-    try:
-        async for message in pubsub.listen():
-            if message["type"] == "message":
+            async for message in pubsub.listen():
+                if message["type"] == "message":
+                    try:
+                        data = json.loads(message["data"])
+                        await manager.broadcast(data, "system_alerts")
+                    except Exception as e:
+                        print(f"System Alert Forward Error: {e}")
+        except asyncio.CancelledError:
+            print("System Alert Subscriber Cancelled.")
+            raise
+        except Exception as e:
+            print(f"System Alert Redis Error (reconnecting in 3s): {e}")
+            await asyncio.sleep(3)
+        finally:
+            if pubsub is not None:
                 try:
-                    data = json.loads(message["data"])
-                    await manager.broadcast(data, "system_alerts")
-                except Exception as e:
-                    print(f"System Alert Forward Error: {e}")
-    except asyncio.CancelledError:
-        print("System Alert Subscriber Cancelled.")
-    finally:
-        await redis.close()
+                    await pubsub.close()
+                except Exception:
+                    pass
+            if redis is not None:
+                try:
+                    await redis.close()
+                except Exception:
+                    pass
 
 
 async def subscribe_to_container_logs():
-    """Listens to 'container_logs' Redis channel published by log_monitor_service.
-    Broadcasts each log batch to all frontend clients connected to /ws/container-logs.
-    """
+    """Listens to 'container_logs' Redis channel with auto-reconnect and broadcasts to /ws/container-logs."""
     print("📜 Listening to Container Log Stream...")
-    redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
-    pubsub = redis.pubsub()
-    await pubsub.subscribe("container_logs")
+    while True:
+        redis = None
+        pubsub = None
+        try:
+            redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+            pubsub = redis.pubsub()
+            await pubsub.subscribe("container_logs")
 
-    try:
-        async for message in pubsub.listen():
-            if message["type"] == "message":
+            async for message in pubsub.listen():
+                if message["type"] == "message":
+                    try:
+                        data = json.loads(message["data"])
+                        await manager.broadcast(data, "container_logs")
+                    except Exception as e:
+                        print(f"Container Log Forward Error: {e}")
+        except asyncio.CancelledError:
+            print("Container Log Subscriber Cancelled.")
+            raise
+        except Exception as e:
+            print(f"Container Log Redis Error (reconnecting in 3s): {e}")
+            await asyncio.sleep(3)
+        finally:
+            if pubsub is not None:
                 try:
-                    data = json.loads(message["data"])
-                    await manager.broadcast(data, "container_logs")
-                except Exception as e:
-                    print(f"Container Log Forward Error: {e}")
-    except asyncio.CancelledError:
-        print("Container Log Subscriber Cancelled.")
-    finally:
-        await redis.close()
+                    await pubsub.close()
+                except Exception:
+                    pass
+            if redis is not None:
+                try:
+                    await redis.close()
+                except Exception:
+                    pass
 
 
 async def subscribe_to_app_notifications():
@@ -299,6 +327,7 @@ async def _init_binance_spot_client():
     from app.services.ccxt_service import ccxt_service
     client = ccxtpro.binance({
         'enableRateLimit': True,
+        'newUpdates': True,
         'options': {'adjustForTimeDifference': True, 'defaultType': 'spot'}  # Explicitly spot — prevents routing to dapi.binance.com (COIN-M)
     })
     try:
@@ -472,6 +501,7 @@ async def fetch_market_data_background():
                                         except: pass
                                     if formatted_trades:
                                         await manager.broadcast_market_data(sym, "trade", formatted_trades)
+                                    await asyncio.sleep(0.1)
                                 except asyncio.CancelledError:
                                     break
                                 except Exception:
@@ -652,16 +682,17 @@ async def startup_event():
     # 1. Logging Setup
     logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
     
-    redis_handler = RedisLogHandler()
+    redis_handler = RedisLogHandler(container_name="cosmoquant_backend", publish_bot_logs=True)
     redis_handler.setFormatter(logging.Formatter('%(message)s'))
     
-    # Hook Uvicorn Loggers
-    for logger_name in ["uvicorn", "uvicorn.access", "uvicorn.error", "fastapi"]:
+    # Hook Uvicorn, FastAPI, and App Loggers (idempotent — feeds Sys Monitor Live Feed without docker.sock)
+    for logger_name in ["uvicorn", "uvicorn.access", "uvicorn.error", "fastapi", "app"]:
         log = logging.getLogger(logger_name)
-        log.addHandler(redis_handler)
+        if not any(isinstance(h, RedisLogHandler) for h in log.handlers):
+            log.addHandler(redis_handler)
         log.setLevel(logging.INFO)
 
-    print("✅ Backend System Logging attached to Redis.")
+    logger.info("✅ Backend System Logging attached to Redis Live Feed.")
 
     # 1.5 Clean up orphaned Celery jobs (Server Restarted)
     try:
@@ -823,7 +854,7 @@ async def startup_event():
         while True:
             await asyncio.sleep(30 * 60)   # 30 minutes
             try:
-                new_spot, new_futures = l2_collector.load_symbols_from_db()
+                new_spot, new_futures = await asyncio.to_thread(l2_collector.load_symbols_from_db)
                 if l2_collector.symbols_changed(new_spot, new_futures):
                     logger.info(
                         f"[L2Watcher] Symbol list changed! "
@@ -996,7 +1027,20 @@ async def shutdown_event():
     # Close all cached Exchange Connections (ManualTradeModal pool)
     await exchange_pool.close_all()
 
-    # Close all cached CCXT connections from Market Depth Service
+    # Close persistent Binance latency probe HTTP session
+    try:
+        from app.services.system_service import SystemService
+        await SystemService.close_probe_sessions()
+    except Exception:
+        pass
+
+    # Close all cached CCXT connections from Market Depth Service & Market Data Streamer
+    try:
+        from app.services.market_data_streamer import market_data_streamer
+        await market_data_streamer.stop_all()
+    except Exception as e:
+        logger.warning(f"[Shutdown] market_data_streamer.stop_all() failed (non-fatal): {e}")
+
     try:
         await market_depth_service.close_all_exchanges()
     except Exception as e:
@@ -1170,6 +1214,21 @@ async def websocket_container_logs(websocket: WebSocket):
         db.close()
 
     await manager.connect(websocket, "container_logs")
+    # Immediately replay cached live log snapshots from Redis so Sys Monitor Live Feed renders instantly
+    try:
+        from app.utils import LIVE_CONTAINER_LOGS_KEY_PREFIX
+        async_r = redis_manager.get_redis()
+        if async_r is not None:
+            keys = await async_r.keys(f"{LIVE_CONTAINER_LOGS_KEY_PREFIX}*")
+            for k in sorted(keys or []):
+                raw = await async_r.get(k)
+                if raw:
+                    try:
+                        await websocket.send_json(json.loads(raw))
+                    except Exception:
+                        break
+    except Exception:
+        pass
     try:
         while True: await websocket.receive_text()
     except WebSocketDisconnect:

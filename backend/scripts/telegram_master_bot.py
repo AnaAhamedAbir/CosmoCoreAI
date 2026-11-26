@@ -21,6 +21,17 @@ logger = logging.getLogger(__name__)
 # Reduce httpx polling logs spam
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
+# Stream Telegram Bot logs into Sys Monitor -> Live Feed (no docker.sock needed)
+try:
+    from app.utils import attach_live_log_handler
+    attach_live_log_handler(
+        logger_names=("__main__", "app"),
+        container_name="cosmo_telegram_bot",
+        publish_bot_logs=False,
+    )
+except Exception:
+    pass
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the /start command."""
     args = context.args

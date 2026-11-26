@@ -106,9 +106,15 @@ class BinanceLiquidationStream:
                     "timestamp": data.get("E")
                 }
                 
-                # Publish to global stream
+                # Publish to global stream asynchronously (never block event loop on sync Redis)
                 channel = f"stream:liquidations:{formatted_symbol}"
-                self.redis.publish(channel, json.dumps(payload))
+                payload_json = json.dumps(payload)
+                from app.core.redis import redis_manager
+                async_redis = redis_manager.get_redis()
+                if async_redis is not None:
+                    await async_redis.publish(channel, payload_json)
+                else:
+                    await asyncio.to_thread(self.redis.publish, channel, payload_json)
 
                 if amount >= 500000:
                     import time

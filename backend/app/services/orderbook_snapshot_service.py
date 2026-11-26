@@ -57,63 +57,65 @@ class OrderbookSnapshotService:
         if not symbols_to_record:
             return
 
-        db = SessionLocal()
-        try:
-            for symbol in symbols_to_record:
-                # 1. Fetch current orderbook snapshot. 
-                # We use the existing heatmap service which is optimized and cached.
-                # exchange is always 'binance' by default in the system based on other workers
+        # 1. Fetch orderbooks asynchronously first (NEVER hold a DB connection open across network awaits)
+        rows_to_insert: List[Dict[str, Any]] = []
+        for symbol in symbols_to_record:
+            try:
+                data = await market_depth_service.fetch_raw_order_book(
+                    symbol=symbol,
+                    exchange_id='binance',
+                    limit=100
+                )
+
+                if not data or not data.get("bids") or not data.get("asks"):
+                    continue
+
+                bids = data["bids"]
+                asks = data["asks"]
+
                 try:
-                    # Fetch raw orderbook instead of bucketed heatmap to preserve microstructural integrity
-                    data = await market_depth_service.fetch_raw_order_book(
-                        symbol=symbol,
-                        exchange_id='binance',
-                        limit=100
-                    )
-                    
-                    if not data or not data.get("bids") or not data.get("asks"):
-                        continue
-                        
-                    bids = data["bids"]
-                    asks = data["asks"]
-                    
-                    # Normalize formats (some ccxt versions return lists, some dicts for fetch_raw_order_book)
-                    # market_depth_service returns dicts {"price": ..., "size": ...}
-                    try:
-                        best_bid = float(bids[0].get("price", bids[0][0] if isinstance(bids[0], (list, tuple)) else 0))
-                        best_ask = float(asks[0].get("price", asks[0][0] if isinstance(asks[0], (list, tuple)) else 0))
-                        
-                        bid_vol = sum([float(b.get("size", b[1] if isinstance(b, (list, tuple)) else 0)) for b in bids])
-                        ask_vol = sum([float(a.get("size", a[1] if isinstance(a, (list, tuple)) else 0)) for a in asks])
-                    except (IndexError, AttributeError, ValueError, TypeError):
-                        continue
-                        
-                    total_vol = bid_vol + ask_vol
-                    obi = bid_vol / total_vol if total_vol > 0 else 0.5
-                    spread = (best_ask - best_bid) / best_bid if best_bid > 0 else 0.0
-                    microprice = ((bid_vol * best_ask) + (ask_vol * best_bid)) / total_vol if total_vol > 0 else (best_bid + best_ask) / 2
-                    
-                    # 2. Save to database
-                    snapshot = OrderBookSnapshot(
-                        exchange='binance',
-                        symbol=symbol,
-                        timestamp=datetime.utcnow(),
-                        bids=bids,
-                        asks=asks,
-                        obi=obi,
-                        spread=spread,
-                        microprice=microprice
-                    )
-                    db.add(snapshot)
-                
-                except Exception as e:
-                    logger.error(f"Failed to record orderbook snapshot for {symbol}: {e}")
-            
-            # Commit all chunks at once
-            db.commit()
-            
-        finally:
-            db.close()
+                    best_bid = float(bids[0].get("price", bids[0][0] if isinstance(bids[0], (list, tuple)) else 0))
+                    best_ask = float(asks[0].get("price", asks[0][0] if isinstance(asks[0], (list, tuple)) else 0))
+
+                    bid_vol = sum([float(b.get("size", b[1] if isinstance(b, (list, tuple)) else 0)) for b in bids])
+                    ask_vol = sum([float(a.get("size", a[1] if isinstance(a, (list, tuple)) else 0)) for a in asks])
+                except (IndexError, AttributeError, ValueError, TypeError):
+                    continue
+
+                total_vol = bid_vol + ask_vol
+                obi = bid_vol / total_vol if total_vol > 0 else 0.5
+                spread = (best_ask - best_bid) / best_bid if best_bid > 0 else 0.0
+                microprice = ((bid_vol * best_ask) + (ask_vol * best_bid)) / total_vol if total_vol > 0 else (best_bid + best_ask) / 2
+
+                rows_to_insert.append({
+                    "exchange": "binance",
+                    "symbol": symbol,
+                    "timestamp": datetime.utcnow(),
+                    "bids": bids,
+                    "asks": asks,
+                    "obi": obi,
+                    "spread": spread,
+                    "microprice": microprice,
+                })
+            except Exception as e:
+                logger.error(f"Failed to record orderbook snapshot for {symbol}: {e}")
+
+        if not rows_to_insert:
+            return
+
+        # 2. Persist all snapshots in a single off-loop DB commit
+        def _commit_sync(rows: List[Dict[str, Any]]) -> None:
+            db = SessionLocal()
+            try:
+                db.bulk_save_objects([OrderBookSnapshot(**r) for r in rows])
+                db.commit()
+            except Exception:
+                db.rollback()
+                raise
+            finally:
+                db.close()
+
+        await asyncio.to_thread(_commit_sync, rows_to_insert)
 
     async def get_historical_snapshots(
         self, 
@@ -124,34 +126,33 @@ class OrderbookSnapshotService:
         interval: str = "1m"
     ) -> List[Dict[str, Any]]:
         """
-        Fetches historical snapshots.
-        If interval is high, we might want to sample. For now, we return all records 
-        within the range since we record exactly every interval_seconds.
+        Fetches historical snapshots off the event loop.
         """
-        db = SessionLocal()
-        try:
-            query = select(OrderBookSnapshot).where(
-                and_(
-                    OrderBookSnapshot.symbol == symbol,
-                    OrderBookSnapshot.exchange == exchange,
-                    OrderBookSnapshot.timestamp >= start_time,
-                    OrderBookSnapshot.timestamp <= end_time
-                )
-            ).order_by(OrderBookSnapshot.timestamp.asc())
-            
-            result = db.execute(query).scalars().all()
-            
-            formatted_data = []
-            for record in result:
-                formatted_data.append({
-                    "timestamp": record.timestamp.isoformat(),
-                    "bids": record.bids,
-                    "asks": record.asks
-                })
-                
-            return formatted_data
-        finally:
-            db.close()
+        def _query_sync() -> List[Dict[str, Any]]:
+            db = SessionLocal()
+            try:
+                query = select(OrderBookSnapshot).where(
+                    and_(
+                        OrderBookSnapshot.symbol == symbol,
+                        OrderBookSnapshot.exchange == exchange,
+                        OrderBookSnapshot.timestamp >= start_time,
+                        OrderBookSnapshot.timestamp <= end_time
+                    )
+                ).order_by(OrderBookSnapshot.timestamp.asc())
+
+                result = db.execute(query).scalars().all()
+                return [
+                    {
+                        "timestamp": record.timestamp.isoformat(),
+                        "bids": record.bids,
+                        "asks": record.asks
+                    }
+                    for record in result
+                ]
+            finally:
+                db.close()
+
+        return await asyncio.to_thread(_query_sync)
 
 
 orderbook_snapshot_service = OrderbookSnapshotService()

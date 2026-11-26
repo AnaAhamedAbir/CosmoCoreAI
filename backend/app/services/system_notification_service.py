@@ -462,7 +462,8 @@ class SystemNotificationService:
                 if claimed is False:
                     return None
 
-            notif_dict = SystemNotificationService._persist_notification(
+            notif_dict = await asyncio.to_thread(
+                SystemNotificationService._persist_notification,
                 user_id=user_id,
                 category=category,
                 title=title,

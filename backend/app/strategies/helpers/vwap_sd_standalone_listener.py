@@ -22,7 +22,7 @@ class VWAPSDStandaloneListener:
             self.bot.logger.error(f"[VWAP SD Snipe] Unsupported exchange: {exchange_id}")
             return
             
-        exchange = exchange_class({'enableRateLimit': True})
+        exchange = exchange_class({'enableRateLimit': True, 'newUpdates': True})
         
         try:
             # First, fetch historical data for the current day to seed the VWAP correctly

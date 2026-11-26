@@ -314,7 +314,7 @@ class MarketDepthService:
                     url = f"https://api-fxpractice.oanda.com/v3/accounts/{account_id}/instruments"
                     headers = {"Authorization": f"Bearer {api_key}"}
                     try:
-                        response = requests.get(url, headers=headers)
+                        response = await asyncio.to_thread(requests.get, url, headers=headers, timeout=5)
                         response.raise_for_status()
                         data = response.json()
                         for inst in data.get("instruments", []):
@@ -441,7 +441,7 @@ class MarketDepthService:
                     url = f"https://api-fxpractice.oanda.com/v3/instruments/{oanda_symbol}/candles?count={limit}&granularity={oanda_tf}&price=M"
                     headers = {"Authorization": f"Bearer {api_key}"}
                     try:
-                        response = requests.get(url, headers=headers, timeout=5)
+                        response = await asyncio.to_thread(requests.get, url, headers=headers, timeout=5)
                         response.raise_for_status()
                         data = response.json()
                         candles = data.get("candles", [])

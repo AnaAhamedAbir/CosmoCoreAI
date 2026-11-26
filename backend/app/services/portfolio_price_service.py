@@ -22,6 +22,7 @@ class PortfolioPriceService:
                 return None
             client = exchange_class({
                 'enableRateLimit': True,
+                'newUpdates': True,
                 'options': {'adjustForTimeDifference': True}
             })
             # Copy pre-warmed markets from ccxt_service if available (0ms)

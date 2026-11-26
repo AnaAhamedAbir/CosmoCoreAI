@@ -43,11 +43,24 @@ logger = logging.getLogger(__name__)
 
 
 class _QuietPollingAccessFilter(logging.Filter):
-    """Suppress noisy 200/304 polling access logs for update-status while keeping errors visible."""
+    """Suppress noisy 200/304 GET polling access logs while keeping all mutations and errors visible."""
+
+    _QUIET_POLL_SUBSTRINGS = (
+        "/api/v1/system/update-status",
+        "/api/v1/system/ping",
+        "/api/v1/system/hardware-telemetry",
+        "/api/v1/system/health",
+        "/api/v1/trading/active-software-brackets/",
+        "/api/v1/trading/open-limit-orders/",
+        "/api/v1/trading/api-key-balance/",
+        "/api/v1/trading/api-key-position/",
+        "/api/v1/trading/nearest-walls",
+        "/api/v1/trading/ml-filter-preview",
+    )
 
     def filter(self, record: logging.LogRecord) -> bool:
         msg = record.getMessage()
-        if "/api/v1/system/update-status" in msg and (" 200" in msg or " 304" in msg):
+        if (" 200" in msg or " 304" in msg) and any(p in msg for p in self._QUIET_POLL_SUBSTRINGS):
             return False
         return True
 
@@ -344,6 +357,17 @@ async def _init_binance_spot_client():
 async def fetch_market_data_background():
     print("🚀 Background Market Data Task Started")
     local_exchange_client = await _init_binance_spot_client()
+    spot_id_to_symbol: dict = {}
+
+    def _get_spot_id_map() -> dict:
+        nonlocal spot_id_to_symbol
+        if not spot_id_to_symbol and local_exchange_client and getattr(local_exchange_client, "markets", None):
+            spot_id_to_symbol = {
+                m_info.get("id"): m_sym
+                for m_sym, m_info in local_exchange_client.markets.items()
+                if isinstance(m_info, dict) and m_info.get("spot", False) and m_info.get("id")
+            }
+        return spot_id_to_symbol
 
     # WebSocket Background Updater for Tickers
     async def _keep_tickers_updated():
@@ -358,21 +382,16 @@ async def fetch_market_data_background():
                         "training_visualizer", "app_notifications"
                     }
                     
+                    id_map = _get_spot_id_map()
                     crypto_symbols = []
                     for sym in active:
                         if (sym in NON_MARKET_CHANNELS or sym.startswith("logs_") or 
                             sym.startswith("status_") or sym.startswith("godmode_") or
                             sym.startswith("user_notif_") or "_" in sym):
                             continue
-                        # Normalize symbol (BTCUSDT -> BTC/USDT)
-                        # Strip futures contract suffix if present (e.g. 'HMSTR/USDT:USDT' -> 'HMSTR/USDT')
+                        # Normalize symbol (BTCUSDT -> BTC/USDT) in O(1)
                         clean_sym = sym.split(':')[0]
-                        target = clean_sym
-                        if "/" not in clean_sym and local_exchange_client.markets:
-                            for m_symbol, m_info in local_exchange_client.markets.items():
-                                if m_info.get('id') == clean_sym and m_info.get('spot', False):
-                                    target = m_symbol
-                                    break
+                        target = id_map.get(clean_sym, clean_sym) if "/" not in clean_sym else clean_sym
                                     
                         # Ensure symbol is a valid spot market for local_exchange_client (prevents mixed subType error)
                         if local_exchange_client.markets:
@@ -448,14 +467,9 @@ async def fetch_market_data_background():
                         oanda_streamer.add_symbol(symbol)
                         continue
 
-                    # Normalize symbol (BTCUSDT -> BTC/USDT)
+                    # Normalize symbol (BTCUSDT -> BTC/USDT) in O(1)
                     clean_symbol = symbol.split(':')[0]
-                    target_symbol = clean_symbol
-                    if "/" not in clean_symbol and local_exchange_client.markets:
-                         for m_symbol, m_info in local_exchange_client.markets.items():
-                            if m_info.get('id') == clean_symbol and m_info.get('spot', False):
-                                target_symbol = m_symbol
-                                break
+                    target_symbol = _get_spot_id_map().get(clean_symbol, clean_symbol) if "/" not in clean_symbol else clean_symbol
                     
                     current_target_symbols.add(symbol)
                     

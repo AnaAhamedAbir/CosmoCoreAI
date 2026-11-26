@@ -94,7 +94,7 @@ def calculate_plp_features(df: pd.DataFrame, selected_features: list) -> pd.Data
         df['high_leverage_cluster_proximity'] = np.minimum(dist_high, dist_low) * 100
         
     if 'margin_call_proximity_index' in selected_features:
-        df['margin_call_proximity_index'] = returns.rolling(10, min_periods=1).apply(lambda x: len([i for i in x if i < -0.005]), raw=True).fillna(0) / 10.0
+        df['margin_call_proximity_index'] = (returns < -0.005).astype(float).rolling(10, min_periods=1).sum().fillna(0) / 10.0
 
     if 'magnetic_liquidity_pull_vector' in selected_features:
         df['magnetic_liquidity_pull_vector'] = obi * spread * 100
@@ -121,8 +121,9 @@ def calculate_plp_features(df: pd.DataFrame, selected_features: list) -> pd.Data
     # ─────────────────────────────────────────────────────────────────────────
     
     if 'liquidation_cascade_multiplier' in selected_features:
-        # Contagion effect
-        df['liquidation_cascade_multiplier'] = (returns.abs() / (price_std_20 + 1e-9)).rolling(5).apply(lambda x: np.prod(1 + x), raw=True).fillna(1)
+        # Contagion effect (vectorized log-sum-exp product without Python callback GIL stall)
+        ratio_clipped = (returns.abs() / (price_std_20 + 1e-9)).clip(lower=0.0, upper=50.0)
+        df['liquidation_cascade_multiplier'] = np.exp(np.log1p(ratio_clipped).rolling(5).sum()).fillna(1.0)
         
     if 'long_squeeze_probability' in selected_features:
         # High positive funding (proxy: continuous upward trend) + sudden drop

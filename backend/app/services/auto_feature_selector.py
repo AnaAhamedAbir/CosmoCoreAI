@@ -51,122 +51,113 @@ def calculate_l2_advanced_features(df: pd.DataFrame) -> pd.DataFrame:
     # Initialize feature columns
     features = {}
     
-    # Pre-calculate base metrics for speed
+    # Pre-calculate base metrics and depth calculations in a single fast list pass (no slow df.iterrows)
+    bids_col = df['bids_list'].tolist()
+    asks_col = df['asks_list'].tolist()
+    close_col = df['Close'].tolist() if 'Close' in df.columns else [0.0] * len(df)
+
     best_bids_p = []
     best_bids_v = []
     best_asks_p = []
     best_asks_v = []
     mid_prices = []
-    
-    for i, row in df.iterrows():
-        bids = row['bids_list']
-        asks = row['asks_list']
-        
-        bb_p = float(bids[0][0]) if bids else 0
-        bb_v = float(bids[0][1]) if bids else 0
-        ba_p = float(asks[0][0]) if asks else 0
-        ba_v = float(asks[0][1]) if asks else 0
-        mid = (bb_p + ba_p) / 2 if (bb_p and ba_p) else row.get('Close', 0)
-        
-        best_bids_p.append(bb_p)
-        best_bids_v.append(bb_v)
-        best_asks_p.append(ba_p)
-        best_asks_v.append(ba_v)
-        mid_prices.append(mid)
-        
-    df['bb_p'] = best_bids_p
-    df['bb_v'] = best_bids_v
-    df['ba_p'] = best_asks_p
-    df['ba_v'] = best_asks_v
-    df['mid_price'] = mid_prices
-    
-    # Category 1: Price & Spread Dynamics
-    df['Effective_Spread'] = (df['ba_p'] - df['bb_p']) / df['mid_price'].replace(0, np.nan)
-    df['Spread_ROC'] = df['Effective_Spread'].pct_change().fillna(0)
-    df['Mid_Price_Acceleration'] = df['mid_price'].diff().diff().fillna(0)
-    df['Spread_Asymmetry'] = (df['ba_p'] - df['mid_price']) - (df['mid_price'] - df['bb_p'])
-    
-    # Advanced depth calculations
     wap_top_5, wap_top_10 = [], []
     imbalance_top_5, imbalance_top_10 = [], []
     depth_ratio = []
     ask_wall_dist, bid_wall_dist = [], []
     order_book_skewness = []
     slippage_proxy_list = []
-    
-    for i, row in df.iterrows():
-        bids = row['bids_list']
-        asks = row['asks_list']
-        
+
+    for bids, asks, fallback_close in zip(bids_col, asks_col, close_col):
+        bb_p = float(bids[0][0]) if bids else 0.0
+        bb_v = float(bids[0][1]) if bids else 0.0
+        ba_p = float(asks[0][0]) if asks else 0.0
+        ba_v = float(asks[0][1]) if asks else 0.0
+        mid = (bb_p + ba_p) / 2.0 if (bb_p and ba_p) else float(fallback_close or 0.0)
+
+        best_bids_p.append(bb_p)
+        best_bids_v.append(bb_v)
+        best_asks_p.append(ba_p)
+        best_asks_v.append(ba_v)
+        mid_prices.append(mid)
+
         # WAP 5 & 10
-        b_p_5 = [float(x[0]) for x in bids[:5]]
-        b_v_5 = [float(x[1]) for x in bids[:5]]
-        a_p_5 = [float(x[0]) for x in asks[:5]]
-        a_v_5 = [float(x[1]) for x in asks[:5]]
-        
         b_p_10 = [float(x[0]) for x in bids[:10]]
         b_v_10 = [float(x[1]) for x in bids[:10]]
         a_p_10 = [float(x[0]) for x in asks[:10]]
         a_v_10 = [float(x[1]) for x in asks[:10]]
-        
-        sum_v5 = sum(b_v_5) + sum(a_v_5)
-        sum_v10 = sum(b_v_10) + sum(a_v_10)
-        
-        wap_5 = (sum(p*v for p,v in zip(b_p_5, b_v_5)) + sum(p*v for p,v in zip(a_p_5, a_v_5))) / (sum_v5 + 1e-9)
-        wap_10 = (sum(p*v for p,v in zip(b_p_10, b_v_10)) + sum(p*v for p,v in zip(a_p_10, a_v_10))) / (sum_v10 + 1e-9)
+
+        b_p_5 = b_p_10[:5]
+        b_v_5 = b_v_10[:5]
+        a_p_5 = a_p_10[:5]
+        a_v_5 = a_v_10[:5]
+
+        sum_b5 = sum(b_v_5)
+        sum_a5 = sum(a_v_5)
+        sum_v5 = sum_b5 + sum_a5
+        sum_b10 = sum(b_v_10)
+        sum_a10 = sum(a_v_10)
+        sum_v10 = sum_b10 + sum_a10
+
+        wap_5 = (sum(p * v for p, v in zip(b_p_5, b_v_5)) + sum(p * v for p, v in zip(a_p_5, a_v_5))) / (sum_v5 + 1e-9)
+        wap_10 = (sum(p * v for p, v in zip(b_p_10, b_v_10)) + sum(p * v for p, v in zip(a_p_10, a_v_10))) / (sum_v10 + 1e-9)
         wap_top_5.append(wap_5)
         wap_top_10.append(wap_10)
-        
-        # Imbalances
-        imb_5 = sum(b_v_5) / (sum_v5 + 1e-9)
-        imb_10 = sum(b_v_10) / (sum_v10 + 1e-9)
-        imbalance_top_5.append(imb_5)
-        imbalance_top_10.append(imb_10)
-        
-        # Total Depth Ratio
-        total_b_v = sum([float(x[1]) for x in bids])
-        total_a_v = sum([float(x[1]) for x in asks])
+
+        imbalance_top_5.append(sum_b5 / (sum_v5 + 1e-9))
+        imbalance_top_10.append(sum_b10 / (sum_v10 + 1e-9))
+
+        total_b_v = sum(float(x[1]) for x in bids)
+        total_a_v = sum(float(x[1]) for x in asks)
         depth_ratio.append(total_b_v / (total_a_v + 1e-9))
-        
-        # Walls (max volume level in top 20)
+
         b_v_20 = [float(x[1]) for x in bids[:20]]
         a_v_20 = [float(x[1]) for x in asks[:20]]
-        if b_v_20:
-            max_b_idx = np.argmax(b_v_20)
-            bid_wall_dist.append((row['mid_price'] - float(bids[max_b_idx][0])) / row['mid_price'])
+        if b_v_20 and mid:
+            max_b_idx = int(np.argmax(b_v_20))
+            bid_wall_dist.append((mid - float(bids[max_b_idx][0])) / mid)
         else:
-            bid_wall_dist.append(0)
-            
-        if a_v_20:
-            max_a_idx = np.argmax(a_v_20)
-            ask_wall_dist.append((float(asks[max_a_idx][0]) - row['mid_price']) / row['mid_price'])
+            bid_wall_dist.append(0.0)
+
+        if a_v_20 and mid:
+            max_a_idx = int(np.argmax(a_v_20))
+            ask_wall_dist.append((float(asks[max_a_idx][0]) - mid) / mid)
         else:
-            ask_wall_dist.append(0)
-            
-        # Basic Skewness proxy (volume weighted distance)
-        ob_skew = (sum(a_v_10) - sum(b_v_10)) / (sum_v10 + 1e-9)
-        order_book_skewness.append(ob_skew)
-        
-        # Slippage proxy (simulated cost of 10.0 units)
+            ask_wall_dist.append(0.0)
+
+        order_book_skewness.append((sum_a10 - sum_b10) / (sum_v10 + 1e-9))
+
         target_qty = 10.0
         rem = target_qty
-        avg_price = 0
+        avg_price = 0.0
         for p_str, q_str in asks:
             p, q = float(p_str), float(q_str)
             if rem <= q:
                 avg_price += rem * p
-                rem = 0
+                rem = 0.0
                 break
             else:
                 avg_price += q * p
                 rem -= q
-        if rem > 0 and asks: 
+        if rem > 0 and asks:
             avg_price += rem * float(asks[-1][0])
         elif not asks:
-            avg_price = (row.get('Close', 0) * target_qty)
-        
+            avg_price = float(fallback_close or 0.0) * target_qty
+
         avg_price /= (target_qty + 1e-9)
-        slippage_proxy_list.append((avg_price - row['mid_price']) / (row['mid_price'] + 1e-9))
+        slippage_proxy_list.append((avg_price - mid) / (mid + 1e-9))
+
+    df['bb_p'] = best_bids_p
+    df['bb_v'] = best_bids_v
+    df['ba_p'] = best_asks_p
+    df['ba_v'] = best_asks_v
+    df['mid_price'] = mid_prices
+
+    # Category 1: Price & Spread Dynamics
+    df['Effective_Spread'] = (df['ba_p'] - df['bb_p']) / df['mid_price'].replace(0, np.nan)
+    df['Spread_ROC'] = df['Effective_Spread'].pct_change().fillna(0)
+    df['Mid_Price_Acceleration'] = df['mid_price'].diff().diff().fillna(0)
+    df['Spread_Asymmetry'] = (df['ba_p'] - df['mid_price']) - (df['mid_price'] - df['bb_p'])
 
     # Assign calculated arrays
     df['WAP_Top_5'] = wap_top_5
@@ -184,20 +175,10 @@ def calculate_l2_advanced_features(df: pd.DataFrame) -> pd.DataFrame:
     df['Imbalance_Momentum'] = df['Level_1_Imbalance'].diff().fillna(0)
     
     # Category 5: Order Flow Imbalance (OFI)
-    # OFI = change in bid volume if bid price same, else total bid volume (if price went up)
-    ofi_list = [0]
-    for i in range(1, len(df)):
-        prev = df.iloc[i-1]
-        curr = df.iloc[i]
-        
-        if curr['bb_p'] >= prev['bb_p']: e_b = curr['bb_v']
-        elif curr['bb_p'] == prev['bb_p']: e_b = curr['bb_v'] - prev['bb_v']
-        else: e_b = -prev['bb_v']
-            
-        if curr['ba_p'] <= prev['ba_p']: e_a = curr['ba_v']
-        elif curr['ba_p'] == prev['ba_p']: e_a = curr['ba_v'] - prev['ba_v']
-        else: e_a = -prev['ba_v']
-            
+    ofi_list = [0.0]
+    for i in range(1, len(best_bids_p)):
+        e_b = best_bids_v[i] if best_bids_p[i] >= best_bids_p[i - 1] else -best_bids_v[i - 1]
+        e_a = best_asks_v[i] if best_asks_p[i] <= best_asks_p[i - 1] else -best_asks_v[i - 1]
         ofi_list.append(e_b - e_a)
         
     df['Order_Flow_Imbalance'] = ofi_list
@@ -209,7 +190,7 @@ def calculate_l2_advanced_features(df: pd.DataFrame) -> pd.DataFrame:
     
     # Volatility
     df['Realized_Micro_Volatility'] = df['mid_price'].pct_change().rolling(window=10, min_periods=1).std().fillna(0)
-    df['Tick_Test_Roll'] = df['mid_price'].diff().apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0)).rolling(window=5).mean().fillna(0)
+    df['Tick_Test_Roll'] = np.sign(df['mid_price'].diff().fillna(0)).rolling(window=5).mean().fillna(0)
     
     # ── 12 New Advanced Institutional Metrics ──
     # 1. obi_delta: Rate of change of Order Book Imbalance

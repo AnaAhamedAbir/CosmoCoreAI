@@ -81,39 +81,57 @@ def _get_shared_ccxt_exchange(symbol: str):
     return ex
 
 
-def _fetch_live_trade_bars(symbol: str, timeframe: str = "1m", fast_limit: bool = False) -> Optional[pd.DataFrame]:
+def _fetch_live_trade_bars(
+    symbol: str,
+    timeframe: str = "1m",
+    fast_limit: bool = False,
+    required_features: Optional[list] = None,
+) -> Optional[pd.DataFrame]:
     """
     Fetches live tick trades from the exchange and builds institutional Volume Bars
     using `process_historical_trades` so `historical_trades` models receive exact tick-level
     microstructure features and volume bars (instead of 1d OHLCV candles).
+    Uses C-vectorized pd.to_datetime on the timestamp array to avoid holding the Python GIL.
     """
     try:
         from app.services.trade_data_processor import process_historical_trades
 
         exchange = _get_shared_ccxt_exchange(symbol)
-        trades = exchange.fetch_trades(symbol, limit=1000)
+        trades = exchange.fetch_trades(symbol, limit=520 if fast_limit else 1000)
         if not trades or len(trades) < 25:
             return None
 
-        rows = []
+        ts_list = []
+        prices = []
+        amounts = []
+        sides = []
+        has_valid_side = False
         for t in trades:
             ts = t.get('timestamp')
             px = float(t.get('price') or 0.0)
             amt = float(t.get('amount') or 0.0)
-            side = str(t.get('side') or '').lower()
             if px > 0 and amt > 0 and ts:
-                rows.append({
-                    'datetime': pd.to_datetime(ts, unit='ms'),
-                    'price': px,
-                    'amount': amt,
-                    'side': side if side in ('buy', 'sell') else None
-                })
-        if len(rows) < 25:
+                ts_list.append(ts)
+                prices.append(px)
+                amounts.append(amt)
+                side = str(t.get('side') or '').lower()
+                if side in ('buy', 'sell'):
+                    has_valid_side = True
+                    sides.append(side)
+                else:
+                    sides.append(None)
+
+        if len(ts_list) < 25:
             return None
 
-        df_raw = pd.DataFrame(rows)
-        if df_raw['side'].isna().all():
-            df_raw.drop(columns=['side'], inplace=True)
+        data_dict = {
+            'datetime': pd.to_datetime(ts_list, unit='ms'),
+            'price': prices,
+            'amount': amounts,
+        }
+        if has_valid_side:
+            data_dict['side'] = sides
+        df_raw = pd.DataFrame(data_dict)
 
         total_vol = float(df_raw['amount'].sum())
         target_bars = 215.0
@@ -123,11 +141,12 @@ def _fetch_live_trade_bars(symbol: str, timeframe: str = "1m", fast_limit: bool 
             df_raw=df_raw,
             bar_type="volume",
             volume_threshold=auto_vol_thresh,
+            apply_indicators=required_features,
             add_log_func=lambda m: None
         )
 
         # If a few large whale trades skewed cumulative volume so fewer than 75 bars were formed,
-        # retry using 85th-percentile-Based volume threshold so we get high-resolution volume bars.
+        # retry using 80th-percentile-based volume threshold so we get high-resolution volume bars.
         if df is None or len(df) < 75:
             q80_amt = float(df_raw['amount'].quantile(0.80) or df_raw['amount'].median() or 1.0)
             df_capped = df_raw.copy()
@@ -138,6 +157,7 @@ def _fetch_live_trade_bars(symbol: str, timeframe: str = "1m", fast_limit: bool 
                 df_raw=df_capped,
                 bar_type="volume",
                 volume_threshold=retry_thresh,
+                apply_indicators=required_features,
                 add_log_func=lambda m: None
             )
             if df_retry is not None and len(df_retry) > (len(df) if df is not None else 0):
@@ -299,7 +319,12 @@ def _build_pre_pca_feature_df(
         if df is None or df.empty:
             raise RuntimeError(f"Live L2 data is currently unavailable for {symbol}. Cannot generate a valid prediction for an L2-trained model.")
     elif needs_tick_bars:
-        df = _fetch_live_trade_bars(symbol, timeframe=timeframe, fast_limit=fast_limit)
+        df = _fetch_live_trade_bars(
+            symbol,
+            timeframe=timeframe,
+            fast_limit=fast_limit,
+            required_features=all_required_cols,
+        )
         if df is None or df.empty:
             fallback_tf = timeframe if timeframe in ("1m", "5m", "15m") else "1m"
             df = _fetch_live_ohlcv(symbol, fallback_tf, "ohlcv", limit=260 if fast_limit else 500)
@@ -384,18 +409,20 @@ def _build_pre_pca_feature_df(
     if missing_trade_feats:
         try:
             exchange = _get_shared_ccxt_exchange(symbol)
-            trades = exchange.fetch_trades(symbol, limit=300 if fast_limit else 1000)
+            trades = exchange.fetch_trades(symbol, limit=300 if fast_limit else 600)
             if trades:
-                t_data = []
-                for t in trades:
-                    t_data.append({
-                        'timestamp': pd.to_datetime(t['timestamp'], unit='ms'),
-                        'price': float(t['price']),
-                        'qty': float(t['amount']),
-                        'is_buyer_maker': t['side'] == 'sell'
-                    })
-                df_trades = pd.DataFrame(t_data)
-                df_trades.set_index('timestamp', inplace=True)
+                ts_list = [t['timestamp'] for t in trades]
+                prices = [float(t['price']) for t in trades]
+                qtys = [float(t['amount']) for t in trades]
+                sides = ['sell' if t.get('side') == 'sell' else 'buy' for t in trades]
+                df_trades = pd.DataFrame({
+                    'price': prices,
+                    'qty': qtys,
+                    'amount': qtys,
+                    'side': sides,
+                    'is_buyer_maker': [s == 'sell' for s in sides],
+                }, index=pd.to_datetime(ts_list, unit='ms'))
+                df_trades.index.name = 'timestamp'
 
                 from app.services.hybrid_deep_pipeline import calculate_trade_tick_features
                 df_trades = calculate_trade_tick_features(df_trades, missing_trade_feats)

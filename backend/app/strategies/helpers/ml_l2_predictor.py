@@ -66,6 +66,8 @@ class MLL2Predictor:
         self.last_features_list = []
         self.sequence_length = 15
         self._feature_sequence = []
+        self._pred_cache: Dict[str, Any] = {}
+        self._pred_adv_cache: Dict[str, Any] = {}
         
         self._load_model()
 
@@ -418,9 +420,18 @@ class MLL2Predictor:
         """
         Asynchronous wrapper to prevent blocking the event loop.
         Validates if the target_side (long/short) aligns with the AI's prediction.
+        Includes a 250ms micro-cache to prevent 100ms L2 depth ticks from saturating the GIL.
         """
         import asyncio
-        return await asyncio.to_thread(self._predict_sync, orderbook, current_price, side)
+        import time as _time
+        side_key = str(side or "").lower()
+        now_mono = _time.monotonic()
+        cached = self._pred_cache.get(side_key)
+        if cached is not None and (now_mono - cached[0]) < 0.25:
+            return cached[1]
+        res = await asyncio.to_thread(self._predict_sync, orderbook, current_price, side)
+        self._pred_cache[side_key] = (_time.monotonic(), res)
+        return res
 
     def _predict_sync(self, orderbook: dict, current_price: float, side: str) -> bool:
         """
@@ -743,10 +754,18 @@ class MLL2Predictor:
 
     async def predict_advanced(self, orderbook: dict, current_price: float, side: str, bot_instance: Any) -> Dict[str, Any]:
         """
-        Asynchronous wrapper for advanced predictions.
+        Asynchronous wrapper for advanced predictions with a 250ms micro-cache.
         """
         import asyncio
-        return await asyncio.to_thread(self._predict_advanced_sync, orderbook, current_price, side, bot_instance)
+        import time as _time
+        side_key = str(side or "").lower()
+        now_mono = _time.monotonic()
+        cached = self._pred_adv_cache.get(side_key)
+        if cached is not None and (now_mono - cached[0]) < 0.25:
+            return cached[1]
+        res = await asyncio.to_thread(self._predict_advanced_sync, orderbook, current_price, side, bot_instance)
+        self._pred_adv_cache[side_key] = (_time.monotonic(), res)
+        return res
 
     def _predict_advanced_sync(self, orderbook: dict, current_price: float, side: str, bot_instance: Any) -> Dict[str, Any]:
         """

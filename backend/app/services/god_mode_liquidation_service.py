@@ -470,10 +470,15 @@ class GodModeRunner:
         exchange = await self._init_exchange(self.primary_exchange)
         ex_symbol = await self._resolve_exchange_symbol(exchange, self.symbol)
         logger.info(f"GodMode: Started {self.primary_exchange} orderbook stream for {ex_symbol}")
+        last_ob_calc_mono = 0.0
 
         while self._running:
             try:
                 orderbook = await exchange.watch_order_book(ex_symbol)
+                now_mono = time.monotonic()
+                if (now_mono - last_ob_calc_mono) < 0.25:
+                    continue
+                last_ob_calc_mono = now_mono
                 bids = orderbook.get("bids", []) if orderbook else []
                 asks = orderbook.get("asks", []) if orderbook else []
                 cp = self.state["current_price"]

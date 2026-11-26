@@ -1990,13 +1990,9 @@ async def get_nearest_liquidity_walls(
         exchange_inst = None
         if not ob and api_key_id:
             try:
-                api_rec = db.query(models.ApiKey).filter(
-                    models.ApiKey.id == api_key_id,
-                    models.ApiKey.user_id == current_user.id,
-                    models.ApiKey.is_enabled == True,
-                ).first()
+                from app.services.manual_trade_service import ManualTradeService
+                api_rec = ManualTradeService._lookup_api_key_record(db, current_user.id, api_key_id)
                 if api_rec:
-                    from app.services.manual_trade_service import ManualTradeService
                     exchange_inst = await ManualTradeService._get_exchange(api_rec, ':' in symbol)
                     ob = await fetch_l2_depth_fast(
                         exchange=exchange_inst,

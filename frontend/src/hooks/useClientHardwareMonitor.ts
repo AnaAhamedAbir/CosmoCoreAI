@@ -164,15 +164,29 @@ export function useClientHardwareMonitor(enabled: boolean, includeVpsTelemetry =
     if (typeof document !== 'undefined' && document.hidden) return;
     if (showSpinner) setVpsLoading(true);
     try {
-      const [data, rttMs] = await Promise.all([
-        includeVpsTelemetry ? systemService.getHardwareTelemetry(forceLatencyProbe) : Promise.resolve(null),
-        systemService.pingServerRtt().catch(() => null),
-      ]);
+      // Measure Device <-> VPS ping FIRST on an uncontended connection so it never
+      // queues behind /system/hardware-telemetry. If the first sample > 320ms (e.g. cold
+      // keep-alive socket), take one quick follow-up ping and use the minimum RTT.
+      let rttMs: number | null = await systemService.pingServerRtt().catch(() => null);
+      if (rttMs !== null && rttMs > 320) {
+        const retryRtt = await systemService.pingServerRtt().catch(() => null);
+        if (retryRtt !== null) {
+          rttMs = Math.min(rttMs, retryRtt);
+        }
+      }
+      const data = includeVpsTelemetry
+        ? await systemService.getHardwareTelemetry(forceLatencyProbe)
+        : null;
       if (data) setVps(data);
       if (rttMs !== null) {
         setClientToVpsMs((prev) => {
           if (prev !== null) {
-            setClientToVpsJitterMs(Math.round(Math.abs(rttMs - prev) * 10) / 10);
+            const rawDiff = Math.abs(rttMs - prev);
+            setClientToVpsJitterMs((prevJitter) =>
+              prevJitter === null
+                ? Math.round(rawDiff * 10) / 10
+                : Math.round((prevJitter * 0.6 + rawDiff * 0.4) * 10) / 10
+            );
           }
           return rttMs;
         });

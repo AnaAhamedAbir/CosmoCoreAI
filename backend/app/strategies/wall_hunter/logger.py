@@ -19,22 +19,30 @@ class WallHunterLogger:
         try:
             import datetime
             import json
-            import redis
-            from app.core.config import settings
+            from app.utils import get_redis_client
 
             if WallHunterLogger._redis_client is None:
-                WallHunterLogger._redis_client = redis.from_url(settings.REDIS_URL, decode_responses=True)
+                WallHunterLogger._redis_client = get_redis_client()
 
             r = WallHunterLogger._redis_client
 
             timestamp = datetime.datetime.now().strftime("%H:%M:%S")
             log_entry = {"time": timestamp, "type": log_type, "message": str(message)}
+            log_json = json.dumps(log_entry)
             stream_payload = {"channel": f"logs_{self.bot_id}", "data": log_entry}
-            r.publish("bot_logs", json.dumps(stream_payload))
-            r.publish(f"bot_logs:{self.bot_id}", json.dumps(log_entry))
             list_key = f"bot_logs_list:{self.bot_id}"
-            r.rpush(list_key, json.dumps(log_entry))
-            r.ltrim(list_key, -50, -1)
+            if hasattr(r, "pipeline"):
+                pipe = r.pipeline(transaction=False)
+                pipe.publish("bot_logs", json.dumps(stream_payload))
+                pipe.publish(f"bot_logs:{self.bot_id}", log_json)
+                pipe.rpush(list_key, log_json)
+                pipe.ltrim(list_key, -50, -1)
+                pipe.execute()
+            else:
+                r.publish("bot_logs", json.dumps(stream_payload))
+                r.publish(f"bot_logs:{self.bot_id}", log_json)
+                r.rpush(list_key, log_json)
+                r.ltrim(list_key, -50, -1)
         except Exception:
             pass
 

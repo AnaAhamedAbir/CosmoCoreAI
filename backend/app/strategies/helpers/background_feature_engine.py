@@ -132,33 +132,36 @@ class BackgroundFeatureEngine:
                     
                 trades_cache.extend(new_trades)
                 
-                # Keep last 1000, deduplicating by ID
-                if len(trades_cache) > 1000:
+                # THROTTLE: Only calculate heavy Pandas features at most once every 1.5 seconds
+                # This prevents CPU/Memory/GIL overload from high-frequency websocket ticks
+                current_time = time.time()
+                if current_time - last_calc_time < 1.5:
+                    if len(trades_cache) > 1500:
+                        trades_cache = trades_cache[-1000:]
+                    continue
+                last_calc_time = current_time
+
+                # Keep last 600, deduplicating by ID only when calculation actually runs
+                if len(trades_cache) > 600:
                     trades_by_id = {}
                     no_id = []
                     for t in trades_cache:
-                        if t.get('id'):
-                            trades_by_id[t['id']] = t
+                        tid = t.get('id')
+                        if tid:
+                            trades_by_id[tid] = t
                         else:
                             no_id.append(t)
                     
                     merged = no_id + list(trades_by_id.values())
-                    merged.sort(key=lambda x: x['timestamp'] if x.get('timestamp') else 0)
-                    trades_cache = merged[-1000:]
+                    merged.sort(key=lambda x: x.get('timestamp') or 0)
+                    trades_cache = merged[-600:]
                     
-                trades = trades_cache
+                trades = trades_cache[-520:]
                 
                 if not trades:
                     continue
                     
-                # THROTTLE: Only calculate heavy Pandas features at most once per second
-                # This prevents CPU/Memory overload from high-frequency websocket ticks
-                current_time = time.time()
-                if current_time - last_calc_time < 1.0:
-                    continue
-                last_calc_time = current_time
-                    
-                # Run the heavy Pandas feature calculation in a background thread to prevent blocking
+                # Run the vectorized Pandas feature calculation in a background thread to prevent blocking
                 last_row = await asyncio.to_thread(self._calculate_features_sync, trades)
                 
                 if last_row is None:
@@ -196,22 +199,29 @@ class BackgroundFeatureEngine:
     def _calculate_features_sync(self, trades: list) -> dict:
         """
         Synchronous method to calculate heavy Pandas features. 
-        Runs in a background thread.
+        Runs in a background thread with vectorized timestamp conversion to avoid GIL stalls.
         """
         try:
             from app.services.hybrid_deep_pipeline import calculate_trade_tick_features
             
-            t_data = []
-            for t in trades:
-                t_data.append({
-                    'timestamp': pd.to_datetime(t['timestamp'], unit='ms'),
-                    'price': float(t['price']),
-                    'qty': float(t['amount']),
-                    'is_buyer_maker': t['side'] == 'sell'
-                })
-                
-            df = pd.DataFrame(t_data)
-            df.set_index('timestamp', inplace=True)
+            recent = trades[-520:] if len(trades) > 520 else trades
+            if not recent:
+                return None
+
+            ts_list = [t['timestamp'] for t in recent]
+            prices = [float(t['price']) for t in recent]
+            qtys = [float(t['amount']) for t in recent]
+            sides = ['sell' if t.get('side') == 'sell' else 'buy' for t in recent]
+            is_bm = [s == 'sell' for s in sides]
+
+            df = pd.DataFrame({
+                'price': prices,
+                'qty': qtys,
+                'amount': qtys,
+                'side': sides,
+                'is_buyer_maker': is_bm,
+            }, index=pd.to_datetime(ts_list, unit='ms'))
+            df.index.name = 'timestamp'
             
             # Provide a Close proxy for PLP calculations
             df['Close'] = df['price']

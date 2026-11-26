@@ -118,14 +118,23 @@ class BaseWallHunterBot(WallHunterNotifierMixin, WallHunterListenersMixin):
         return net_pnl, entry_fee + exit_fee
 
     def _publish_status(self, current_price: float):
-        """Publishes real-time status and telemetry to Redis for UI/Dashboard."""
+        """Publishes real-time status and telemetry to Redis for UI/Dashboard (throttled to <=2 Hz to prevent event-loop stalls)."""
         try:
+            import time as _time
+            now_mono = _time.monotonic()
+            position = bool(self.active_pos)
+            last_pos = getattr(self, "_last_published_pos_state", None)
+            last_pub_ts = getattr(self, "_last_status_publish_ts", 0.0)
+            if position == last_pos and (now_mono - last_pub_ts) < 0.5:
+                return
+            self._last_published_pos_state = position
+            self._last_status_publish_ts = now_mono
+
             pnl_val = 0.0
             pnl_pct = 0.0
             entry_price = 0.0
             sl_price = 0.0
             tp_price = 0.0
-            position = False
 
             if self.active_pos:
                 position = True
@@ -180,8 +189,14 @@ class BaseWallHunterBot(WallHunterNotifierMixin, WallHunterListenersMixin):
                 "is_absorbing": (self.absorption_tracker.is_absorption_detected('buy') or self.absorption_tracker.is_absorption_detected('sell')) if hasattr(self, 'absorption_tracker') else False
             }
             payload_str = json.dumps(status_payload)
-            self.redis.publish(f"bot_status:{self.bot_id}", payload_str)
-            self.redis.set(f"bot_status_cache:{self.bot_id}", payload_str)
+            if hasattr(self.redis, "pipeline"):
+                pipe = self.redis.pipeline(transaction=False)
+                pipe.publish(f"bot_status:{self.bot_id}", payload_str)
+                pipe.set(f"bot_status_cache:{self.bot_id}", payload_str)
+                pipe.execute()
+            else:
+                self.redis.publish(f"bot_status:{self.bot_id}", payload_str)
+                self.redis.set(f"bot_status_cache:{self.bot_id}", payload_str)
         except Exception:
             pass
 

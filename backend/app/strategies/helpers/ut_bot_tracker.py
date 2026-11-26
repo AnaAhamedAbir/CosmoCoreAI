@@ -64,7 +64,7 @@ class UTBotTracker:
                 # We need around 150-200 candles to get a stable RMA for ATR. 200 is extremely fast to compute.
                 klines = await market_depth_service.fetch_ohlcv(self.symbol, self.exchange_id, self.timeframe, limit=250)
                 if klines and len(klines) > self.atr_period:
-                    self._calculate_ut_bot(klines)
+                    await asyncio.to_thread(self._calculate_ut_bot, klines)
             except Exception as e:
                 logger.error(f"UT Bot Tracker Error: {e}")
             

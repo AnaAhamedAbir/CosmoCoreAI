@@ -32,7 +32,7 @@ class WickSRStandaloneListener:
                     # 'timestamp' was incorrectly referenced; use 'time' instead.
                     latest_time = klines[-1].get('time', klines[-1].get('timestamp', 0))
 
-                    self.tracker.update_levels(klines)
+                    await asyncio.to_thread(self.tracker.update_levels, klines)
                     self.last_candle_time = latest_time
 
                     level_count = len(self.tracker.levels)

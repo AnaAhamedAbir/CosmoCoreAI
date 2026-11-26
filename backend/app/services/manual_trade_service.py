@@ -250,9 +250,49 @@ class ManualTradeService:
     _ML_PREDICTOR_CACHE = {}  # { f"{model_id}_{symbol}": MLL2Predictor }
     _ML_ROUTE_CACHE = {}     # { model_id: (use_ohlcv_predictor, model_name, timestamp) }
     _OPEN_ORDERS_CACHE = {}  # { (api_key_id, symbol): (timestamp, result_dict) }
+    _POSITION_CACHE = {}     # { (api_key_id, symbol): (timestamp, result_dict) }
     _WALLET_BALANCE_CACHE = {}  # { (api_key_id, is_futures[, is_inverse]): (balance_dict, timestamp) }
     _WS_BALANCE_DISABLED_UNTIL = {}  # { id(exchange): expire_timestamp }
     _PREWARM_INFLIGHT_TS = {}  # { f"{apiKey}_{symbol}": last_trigger_timestamp }
+    _DECRYPTED_CRED_CACHE = {}  # { (api_key_id, enc_api, enc_sec, enc_pass): (dec_api, dec_sec, dec_pass) }
+    _API_KEY_RECORD_CACHE = {}  # { (int(db_id), int(user_id), int(api_key_id)): (timestamp, record) }
+    _INFLIGHT_POLLS = {}     # { poll_key: asyncio.Task }
+
+    @staticmethod
+    def _lookup_api_key_record(db: Session, user_id: int, api_key_id: int):
+        """
+        Fast cached API key record lookup with 15s TTL scoped by db session identity,
+        eliminating redundant synchronous DB queries during burst polling while preserving
+        exact unit-test mock session behavior.
+        """
+        cache_key = (id(db), int(user_id), int(api_key_id))
+        now_ts = time.time()
+        cached = ManualTradeService._API_KEY_RECORD_CACHE.get(cache_key)
+        if cached is not None and (now_ts - cached[0]) < 15.0:
+            return cached[1]
+        rec = db.query(models.ApiKey).filter(
+            models.ApiKey.id == api_key_id,
+            models.ApiKey.user_id == user_id,
+            models.ApiKey.is_enabled == True
+        ).first()
+        if rec is not None:
+            if len(ManualTradeService._API_KEY_RECORD_CACHE) > 256:
+                ManualTradeService._API_KEY_RECORD_CACHE.clear()
+            ManualTradeService._API_KEY_RECORD_CACHE[cache_key] = (now_ts, rec)
+        return rec
+
+    @staticmethod
+    def invalidate_position_cache(api_key_id: int = None, symbol: str = None):
+        """Invalidate short-lived active position cache when orders/fills arrive."""
+        if api_key_id is None:
+            ManualTradeService._POSITION_CACHE.clear()
+        elif symbol is None:
+            for k in list(ManualTradeService._POSITION_CACHE.keys()):
+                if k[0] == int(api_key_id):
+                    ManualTradeService._POSITION_CACHE.pop(k, None)
+        else:
+            cache_key = (int(api_key_id), str(symbol).strip().upper())
+            ManualTradeService._POSITION_CACHE.pop(cache_key, None)
 
     @staticmethod
     def _normalize_margin_mode_str(margin_mode: Optional[str]) -> Optional[str]:
@@ -267,7 +307,8 @@ class ManualTradeService:
 
     @staticmethod
     def invalidate_wallet_balance_cache(api_key_id: int = None):
-        """Invalidate short-lived wallet balance cache when orders/fills arrive."""
+        """Invalidate short-lived wallet balance and position caches when orders/fills arrive."""
+        ManualTradeService.invalidate_position_cache(api_key_id)
         if api_key_id is None:
             ManualTradeService._WALLET_BALANCE_CACHE.clear()
         else:
@@ -307,7 +348,8 @@ class ManualTradeService:
 
     @staticmethod
     def invalidate_open_orders_cache(api_key_id: int = None, symbol: str = None):
-        """Invalidates cached open orders on order placement, cancellation or force trade."""
+        """Invalidates cached open orders and position cache on order placement, cancellation or force trade."""
+        ManualTradeService.invalidate_position_cache(api_key_id, symbol)
         if api_key_id is None:
             ManualTradeService._OPEN_ORDERS_CACHE.clear()
         elif symbol is None:
@@ -384,16 +426,34 @@ class ManualTradeService:
         Exchange Pool থেকে একটি ready Exchange instance নিয়ে আসে।
         নতুন করে init করতে হয় না — cached থাকলে তাৎক্ষণিক রিটার্ন করে।
         purpose='order' দিলে dedicated unthrottled order instance রিটার্ন করে।
+        Decrypted credentials মেমোরিতে cache করে রাখে যাতে প্রতি poll-এ Fernet decrypt_key() ইভেন্ট লুপ ব্লক না করে।
         """
-        decrypted_secret = decrypt_key(api_key_record.secret_key)
-        decrypted_api_key = decrypt_key(api_key_record.api_key)
-
-        passphrase = None
-        if hasattr(api_key_record, 'passphrase') and api_key_record.passphrase:
-            try:
-                passphrase = decrypt_key(api_key_record.passphrase)
-            except Exception:
-                passphrase = api_key_record.passphrase
+        raw_pass = getattr(api_key_record, 'passphrase', None) if hasattr(api_key_record, 'passphrase') else None
+        cred_cache_key = (
+            getattr(api_key_record, 'id', None),
+            getattr(api_key_record, 'api_key', None),
+            getattr(api_key_record, 'secret_key', None),
+            raw_pass,
+        )
+        cached_creds = ManualTradeService._DECRYPTED_CRED_CACHE.get(cred_cache_key)
+        if cached_creds is not None:
+            decrypted_api_key, decrypted_secret, passphrase = cached_creds
+        else:
+            decrypted_secret = decrypt_key(api_key_record.secret_key)
+            decrypted_api_key = decrypt_key(api_key_record.api_key)
+            passphrase = None
+            if raw_pass:
+                try:
+                    passphrase = decrypt_key(raw_pass)
+                except Exception:
+                    passphrase = raw_pass
+            if len(ManualTradeService._DECRYPTED_CRED_CACHE) > 256:
+                ManualTradeService._DECRYPTED_CRED_CACHE.clear()
+            ManualTradeService._DECRYPTED_CRED_CACHE[cred_cache_key] = (
+                decrypted_api_key,
+                decrypted_secret,
+                passphrase,
+            )
 
         exchange = await get_or_create_exchange(
             api_key_id=api_key_record.id,
@@ -772,11 +832,7 @@ class ManualTradeService:
         Fetches the free balance for both the base and quote assets of the given symbol.
         Uses unthrottled order exchange pool + short 2.5s hot cache for sub-5ms repeat polls.
         """
-        api_key_record = db.query(models.ApiKey).filter(
-            models.ApiKey.id == api_key_id,
-            models.ApiKey.user_id == user_id,
-            models.ApiKey.is_enabled == True
-        ).first()
+        api_key_record = ManualTradeService._lookup_api_key_record(db, user_id, api_key_id)
 
         if not api_key_record:
             raise HTTPException(status_code=404, detail="API Key not found or inactive")
@@ -794,7 +850,11 @@ class ManualTradeService:
             if balance is None:
                 balance = await ManualTradeService._fetch_wallet_balance(exchange, symbol, meta, api_key_id=api_key_id)
             if is_futures:
-                asyncio.create_task(ManualTradeService._prewarm_futures_trading_state(exchange, symbol, is_inverse=is_inv))
+                pw_key = f"{api_key_id}_{symbol}"
+                now_pw = time.time()
+                if (now_pw - ManualTradeService._PREWARM_INFLIGHT_TS.get(pw_key, 0.0)) >= 20.0:
+                    ManualTradeService._PREWARM_INFLIGHT_TS[pw_key] = now_pw
+                    asyncio.create_task(ManualTradeService._prewarm_futures_trading_state(exchange, symbol, is_inverse=is_inv))
 
             base_part = meta["base"]
             quote_part = meta["quote"]
@@ -902,25 +962,29 @@ class ManualTradeService:
             raise HTTPException(status_code=500, detail=f"Balance Error: {str(e)}")
 
     @staticmethod
-    async def get_active_position(db: Session, user_id: int, api_key_id: int, symbol: str) -> dict:
+    async def get_active_position(db: Session, user_id: int, api_key_id: int, symbol: str, force_refresh: bool = False) -> dict:
         """
         Fetches the current open position for the requested symbol.
         Used for calculating 'Reduce Only' percentages reliably.
         COIN-M (Inverse) এর ক্ষেত্রে contracts এবং base currency equivalent উভয়ই রিটার্ন করে।
+        Includes a 1.5s hot RAM cache to prevent concurrent component polls from spamming Binance REST.
         """
-        api_key_record = db.query(models.ApiKey).filter(
-            models.ApiKey.id == api_key_id,
-            models.ApiKey.user_id == user_id,
-            models.ApiKey.is_enabled == True
-        ).first()
+        is_futures = ':' in symbol
+        if not is_futures:
+            # Spot markets don't have "positions", just balances.
+            return {"amount": 0.0, "side": "none", "entry_price": 0.0, "mark_price": 0.0, "unrealized_pnl": 0.0, "pnl_pct": 0.0}
+
+        cache_key = (int(api_key_id), str(symbol).strip().upper())
+        now_ts = time.time()
+        if not force_refresh and cache_key in ManualTradeService._POSITION_CACHE:
+            cached_ts, cached_pos = ManualTradeService._POSITION_CACHE[cache_key]
+            if (now_ts - cached_ts) < 1.5:
+                return cached_pos
+
+        api_key_record = ManualTradeService._lookup_api_key_record(db, user_id, api_key_id)
 
         if not api_key_record:
             raise HTTPException(status_code=404, detail="API Key not found or inactive")
-
-        is_futures = ':' in symbol
-        if not is_futures:
-             # Spot markets don't have "positions", just balances.
-             return {"amount": 0.0, "side": "none", "entry_price": 0.0, "mark_price": 0.0, "unrealized_pnl": 0.0, "pnl_pct": 0.0}
             
         try:
             exchange = await ManualTradeService._get_exchange(api_key_record, is_futures, purpose="order")
@@ -934,7 +998,11 @@ class ManualTradeService:
             positions = await exchange.fetch_positions([symbol], pos_params)
             if isinstance(positions, list) and positions:
                 ManualTradeService._cache_position_risk_metadata(exchange, symbol, is_inv, positions)
-            asyncio.create_task(ManualTradeService._prewarm_futures_trading_state(exchange, symbol, is_inverse=is_inv))
+            pw_key = f"{api_key_id}_{symbol}"
+            now_pw = time.time()
+            if (now_pw - ManualTradeService._PREWARM_INFLIGHT_TS.get(pw_key, 0.0)) >= 20.0:
+                ManualTradeService._PREWARM_INFLIGHT_TS[pw_key] = now_pw
+                asyncio.create_task(ManualTradeService._prewarm_futures_trading_state(exchange, symbol, is_inverse=is_inv))
             
             # Find the active position for this symbol
             active_pos = None
@@ -955,7 +1023,7 @@ class ManualTradeService:
             
             contract_size = meta.get('contract_size', 1.0)
             if not active_pos:
-                 return {
+                 res_empty = {
                      "amount": 0.0,
                      "contracts": 0.0,
                      "contract_size": contract_size,
@@ -966,6 +1034,8 @@ class ManualTradeService:
                      "unrealized_pnl": 0.0,
                      "pnl_pct": 0.0,
                  }
+                 ManualTradeService._POSITION_CACHE[cache_key] = (time.time(), res_empty)
+                 return res_empty
                  
             # Extract position data consistently across exchanges
             raw_contracts = float(active_pos.get('contracts') or 0.0)
@@ -1007,7 +1077,7 @@ class ManualTradeService:
                 else:
                     base_amount = raw_contracts * contract_size
             
-            return {
+            res_pos = {
                  "amount": float(base_amount),
                  "contracts": float(raw_contracts),
                  "contract_size": float(contract_size),
@@ -1018,6 +1088,8 @@ class ManualTradeService:
                  "unrealized_pnl": float(unrealized_pnl),
                  "pnl_pct": round(float(pnl_pct), 3),
             }
+            ManualTradeService._POSITION_CACHE[cache_key] = (time.time(), res_pos)
+            return res_pos
 
         except HTTPException:
             raise
@@ -1064,11 +1136,7 @@ class ManualTradeService:
             if (now_ts - cached_ts) < 2.5:
                 return cached_res
 
-        api_key_record = db.query(models.ApiKey).filter(
-            models.ApiKey.id == api_key_id,
-            models.ApiKey.user_id == user_id,
-            models.ApiKey.is_enabled == True
-        ).first()
+        api_key_record = ManualTradeService._lookup_api_key_record(db, user_id, api_key_id)
 
         if not api_key_record:
             raise HTTPException(status_code=404, detail="API Key not found or inactive")
@@ -1088,7 +1156,11 @@ class ManualTradeService:
             meta = ManualTradeService._get_contract_meta(exchange, symbol)
             is_inv = bool(meta.get('is_inverse'))
             if is_futures:
-                asyncio.create_task(ManualTradeService._prewarm_futures_trading_state(exchange, symbol, is_inverse=is_inv))
+                pw_key = f"{api_key_id}_{symbol}"
+                now_pw = time.time()
+                if (now_pw - ManualTradeService._PREWARM_INFLIGHT_TS.get(pw_key, 0.0)) >= 20.0:
+                    ManualTradeService._PREWARM_INFLIGHT_TS[pw_key] = now_pw
+                    asyncio.create_task(ManualTradeService._prewarm_futures_trading_state(exchange, symbol, is_inverse=is_inv))
             if is_futures and not is_inv:
                 std_res, stop_res = await asyncio.gather(
                     exchange.fetch_open_orders(symbol),

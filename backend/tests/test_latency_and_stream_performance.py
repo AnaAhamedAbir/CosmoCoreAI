@@ -78,15 +78,19 @@ def _install_missing_stubs() -> None:
     if importlib.util.find_spec("ccxt") is None and "ccxt" not in sys.modules:
         ccxt_mod = types.ModuleType("ccxt")
         ccxt_pro = types.ModuleType("ccxt.pro")
+        ccxt_async = types.ModuleType("ccxt.async_support")
         ccxt_pro.Exchange = object
         ccxt_mod.pro = ccxt_pro
+        ccxt_mod.async_support = ccxt_async
         sys.modules["ccxt"] = ccxt_mod
         sys.modules["ccxt.pro"] = ccxt_pro
+        sys.modules["ccxt.async_support"] = ccxt_async
 
     if importlib.util.find_spec("fastapi") is None and "fastapi" not in sys.modules:
         fa = types.ModuleType("fastapi")
         fa_resp = types.ModuleType("fastapi.responses")
         fa.Request = object
+        fa.HTTPException = Exception
         fa.status = SimpleNamespace(HTTP_403_FORBIDDEN=403, HTTP_503_SERVICE_UNAVAILABLE=503)
         fa_resp.JSONResponse = lambda status_code=200, content=None: SimpleNamespace(status_code=status_code, content=content)
         sys.modules["fastapi"] = fa
@@ -139,6 +143,7 @@ def _install_missing_stubs() -> None:
     if "app.core.security" not in sys.modules:
         sec = types.ModuleType("app.core.security")
         sec.verify_token = MagicMock(return_value=None)
+        sec.decrypt_key = lambda k: f"dec_{k}"
         sys.modules["app.core.security"] = sec
 
     if "app.db.session" not in sys.modules:
@@ -149,7 +154,19 @@ def _install_missing_stubs() -> None:
     if "app.models" not in sys.modules:
         m = types.ModuleType("app.models")
         m.User = type("User", (), {"email": None})
+        m.ApiKey = type("ApiKey", (), {"id": None, "user_id": None, "is_enabled": True})
         sys.modules["app.models"] = m
+
+    if "app.services.notification" not in sys.modules:
+        notif = types.ModuleType("app.services.notification")
+        notif.NotificationService = MagicMock()
+        sys.modules["app.services.notification"] = notif
+
+    if "app.services.bracket_order_service" not in sys.modules:
+        bos = types.ModuleType("app.services.bracket_order_service")
+        bos.bracket_order_service = MagicMock()
+        bos.BracketOrderService = MagicMock()
+        sys.modules["app.services.bracket_order_service"] = bos
 
     if "app.models.orderbook_snapshot" not in sys.modules:
         obs = types.ModuleType("app.models.orderbook_snapshot")
@@ -485,6 +502,79 @@ class TestRedisPoolingAndNonBlockingHandlers(unittest.IsolatedAsyncioTestCase):
             self.assertIn("system_alerts", channels)
         finally:
             handler.close()
+
+    async def test_measure_binance_latency_isolated_from_main_loop_stall(self):
+        """
+        Even if the main FastAPI event loop is stalled by 300ms while measure_binance_latency()
+        is running, the isolated background probe loop must measure true fast probe RTT (<100ms).
+        """
+        from app.services.system_service import SystemService
+
+        SystemService._binance_latency_cache = None
+        SystemService._binance_latency_cached_at = 0.0
+
+        async def fast_probes():
+            await asyncio.sleep(0.015)
+            return (18.4, 19.2, 22.1)
+
+        async def stall_main_loop():
+            await asyncio.sleep(0.002)
+            time.sleep(0.30)  # Simulate 300ms synchronous stall on main loop
+
+        with patch.object(SystemService, "_run_probes_coro", side_effect=fast_probes):
+            res, _ = await asyncio.gather(
+                SystemService.measure_binance_latency(force=True),
+                stall_main_loop(),
+            )
+
+        self.assertEqual(res["binance_spot_ms"], 18.4)
+        self.assertEqual(res["binance_futures_ms"], 19.2)
+        self.assertEqual(res["binance_ws_ms"], 22.1)
+        self.assertEqual(res["status"], "optimal")
+
+    def test_manual_trade_service_caches_decrypted_credentials_and_api_key_lookup(self):
+        """
+        Repeat polls to ManualTradeService._get_exchange and _lookup_api_key_record
+        must reuse cached decrypted credentials and API key records without re-running
+        Fernet decrypt_key() or db.query() on the event loop.
+        """
+        from app.services.manual_trade_service import ManualTradeService
+
+        ManualTradeService._DECRYPTED_CRED_CACHE.clear()
+        ManualTradeService._API_KEY_RECORD_CACHE.clear()
+
+        fake_rec = SimpleNamespace(
+            id=4,
+            user_id=5,
+            exchange="binance",
+            api_key="enc_api_key_4",
+            secret_key="enc_sec_key_4",
+            passphrase=None,
+            is_enabled=True,
+        )
+        fake_db = MagicMock()
+        fake_db.query.return_value.filter.return_value.first.return_value = fake_rec
+
+        r1 = ManualTradeService._lookup_api_key_record(fake_db, 5, 4)
+        r2 = ManualTradeService._lookup_api_key_record(fake_db, 5, 4)
+        self.assertIs(r1, fake_rec)
+        self.assertIs(r2, fake_rec)
+        self.assertEqual(fake_db.query.call_count, 1)
+
+        decrypt_calls = []
+
+        def fake_decrypt(val):
+            decrypt_calls.append(val)
+            return f"dec_{val}"
+
+        with patch("app.services.manual_trade_service.decrypt_key", side_effect=fake_decrypt), \
+             patch("app.services.manual_trade_service.get_or_create_exchange", new=AsyncMock(return_value="fake_ex")):
+            asyncio.run(ManualTradeService._get_exchange(fake_rec, True, purpose="order"))
+            asyncio.run(ManualTradeService._get_exchange(fake_rec, True, purpose="order"))
+            asyncio.run(ManualTradeService._get_exchange(fake_rec, False, purpose="general"))
+
+        # decrypt_key called only once for api_key + once for secret_key across all 3 calls
+        self.assertEqual(len(decrypt_calls), 2)
 
 
 if __name__ == "__main__":

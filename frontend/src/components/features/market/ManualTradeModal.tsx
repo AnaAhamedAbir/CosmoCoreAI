@@ -802,6 +802,9 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
       if (shouldFetchOpenOrders) {
         lastOpenOrdersFetchRef.current = now;
+        if (forceOpenOrders) {
+          manualTradeService.invalidatePollCache(Number(selectedApi));
+        }
         const [bracketsRes, openOrdersRes] = await Promise.all([
           manualTradeService.getActiveSoftwareBrackets(Number(selectedApi), activeSymbol).catch(() => []),
           manualTradeService.getOpenLimitOrders(Number(selectedApi), activeSymbol).catch(() => ({ orders: [] }))

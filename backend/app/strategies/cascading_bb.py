@@ -21,22 +21,31 @@ class CascadingBBLogger:
 
     def _push_redis(self, log_type: str, message: str):
         try:
-            import datetime, json, redis
-            from app.core.config import settings
+            import datetime, json
+            from app.utils import get_redis_client
             
             if CascadingBBLogger._redis_client is None:
-                CascadingBBLogger._redis_client = redis.from_url(settings.REDIS_URL, decode_responses=True)
+                CascadingBBLogger._redis_client = get_redis_client()
                 
             r = CascadingBBLogger._redis_client
             
             timestamp = datetime.datetime.now().strftime("%H:%M:%S")
             log_entry = {"time": timestamp, "type": log_type, "message": str(message)}
+            log_json = json.dumps(log_entry)
             stream_payload = {"channel": f"logs_{self.bot_id}", "data": log_entry}
-            r.publish("bot_logs", json.dumps(stream_payload))
-            r.publish(f"bot_logs:{self.bot_id}", json.dumps(log_entry))
             list_key = f"bot_logs_list:{self.bot_id}"
-            r.rpush(list_key, json.dumps(log_entry))
-            r.ltrim(list_key, -50, -1)
+            if hasattr(r, "pipeline"):
+                pipe = r.pipeline(transaction=False)
+                pipe.publish("bot_logs", json.dumps(stream_payload))
+                pipe.publish(f"bot_logs:{self.bot_id}", log_json)
+                pipe.rpush(list_key, log_json)
+                pipe.ltrim(list_key, -50, -1)
+                pipe.execute()
+            else:
+                r.publish("bot_logs", json.dumps(stream_payload))
+                r.publish(f"bot_logs:{self.bot_id}", log_json)
+                r.rpush(list_key, log_json)
+                r.ltrim(list_key, -50, -1)
         except Exception:
             pass
 
@@ -122,7 +131,7 @@ class CascadingBBBot:
         
         # Initialize WebSocket Exchange
         ws_exchange_class = getattr(ccxt_pro, self.exchange_id)
-        ws_params = {'enableRateLimit': False}
+        ws_params = {'enableRateLimit': False, 'newUpdates': True}
         if trading_mode == "futures":
             ws_params['options'] = {'defaultType': 'future'}
             

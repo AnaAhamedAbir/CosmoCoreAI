@@ -47,93 +47,114 @@ def calculate_advanced_trade_features(df_raw: pd.DataFrame, requested_features: 
     window_short = 100  # Fast HFT window (~2-5 seconds on highly active pairs like BTC)
     window_long = 500   # Slow HFT window (~15-30 seconds)
     
+    req_set = set(requested_features) if requested_features is not None else None
+    def _need(*names: str) -> bool:
+        return req_set is None or any(n in req_set for n in names)
+
     feats = {}
     
     # --- Volume & Flow Dynamics ---
-    rolling_buy_vol = df['amount'].where(df['trade_dir'] == 1, 0).rolling(window=window_short, min_periods=1).sum()
-    rolling_sell_vol = df['amount'].where(df['trade_dir'] == -1, 0).rolling(window=window_short, min_periods=1).sum()
-    
-    feats['rolling_vol_imbalance'] = rolling_buy_vol / (rolling_buy_vol + rolling_sell_vol).clip(lower=1e-9)
-    feats['trade_velocity'] = df['amount'].rolling(window=window_short, min_periods=1).count() / (tick_speed_ms.rolling(window=window_short, min_periods=1).sum() / 1000).clip(lower=1e-3)
-    
-    feats['buy_volume'] = rolling_buy_vol
-    feats['sell_volume'] = rolling_sell_vol
-    feats['trade_count'] = df['amount'].rolling(window=window_short, min_periods=1).count()
-    feats['cvd'] = df['signed_volume'].cumsum()
+    if _need('rolling_vol_imbalance', 'buy_volume', 'sell_volume', 'vpin_proxy'):
+        rolling_buy_vol = df['amount'].where(df['trade_dir'] == 1, 0).rolling(window=window_short, min_periods=1).sum()
+        rolling_sell_vol = df['amount'].where(df['trade_dir'] == -1, 0).rolling(window=window_short, min_periods=1).sum()
+        feats['rolling_vol_imbalance'] = rolling_buy_vol / (rolling_buy_vol + rolling_sell_vol).clip(lower=1e-9)
+        feats['buy_volume'] = rolling_buy_vol
+        feats['sell_volume'] = rolling_sell_vol
+        feats['vpin_proxy'] = abs(rolling_buy_vol - rolling_sell_vol) / (rolling_buy_vol + rolling_sell_vol).clip(lower=1e-9)
+
+    if _need('trade_velocity', 'trade_count'):
+        t_cnt = df['amount'].rolling(window=window_short, min_periods=1).count()
+        feats['trade_count'] = t_cnt
+        if _need('trade_velocity'):
+            feats['trade_velocity'] = t_cnt / (tick_speed_ms.rolling(window=window_short, min_periods=1).sum() / 1000).clip(lower=1e-3)
+
+    if _need('cvd'):
+        feats['cvd'] = df['signed_volume'].cumsum()
     
     # VWAP Deviation
-    cum_vol = df['amount'].cumsum()
-    cum_vol_price = (df['price'] * df['amount']).cumsum()
-    vwap_tick = cum_vol_price / cum_vol.clip(lower=1e-9)
-    feats['vwap_deviation'] = (df['price'] - vwap_tick) / vwap_tick.clip(lower=1e-9)
+    if _need('vwap_deviation'):
+        cum_vol = df['amount'].cumsum()
+        cum_vol_price = (df['price'] * df['amount']).cumsum()
+        vwap_tick = cum_vol_price / cum_vol.clip(lower=1e-9)
+        feats['vwap_deviation'] = (df['price'] - vwap_tick) / vwap_tick.clip(lower=1e-9)
     
     # Consecutive Directional Runs (Streak length)
-    run_blocks = (df['trade_dir'] != df['trade_dir'].shift()).cumsum()
-    feats['consecutive_runs'] = df.groupby(run_blocks).cumcount() + 1
+    if _need('consecutive_runs'):
+        run_blocks = (df['trade_dir'] != df['trade_dir'].shift()).cumsum()
+        feats['consecutive_runs'] = df.groupby(run_blocks).cumcount() + 1
     
-    feats['aggressor_ratio'] = (df['trade_dir'] == 1).rolling(window=window_short, min_periods=1).mean()
+    if _need('aggressor_ratio', 'entropy_of_signs'):
+        agg_ratio = (df['trade_dir'] == 1).rolling(window=window_short, min_periods=1).mean()
+        feats['aggressor_ratio'] = agg_ratio
+        if _need('entropy_of_signs'):
+            p = agg_ratio.clip(1e-5, 1 - 1e-5)
+            feats['entropy_of_signs'] = -p * np.log2(p) - (1 - p) * np.log2(1 - p)
     
     # --- Trade Size & Micro-behavior ---
-    feats['avg_trade_size'] = df['amount'].rolling(window=window_short, min_periods=1).mean()
+    if _need('avg_trade_size'):
+        feats['avg_trade_size'] = df['amount'].rolling(window=window_short, min_periods=1).mean()
     
     # Whale trade: size > 95th percentile of trailing long window
-    rolling_95th = df['amount'].rolling(window=window_long, min_periods=1).quantile(0.95).bfill()
-    whale_flag = (df['amount'] > rolling_95th).astype(int)
-    feats['whale_trade_freq'] = whale_flag.rolling(window=window_short, min_periods=1).sum()
-    feats['large_trade_flag'] = whale_flag
+    if _need('whale_trade_freq', 'large_trade_flag'):
+        rolling_95th = df['amount'].rolling(window=window_long, min_periods=1).quantile(0.95).bfill()
+        whale_flag = (df['amount'] > rolling_95th).astype(int)
+        feats['whale_trade_freq'] = whale_flag.rolling(window=window_short, min_periods=1).sum()
+        feats['large_trade_flag'] = whale_flag
     
     # Retail proxy: size < 25th percentile
-    rolling_25th = df['amount'].rolling(window=window_long, min_periods=1).quantile(0.25).bfill()
-    retail_flag = (df['amount'] < rolling_25th).astype(int)
-    feats['retail_participation_ratio'] = retail_flag.rolling(window=window_short, min_periods=1).mean()
+    if _need('retail_participation_ratio'):
+        rolling_25th = df['amount'].rolling(window=window_long, min_periods=1).quantile(0.25).bfill()
+        retail_flag = (df['amount'] < rolling_25th).astype(int)
+        feats['retail_participation_ratio'] = retail_flag.rolling(window=window_short, min_periods=1).mean()
     
-    feats['trade_size_variance'] = df['amount'].rolling(window=window_short, min_periods=1).var().ffill().fillna(0)
+    if _need('trade_size_variance'):
+        feats['trade_size_variance'] = df['amount'].rolling(window=window_short, min_periods=1).var().ffill().fillna(0)
     
     # Iceberg proxy: consecutive trades at exact same price
-    price_unchanged = (df['price'] == df['price'].shift(1)).astype(int)
-    iceberg_blocks = (price_unchanged == 0).cumsum()
-    feats['iceberg_proxy_count'] = price_unchanged.groupby(iceberg_blocks).cumsum()
+    if _need('iceberg_proxy_count'):
+        price_unchanged = (df['price'] == df['price'].shift(1)).astype(int)
+        iceberg_blocks = (price_unchanged == 0).cumsum()
+        feats['iceberg_proxy_count'] = price_unchanged.groupby(iceberg_blocks).cumsum()
     
     # Up-tick vs Down-tick volume
-    up_tick_vol = df['amount'].where(df['price'] > df['price'].shift(1), 0).rolling(window=window_short, min_periods=1).sum()
-    down_tick_vol = df['amount'].where(df['price'] < df['price'].shift(1), 0).rolling(window=window_short, min_periods=1).sum()
-    feats['up_down_tick_ratio'] = up_tick_vol / down_tick_vol.clip(lower=1e-9)
+    if _need('up_down_tick_ratio'):
+        up_tick_vol = df['amount'].where(df['price'] > df['price'].shift(1), 0).rolling(window=window_short, min_periods=1).sum()
+        down_tick_vol = df['amount'].where(df['price'] < df['price'].shift(1), 0).rolling(window=window_short, min_periods=1).sum()
+        feats['up_down_tick_ratio'] = up_tick_vol / down_tick_vol.clip(lower=1e-9)
 
     # --- Price Impact & Micro-Volatility ---
-    returns = df['price'].pct_change().fillna(0)
-    feats['micro_volatility'] = returns.rolling(window=window_short, min_periods=1).std().ffill().fillna(0)
+    if _need('micro_volatility', 'amihud_illiquidity', 'zero_tick_ratio', 'realized_variance'):
+        returns = df['price'].pct_change().fillna(0)
+        if _need('micro_volatility'):
+            feats['micro_volatility'] = returns.rolling(window=window_short, min_periods=1).std().ffill().fillna(0)
+        if _need('amihud_illiquidity'):
+            feats['amihud_illiquidity'] = (returns.abs() / df['amount'].clip(lower=1e-9)).rolling(window=window_short, min_periods=1).mean()
+        if _need('zero_tick_ratio'):
+            feats['zero_tick_ratio'] = (returns == 0).rolling(window=window_short, min_periods=1).mean()
+        if _need('realized_variance'):
+            feats['realized_variance'] = (returns ** 2).rolling(window=window_short, min_periods=1).sum()
     
-    # Amihud Illiquidity: |Return| / Volume
-    feats['amihud_illiquidity'] = (returns.abs() / df['amount'].clip(lower=1e-9)).rolling(window=window_short, min_periods=1).mean()
-    
-    feats['tick_speed'] = tick_speed_ms.rolling(window=window_short, min_periods=1).mean()
-    feats['tick_acceleration'] = tick_speed_ms.diff().fillna(0).rolling(window=window_short, min_periods=1).mean()
-    feats['zero_tick_ratio'] = (returns == 0).rolling(window=window_short, min_periods=1).mean()
-    feats['realized_variance'] = (returns ** 2).rolling(window=window_short, min_periods=1).sum()
+    if _need('tick_speed'):
+        feats['tick_speed'] = tick_speed_ms.rolling(window=window_short, min_periods=1).mean()
+    if _need('tick_acceleration'):
+        feats['tick_acceleration'] = tick_speed_ms.diff().fillna(0).rolling(window=window_short, min_periods=1).mean()
 
     # --- Advanced Stats ---
-    # Kyle's Lambda proxy: slope = cov(signed_volume, price_diff) / var(signed_volume)
-    price_diff = df['price'].diff().fillna(0)
-    cov_sv_pd = df['signed_volume'].rolling(window=window_short, min_periods=1).cov(price_diff).ffill().fillna(0)
-    var_sv = df['signed_volume'].rolling(window=window_short, min_periods=1).var().ffill().fillna(0)
-    feats['kyles_lambda'] = (cov_sv_pd / var_sv.clip(lower=1e-9)).ffill().fillna(0)
+    if _need('kyles_lambda', 'roll_measure_spread'):
+        price_diff = df['price'].diff().fillna(0)
+        if _need('kyles_lambda'):
+            cov_sv_pd = df['signed_volume'].rolling(window=window_short, min_periods=1).cov(price_diff).ffill().fillna(0)
+            var_sv = df['signed_volume'].rolling(window=window_short, min_periods=1).var().ffill().fillna(0)
+            feats['kyles_lambda'] = (cov_sv_pd / var_sv.clip(lower=1e-9)).ffill().fillna(0)
+        if _need('roll_measure_spread'):
+            lag_price_diff = price_diff.shift(1).fillna(0)
+            cov_dp = price_diff.rolling(window=window_short, min_periods=1).cov(lag_price_diff).ffill().fillna(0)
+            feats['roll_measure_spread'] = 2 * np.sqrt(np.clip(-cov_dp, a_min=0, a_max=None))
     
-    # Autocorrelation of Order Signs (Vectorised lag-1)
-    var_td = df['trade_dir'].rolling(window=window_short, min_periods=1).var().ffill().fillna(0)
-    cov_td = df['trade_dir'].rolling(window=window_short, min_periods=1).cov(df['trade_dir'].shift(1)).ffill().fillna(0)
-    feats['autocorr_signs'] = (cov_td / var_td.clip(lower=1e-9)).ffill().fillna(0)
-    
-    # Entropy of Trade Directions
-    p = feats['aggressor_ratio'].clip(1e-5, 1 - 1e-5)
-    feats['entropy_of_signs'] = -p * np.log2(p) - (1-p) * np.log2(1-p)
-    
-    # Roll Measure: Implicit Spread = 2 * sqrt( max(0, -Cov(dp_t, dp_t-1)) )
-    lag_price_diff = price_diff.shift(1).fillna(0)
-    cov_dp = price_diff.rolling(window=window_short, min_periods=1).cov(lag_price_diff).ffill().fillna(0)
-    feats['roll_measure_spread'] = 2 * np.sqrt(np.clip(-cov_dp, a_min=0, a_max=None))
-    
-    # VPIN Proxy (Volume-Synchronized Probability of Informed Trading)
-    feats['vpin_proxy'] = abs(rolling_buy_vol - rolling_sell_vol) / (rolling_buy_vol + rolling_sell_vol).clip(lower=1e-9)
+    if _need('autocorr_signs'):
+        var_td = df['trade_dir'].rolling(window=window_short, min_periods=1).var().ffill().fillna(0)
+        cov_td = df['trade_dir'].rolling(window=window_short, min_periods=1).cov(df['trade_dir'].shift(1)).ffill().fillna(0)
+        feats['autocorr_signs'] = (cov_td / var_td.clip(lower=1e-9)).ffill().fillna(0)
     
     # Append requested features to dataframe
     for col, val in feats.items():

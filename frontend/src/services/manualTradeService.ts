@@ -117,20 +117,76 @@ export interface MlLivePreviewResponse {
   updated_at?: number;
 }
 
+// In-flight request coalescing & 350ms micro-cache to prevent multi-component polling storms
+const _inflightPolls = new Map<string, Promise<any>>();
+const _pollMicroCache = new Map<string, { ts: number; data: any }>();
+const POLL_MICRO_CACHE_TTL_MS = 350;
+
+function _coalescedPoll<T>(key: string, fetcher: () => Promise<T>, bypassCache = false): Promise<T> {
+  const now = Date.now();
+  if (!bypassCache) {
+    const cached = _pollMicroCache.get(key);
+    if (cached && now - cached.ts < POLL_MICRO_CACHE_TTL_MS) {
+      return Promise.resolve(cached.data as T);
+    }
+  }
+  const existing = _inflightPolls.get(key);
+  if (existing) {
+    return existing as Promise<T>;
+  }
+  const p = fetcher()
+    .then((data) => {
+      _pollMicroCache.set(key, { ts: Date.now(), data });
+      return data;
+    })
+    .finally(() => {
+      _inflightPolls.delete(key);
+    });
+  _inflightPolls.set(key, p);
+  return p;
+}
+
+export function invalidateTradingPollCache(apiKeyId?: number | string | null): void {
+  if (apiKeyId === undefined || apiKeyId === null) {
+    _pollMicroCache.clear();
+    return;
+  }
+  const prefix = `:${String(apiKeyId)}:`;
+  for (const k of Array.from(_pollMicroCache.keys())) {
+    if (k.includes(prefix)) {
+      _pollMicroCache.delete(k);
+    }
+  }
+}
+
 export const manualTradeService = {
+  invalidatePollCache: invalidateTradingPollCache,
+
   getApiKeys: async () => {
     const response = await api.get('/users/api-keys');
     return response.data as ApiKey[];
   },
 
   getFastBalance: async (apiKeyId: number, symbol: string, forceRefresh: boolean = false) => {
-    const response = await api.get(`/trading/api-key-balance/${apiKeyId}?symbol=${encodeURIComponent(symbol)}${forceRefresh ? '&force_refresh=true' : ''}`);
-    return response.data as FastBalanceResponse;
+    const key = `bal:${apiKeyId}:${symbol.trim().toUpperCase()}`;
+    return _coalescedPoll(
+      key,
+      async () => {
+        const response = await api.get(
+          `/trading/api-key-balance/${apiKeyId}?symbol=${encodeURIComponent(symbol)}${forceRefresh ? '&force_refresh=true' : ''}`
+        );
+        return response.data as FastBalanceResponse;
+      },
+      forceRefresh
+    );
   },
 
   getActivePosition: async (apiKeyId: number, symbol: string) => {
-    const response = await api.get(`/trading/api-key-position/${apiKeyId}?symbol=${symbol}`);
-    return response.data as FastPositionResponse;
+    const key = `pos:${apiKeyId}:${symbol.trim().toUpperCase()}`;
+    return _coalescedPoll(key, async () => {
+      const response = await api.get(`/trading/api-key-position/${apiKeyId}?symbol=${encodeURIComponent(symbol)}`);
+      return response.data as FastPositionResponse;
+    });
   },
 
   placeOrder: async (order: OrderPayload) => {
@@ -142,6 +198,7 @@ export const manualTradeService = {
     };
     
     const response = await api.post('/trading/order', formattedOrder);
+    invalidateTradingPollCache(order.api_key_id);
     return response.data;
   },
 
@@ -152,6 +209,7 @@ export const manualTradeService = {
       side: payload.side.toLowerCase(),
     };
     const response = await api.put(`/trading/order/${apiKeyId}/${orderId}`, formattedPayload);
+    invalidateTradingPollCache(apiKeyId);
     return response.data;
   },
 
@@ -161,6 +219,7 @@ export const manualTradeService = {
       side: payload.side.toLowerCase(),
     };
     const response = await api.put(`/trading/software-bracket/${apiKeyId}/${slId}`, formattedPayload);
+    invalidateTradingPollCache(apiKeyId);
     return response.data;
   },
 
@@ -188,17 +247,32 @@ export const manualTradeService = {
       sl_config: payload.slConfig,
       target_order_id: payload.targetOrderId,
     });
+    invalidateTradingPollCache(payload.apiKeyId);
     return response.data;
   },
 
-  getActiveSoftwareBrackets: async (apiKeyId: number, symbol: string) => {
-    const response = await api.get(`/trading/active-software-brackets/${apiKeyId}?symbol=${encodeURIComponent(symbol)}`);
-    return response.data;
+  getActiveSoftwareBrackets: async (apiKeyId: number, symbol: string, forceRefresh: boolean = false) => {
+    const key = `brackets:${apiKeyId}:${symbol.trim().toUpperCase()}`;
+    return _coalescedPoll(
+      key,
+      async () => {
+        const response = await api.get(`/trading/active-software-brackets/${apiKeyId}?symbol=${encodeURIComponent(symbol)}`);
+        return response.data;
+      },
+      forceRefresh
+    );
   },
 
-  getOpenLimitOrders: async (apiKeyId: number, symbol: string) => {
-    const response = await api.get(`/trading/open-limit-orders/${apiKeyId}?symbol=${encodeURIComponent(symbol)}`);
-    return response.data;
+  getOpenLimitOrders: async (apiKeyId: number, symbol: string, forceRefresh: boolean = false) => {
+    const key = `openOrders:${apiKeyId}:${symbol.trim().toUpperCase()}`;
+    return _coalescedPoll(
+      key,
+      async () => {
+        const response = await api.get(`/trading/open-limit-orders/${apiKeyId}?symbol=${encodeURIComponent(symbol)}`);
+        return response.data;
+      },
+      forceRefresh
+    );
   },
 
   stopSmartChase: async (payload: { apiKeyId?: number; symbol: string; slId?: string }) => {
@@ -207,6 +281,7 @@ export const manualTradeService = {
       symbol: payload.symbol,
       sl_id: payload.slId
     });
+    invalidateTradingPollCache(payload.apiKeyId);
     return response.data;
   },
 
@@ -216,6 +291,7 @@ export const manualTradeService = {
       symbol: payload.symbol,
       sl_id: payload.pegId
     });
+    invalidateTradingPollCache(payload.apiKeyId);
     return response.data;
   },
 
@@ -278,6 +354,7 @@ export const manualTradeService = {
 
   cancelOrder: async (apiKeyId: number, orderId: string, symbol: string) => {
     const response = await api.delete(`/trading/order/${apiKeyId}/${encodeURIComponent(orderId)}?symbol=${encodeURIComponent(symbol)}`);
+    invalidateTradingPollCache(apiKeyId);
     return response.data;
   },
 
@@ -286,6 +363,7 @@ export const manualTradeService = {
       api_key_id: apiKeyId,
       symbol
     });
+    invalidateTradingPollCache(apiKeyId);
     return response.data;
   },
 
@@ -294,6 +372,7 @@ export const manualTradeService = {
       api_key_id: apiKeyId,
       symbol
     });
+    invalidateTradingPollCache(apiKeyId);
     return response.data;
   },
 

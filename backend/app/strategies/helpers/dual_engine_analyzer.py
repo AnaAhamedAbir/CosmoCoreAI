@@ -121,7 +121,7 @@ class DualEngineTracker:
                         # Only recalculate if new candle closed or enough time passed
                         current_candle_time = int(klines[-1].get('time', klines[-1].get('timestamp', 0)))
                         if current_candle_time > self.last_candle_time:
-                            await self._calculate_context(klines)
+                            await asyncio.to_thread(self._calculate_context_sync, klines)
                             self.last_candle_time = current_candle_time
             except Exception as e:
                 logger.error(f"Error in Dual Engine Tracker: {e}")
@@ -148,6 +148,9 @@ class DualEngineTracker:
         return f"Signal: {s['signal']} | Trend: {s['trend']} | RSI: {s['rsi']}"
 
     async def _calculate_context(self, klines: list):
+        await asyncio.to_thread(self._calculate_context_sync, klines)
+
+    def _calculate_context_sync(self, klines: list):
         try:
             df = pd.DataFrame(klines)
             if 'time' in df.columns:

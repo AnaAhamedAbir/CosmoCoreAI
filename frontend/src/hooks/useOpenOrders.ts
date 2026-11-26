@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import api from '../services/api';
+import { manualTradeService } from '../services/manualTradeService';
 import { getThermalProfile } from '@/utils/deviceProfile';
 
 export interface OpenLimitOrder {
@@ -67,9 +67,10 @@ export const useOpenOrders = (
       return;
     }
     try {
-      const [res, slRes] = await Promise.all([
-        api.get(`/trading/open-limit-orders/${apiKeyId}?symbol=${encodeURIComponent(symbol)}`).catch(() => ({ data: { orders: [] } })),
-        api.get(`/trading/active-software-brackets/${apiKeyId}?symbol=${encodeURIComponent(symbol)}`).catch(() => ({ data: [] }))
+      const numKey = Number(apiKeyId);
+      const [openOrdersData, slData] = await Promise.all([
+        manualTradeService.getOpenLimitOrders(numKey, symbol).catch(() => ({ orders: [] })),
+        manualTradeService.getActiveSoftwareBrackets(numKey, symbol).catch(() => [])
       ]);
 
       // Guard again after await — component may have unmounted or been disabled during the request
@@ -80,12 +81,12 @@ export const useOpenOrders = (
           if (exp <= now) tombstones.delete(tid);
         }
 
-        const limitOrders = (res.data?.orders ?? []).map((o: any) => ({
+        const limitOrders = (openOrdersData?.orders ?? (Array.isArray(openOrdersData) ? openOrdersData : [])).map((o: any) => ({
           ...o,
           isIceberg: Boolean(o.isIceberg),
           icebergQty: o.icebergQty ? Number(o.icebergQty) : undefined
         }));
-        const rawSLs = Array.isArray(slRes.data) ? slRes.data : [];
+        const rawSLs = Array.isArray(slData) ? slData : [];
         const softwareSLs = rawSLs
           .filter((sl: any) => sl.status !== 'chasing' && sl.status !== 'pegging' && sl.type !== 'smart_peg')
           .map((sl: any) => ({
@@ -150,7 +151,10 @@ export const useOpenOrders = (
   // Immediate refresh & 0ms optimistic cancellation sync on custom events
   useEffect(() => {
     const handleRefresh = () => {
-      if (enabled) fetchOrders();
+      if (enabled) {
+        manualTradeService.invalidatePollCache(apiKeyId);
+        fetchOrders();
+      }
     };
     const handleOptimisticRemove = (e: Event) => {
       if (!enabled) return;

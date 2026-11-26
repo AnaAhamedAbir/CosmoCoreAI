@@ -44,7 +44,7 @@ def calculate_trade_tick_features(df: pd.DataFrame, selected_features: list) -> 
         
     # The shared module expects 'price', 'amount', 'side' (or 'is_buyer_maker')
     if 'is_buyer_maker' in df.columns and 'side' not in df.columns:
-        df['side'] = df['is_buyer_maker'].apply(lambda x: 'sell' if x else 'buy')
+        df['side'] = np.where(df['is_buyer_maker'], 'sell', 'buy')
 
     df = calculate_advanced_trade_features(df, requested_features=selected_features)
     

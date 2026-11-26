@@ -48,8 +48,8 @@ class L2DataCollector:
 
     @staticmethod
     def _build_url(base: str, symbols: list[str]) -> str:
-        """Build a Binance combined-stream URL for the given symbols including trade streams."""
-        streams = "/".join(f"{s}@depth20@100ms/{s}@trade" for s in symbols)
+        """Build a Binance combined-stream URL for the given symbols using @aggTrade to avoid raw @trade frame floods."""
+        streams = "/".join(f"{s}@depth20@100ms/{s}@aggTrade" for s in symbols)
         return f"{base}?streams={streams}"
 
     # ── DB Symbol Loader ───────────────────────────────────────────────────
@@ -243,7 +243,7 @@ class L2DataCollector:
                         sym = stream_name.split("@")[0].upper()
                         payload = data["data"]
 
-                        if "@trade" in stream_name:
+                        if "@trade" in stream_name or "@aggTrade" in stream_name:
                             # Aggregate trade
                             buf = get_trade_buffer(sym)
                             price = float(payload.get('p', 0))

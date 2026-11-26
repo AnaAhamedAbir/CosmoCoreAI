@@ -4,6 +4,8 @@ import logging
 import os
 import platform
 import shutil
+import socket
+import threading
 import time
 import glob
 from typing import Any, Dict, Optional
@@ -267,10 +269,42 @@ class SystemService:
     _binance_latency_cached_at: float = 0.0
     _BINANCE_CACHE_TTL_SEC: float = 8.0
     _probe_sessions: Dict[int, Any] = {}
+    _probe_last_warm_ts: Dict[str, float] = {}
+    _probe_thread_loop: Optional[asyncio.AbstractEventLoop] = None
+    _probe_thread: Optional[threading.Thread] = None
+    _probe_thread_lock = threading.Lock()
+
+    @classmethod
+    def _ensure_probe_loop(cls) -> asyncio.AbstractEventLoop:
+        """
+        Return a dedicated background asyncio event loop running on its own daemon thread.
+        Running network RTT probes on an isolated loop ensures main FastAPI event-loop
+        workload/jitter is NEVER added to measured VPS -> Binance edge latency.
+        """
+        with cls._probe_thread_lock:
+            if cls._probe_thread_loop is not None and cls._probe_thread_loop.is_running():
+                return cls._probe_thread_loop
+
+            ready_evt = threading.Event()
+            created_loop: list = []
+
+            def _loop_runner() -> None:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                created_loop.append(loop)
+                ready_evt.set()
+                loop.run_forever()
+
+            t = threading.Thread(target=_loop_runner, name="binance-latency-probe", daemon=True)
+            t.start()
+            ready_evt.wait(timeout=2.0)
+            cls._probe_thread = t
+            cls._probe_thread_loop = created_loop[0]
+            return cls._probe_thread_loop
 
     @classmethod
     def _get_probe_session(cls) -> Optional[Any]:
-        """Reuse a persistent aiohttp ClientSession per event loop to avoid DNS/TLS overhead on every probe."""
+        """Reuse a persistent IPv4 aiohttp ClientSession per event loop to avoid DNS/TLS/IPv6 overhead on every probe."""
         if aiohttp is None:
             return None
         try:
@@ -283,9 +317,10 @@ class SystemService:
             return sess
         connector = aiohttp.TCPConnector(
             limit=8,
-            ttl_dns_cache=300,
-            keepalive_timeout=55.0,
+            ttl_dns_cache=600,
+            keepalive_timeout=120.0,
             enable_cleanup_closed=True,
+            family=socket.AF_INET,
         )
         sess = aiohttp.ClientSession(connector=connector)
         cls._probe_sessions[loop_id] = sess
@@ -294,26 +329,28 @@ class SystemService:
     @classmethod
     async def close_probe_sessions(cls) -> None:
         """Close persistent probe HTTP sessions cleanly on app shutdown."""
-        for sess in list(cls._probe_sessions.values()):
+        try:
+            curr_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            curr_loop = None
+        for loop_id, sess in list(cls._probe_sessions.items()):
             try:
                 if sess is not None and not getattr(sess, "closed", True):
-                    await sess.close()
+                    sess_loop = getattr(sess, "_loop", None)
+                    if sess_loop is not None and sess_loop is not curr_loop and sess_loop.is_running():
+                        fut = asyncio.run_coroutine_threadsafe(sess.close(), sess_loop)
+                        await asyncio.wrap_future(fut)
+                    else:
+                        await sess.close()
             except Exception:
                 pass
         cls._probe_sessions.clear()
 
     @classmethod
-    async def measure_binance_latency(cls, force: bool = False) -> Dict[str, Any]:
-        """Measure VPS-to-Binance REST & WebSocket edge latency with short TTL cache."""
-        now = time.monotonic()
-        if (
-            not force
-            and cls._binance_latency_cache is not None
-            and (now - cls._binance_latency_cached_at) < cls._BINANCE_CACHE_TTL_SEC
-        ):
-            return {**cls._binance_latency_cache, "cached": True}
+    async def _run_probes_coro(cls) -> tuple[Optional[float], Optional[float], Optional[float]]:
+        session = cls._get_probe_session()
 
-        async def _probe_http(session: Any, url: str) -> Optional[float]:
+        async def _single_http_get(url: str) -> Optional[float]:
             t0 = time.perf_counter()
             try:
                 if session is not None:
@@ -336,32 +373,91 @@ class SystemService:
                 return None
             return None
 
-        async def _probe_tcp(host: str, port: int) -> Optional[float]:
-            t0 = time.perf_counter()
-            writer = None
-            try:
-                _, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout=2.5)
-                return round((time.perf_counter() - t0) * 1000.0, 1)
-            except Exception:
+        async def _probe_http(url: str) -> Optional[float]:
+            now_m = time.monotonic()
+            was_warm = (now_m - cls._probe_last_warm_ts.get(url, 0.0)) < 40.0
+            first_ms = await _single_http_get(url)
+            if first_ms is None:
                 return None
-            finally:
-                if writer is not None:
-                    writer.close()
-                    try:
-                        await writer.wait_closed()
-                    except Exception:
-                        pass
+            cls._probe_last_warm_ts[url] = time.monotonic()
+            # If the keep-alive socket was cold (or paid a 3-RTT TCP+TLS handshake > 200ms),
+            # measure 1 immediate warm ping over the established keep-alive connection.
+            if (not was_warm or first_ms > 200.0) and session is not None:
+                second_ms = await _single_http_get(url)
+                if second_ms is not None:
+                    cls._probe_last_warm_ts[url] = time.monotonic()
+                    return min(first_ms, second_ms)
+            return first_ms
+
+        async def _probe_tcp(host: str, port: int) -> Optional[float]:
+            # Pre-resolve IPv4 address outside the RTT timer so DNS lookup and IPv6 fallback are excluded
+            target_host = host
+            try:
+                infos = await asyncio.get_running_loop().getaddrinfo(
+                    host, port, family=socket.AF_INET, type=socket.SOCK_STREAM
+                )
+                if infos and infos[0][4]:
+                    target_host = infos[0][4][0]
+            except Exception:
+                target_host = host
+
+            async def _single_tcp() -> Optional[float]:
+                t0 = time.perf_counter()
+                writer = None
+                try:
+                    _, writer = await asyncio.wait_for(
+                        asyncio.open_connection(target_host, port),
+                        timeout=2.5,
+                    )
+                    return round((time.perf_counter() - t0) * 1000.0, 1)
+                except Exception:
+                    return None
+                finally:
+                    if writer is not None:
+                        writer.close()
+                        try:
+                            await writer.wait_closed()
+                        except Exception:
+                            pass
+
+            m1 = await _single_tcp()
+            if m1 is not None and m1 > 200.0:
+                m2 = await _single_tcp()
+                if m2 is not None:
+                    return min(m1, m2)
+            return m1
+
+        return await asyncio.gather(
+            _probe_http("https://api.binance.com/api/v3/ping"),
+            _probe_http("https://fapi.binance.com/fapi/v1/ping"),
+            _probe_tcp("stream.binance.com", 9443),
+        )
+
+    @classmethod
+    async def measure_binance_latency(cls, force: bool = False) -> Dict[str, Any]:
+        """
+        Measure VPS-to-Binance REST & WebSocket edge latency with short TTL cache.
+        Executes on a dedicated isolated background probe loop so main event-loop activity
+        never inflates the reported network RTT.
+        """
+        now = time.monotonic()
+        if (
+            not force
+            and cls._binance_latency_cache is not None
+            and (now - cls._binance_latency_cached_at) < cls._BINANCE_CACHE_TTL_SEC
+        ):
+            return {**cls._binance_latency_cache, "cached": True}
 
         spot_ms: Optional[float] = None
         futures_ms: Optional[float] = None
         ws_ms: Optional[float] = None
 
-        session = cls._get_probe_session()
-        spot_ms, futures_ms, ws_ms = await asyncio.gather(
-            _probe_http(session, "https://api.binance.com/api/v3/ping"),
-            _probe_http(session, "https://fapi.binance.com/fapi/v1/ping"),
-            _probe_tcp("stream.binance.com", 9443),
-        )
+        try:
+            probe_loop = cls._ensure_probe_loop()
+            fut = asyncio.run_coroutine_threadsafe(cls._run_probes_coro(), probe_loop)
+            spot_ms, futures_ms, ws_ms = await asyncio.wait_for(asyncio.wrap_future(fut), timeout=6.0)
+        except Exception:
+            spot_ms, futures_ms, ws_ms = await cls._run_probes_coro()
 
         samples = [v for v in (spot_ms, futures_ms, ws_ms) if v is not None]
         if not samples:

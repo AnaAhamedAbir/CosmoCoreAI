@@ -57,7 +57,7 @@ class SupertrendTracker:
                 # Increased limit to 500 for better ATR/Trend convergence to match frontend exactly
                 klines = await market_depth_service.fetch_ohlcv(self.symbol, self.exchange_id, self.timeframe, limit=500)
                 if klines and len(klines) > self.atr_period:
-                    self._calculate_supertrend(klines)
+                    await asyncio.to_thread(self._calculate_supertrend, klines)
             except Exception as e:
                 logger.error(f"Supertrend Tracker Error: {e}")
             

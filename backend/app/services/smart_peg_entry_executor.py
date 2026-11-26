@@ -738,6 +738,7 @@ async def execute_smart_peg_entry(
                 ex_params['reduceOnly'] = True
 
         peg_order = None
+        t_place_start = time.perf_counter()
         try:
             peg_order = await _place_maker_order(
                 exchange, symbol, side, remaining_amount, target_maker_price, ex_params, is_futures
@@ -923,6 +924,13 @@ async def execute_smart_peg_entry(
                 t_placed = time.perf_counter()
                 t_base = start_time if (start_time and start_time > 0) else t_peg_start
                 first_order_latency_ms = max(1, int((t_placed - t_base) * 1000))
+                setup_ms = int((t_place_start - t_peg_start) * 1000)
+                place_api_ms = int((t_placed - t_place_start) * 1000)
+                logger.info(
+                    f"⚡ [SMART PEG TIMING] {symbol} | Total={first_order_latency_ms}ms | "
+                    f"PegSetup={setup_ms}ms | PlaceAPI={place_api_ms}ms | "
+                    f"PreOB={has_preloaded_ob} | PreBal={bool(preloaded_balance)}"
+                )
                 peg_mode_label = (
                     f"Dynamic Wall-Aware Peg (+{eff_front_run_ticks}t)"
                     if eff_peg_strategy == 'wall_aware'

@@ -18,6 +18,7 @@ import SystemNotificationWidget from '@/components/common/SystemNotificationWidg
 import MarketSwitcher from '@/components/common/MarketSwitcher';
 import GlobalAnnouncementBar from '@/components/common/GlobalAnnouncementBar';
 import { useSettings } from '@/context/SettingsContext';
+import { LatencyGuardProvider } from '@/context/LatencyGuardContext';
 import { useMarketStore } from '@/store/marketStore';
 
 const Dashboard = React.lazy(() => import('./Dashboard'));
@@ -851,6 +852,7 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
     const showWalletConnect = [AppView.DASHBOARD, AppView.PORTFOLIO, AppView.ON_CHAIN_ANALYZER].includes(viewToRender);
 
     return (
+        <LatencyGuardProvider canManageServerGuard={userProfile.is_superuser}>
         <BacktestProvider>
             <div className={`flex h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)] w-full max-w-[100vw] overflow-hidden bg-brand-light dark:bg-[#050810] ${deviceProfile.isThermalGuardActive ? '' : 'transition-all duration-300'}`}>
                 <Sidebar 
@@ -1048,6 +1050,7 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
                     <AIAssistantModal isOpen={isAssistantOpen} onClose={() => setIsAssistantOpen(false)} currentView={viewToRender} />
             </div>
         </BacktestProvider>
+        </LatencyGuardProvider>
     );
 };
 

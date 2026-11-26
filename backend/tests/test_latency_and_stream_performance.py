@@ -577,5 +577,147 @@ class TestRedisPoolingAndNonBlockingHandlers(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(decrypt_calls), 2)
 
 
+class TestLatencyWarningAndExecutionGuard(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        from app.services.system_service import SystemService
+
+        self._orig_cache = SystemService._binance_latency_cache
+        self._orig_cached_at = SystemService._binance_latency_cached_at
+        self._orig_guard_cache = SystemService._latency_guard_config_cache
+        self._orig_guard_cached_at = SystemService._latency_guard_config_cached_at
+        self._orig_alert_state = SystemService._last_published_latency_state
+        self._orig_alert_ts = SystemService._last_latency_alert_ts
+
+    async def asyncTearDown(self):
+        from app.services.system_service import SystemService
+
+        SystemService._binance_latency_cache = self._orig_cache
+        SystemService._binance_latency_cached_at = self._orig_cached_at
+        SystemService._latency_guard_config_cache = self._orig_guard_cache
+        SystemService._latency_guard_config_cached_at = self._orig_guard_cached_at
+        SystemService._last_published_latency_state = self._orig_alert_state
+        SystemService._last_latency_alert_ts = self._orig_alert_ts
+
+    async def test_evaluate_latency_health_and_enforce_guard(self):
+        from fastapi import HTTPException
+        from app.services.system_service import SystemService
+
+        SystemService._latency_guard_config_cache = {
+            "guard_enabled": True,
+            "block_on_degraded": True,
+            "binance_warn_ms": 180,
+            "binance_block_ms": 350,
+            "client_warn_ms": 600,
+            "client_block_ms": 1000,
+        }
+        SystemService._latency_guard_config_cached_at = time.monotonic()
+
+        # Optimal -> no warning, no block
+        SystemService._binance_latency_cache = {
+            "binance_spot_ms": 24.0,
+            "binance_futures_ms": 21.0,
+            "binance_ws_ms": 18.0,
+            "status": "optimal",
+        }
+        SystemService._binance_latency_cached_at = time.monotonic()
+        h_ok = SystemService.evaluate_latency_health(SystemService._binance_latency_cache)
+        self.assertEqual(h_ok["severity"], "optimal")
+        self.assertFalse(h_ok["should_guard"])
+        await SystemService.enforce_latency_guard(allow_probe=False, action_label="test order")
+
+        # Critical latency -> rejects accidental new entry/bot start with HTTP 423 HIGH_LATENCY_GUARD
+        SystemService._binance_latency_cache = {
+            "binance_spot_ms": 1039.0,
+            "binance_futures_ms": 1038.0,
+            "binance_ws_ms": 1269.0,
+            "status": "degraded",
+        }
+        SystemService._binance_latency_cached_at = time.monotonic()
+        h_crit = SystemService.evaluate_latency_health(SystemService._binance_latency_cache)
+        self.assertEqual(h_crit["severity"], "critical")
+        self.assertTrue(h_crit["should_guard"])
+
+        with self.assertRaises(HTTPException) as ctx:
+            await SystemService.enforce_latency_guard(allow_probe=False, action_label="BTC/USDC Buy")
+        self.assertEqual(ctx.exception.status_code, 423)
+        self.assertIn("HIGH_LATENCY_GUARD", str(ctx.exception.detail))
+
+        # Reduce-only / emergency exit must NEVER be blocked even under critical latency
+        await SystemService.enforce_latency_guard(
+            is_exit_or_reduce=True,
+            allow_probe=False,
+            action_label="emergency close",
+        )
+
+        # Explicit user override flag must be allowed
+        await SystemService.enforce_latency_guard(
+            confirm_high_latency=True,
+            allow_probe=False,
+            action_label="manual override",
+        )
+
+        # Paused guard must allow normal placement
+        SystemService._latency_guard_config_cache["guard_enabled"] = False
+        await SystemService.enforce_latency_guard(allow_probe=False, action_label="guard paused")
+
+    async def test_latency_transition_emits_deduplicated_system_alert(self):
+        from app.services.system_service import SystemService
+
+        SystemService._latency_guard_config_cache = {
+            "guard_enabled": True,
+            "block_on_degraded": True,
+            "binance_warn_ms": 180,
+            "binance_block_ms": 350,
+            "client_warn_ms": 600,
+            "client_block_ms": 1000,
+        }
+        SystemService._latency_guard_config_cached_at = time.monotonic()
+        SystemService._last_published_latency_state = "optimal"
+        SystemService._last_latency_alert_ts = 0.0
+
+        published = []
+        fake_redis = MagicMock()
+        fake_redis.publish.side_effect = lambda ch, msg: published.append((ch, json.loads(msg)))
+
+        with patch("app.services.system_service.get_redis_client", return_value=fake_redis):
+            # 1st spike -> emits CRITICAL NETWORK_LATENCY alert
+            SystemService._maybe_publish_latency_alert({
+                "binance_spot_ms": 980.0,
+                "binance_futures_ms": 920.0,
+                "binance_ws_ms": 1150.0,
+                "status": "degraded",
+            })
+            # Repeat same critical state within 60s cooldown -> suppressed
+            SystemService._maybe_publish_latency_alert({
+                "binance_spot_ms": 990.0,
+                "binance_futures_ms": 930.0,
+                "binance_ws_ms": 1100.0,
+                "status": "degraded",
+            })
+            # Recovery -> resets tracked state quietly
+            SystemService._maybe_publish_latency_alert({
+                "binance_spot_ms": 22.0,
+                "binance_futures_ms": 19.0,
+                "binance_ws_ms": 20.0,
+                "status": "optimal",
+            })
+            # Subsequent new spike after recovery -> emits a new alert cleanly
+            SystemService._maybe_publish_latency_alert({
+                "binance_spot_ms": 260.0,
+                "binance_futures_ms": 240.0,
+                "binance_ws_ms": 250.0,
+                "status": "degraded",
+            })
+
+        self.assertEqual(len(published), 2)
+        self.assertEqual(published[0][0], "system_alerts")
+        self.assertEqual(published[0][1]["type"], "system_alert")
+        self.assertEqual(published[0][1]["container"], "network_latency")
+        self.assertEqual(published[0][1]["display_name"], "Network & Exchange Latency")
+        self.assertEqual(published[0][1]["severity"], "CRITICAL")
+        self.assertIsInstance(published[0][1]["snippet"], list)
+        self.assertEqual(published[1][1]["severity"], "WARNING")
+
+
 if __name__ == "__main__":
     unittest.main()

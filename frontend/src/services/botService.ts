@@ -19,9 +19,17 @@ export const botService = {
         return response.data;
     },
 
-    controlBot: async (botId: string | number, action: 'start' | 'stop' | 'pause'): Promise<ActiveBot> => {
+    controlBot: async (
+        botId: string | number,
+        action: 'start' | 'stop' | 'pause',
+        options?: { confirmHighLatency?: boolean }
+    ): Promise<ActiveBot> => {
+        const params: Record<string, any> = { action };
+        if (options?.confirmHighLatency) {
+            params.confirm_high_latency = true;
+        }
         const response = await apiClient.post(`/bots/${botId}/action`, null, {
-            params: { action },
+            params,
         });
         return response.data;
     },

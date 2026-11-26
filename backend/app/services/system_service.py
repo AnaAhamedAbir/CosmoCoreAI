@@ -1,5 +1,7 @@
 
 import asyncio
+from datetime import datetime, timezone
+import json
 import logging
 import os
 import platform
@@ -23,6 +25,7 @@ from sqlalchemy.exc import OperationalError
 from redis.exceptions import ConnectionError
 from app.core.celery_app import celery_app
 from app.core.redis import redis_manager
+from app.utils import get_redis_client
 
 logger = logging.getLogger(__name__)
 
@@ -268,6 +271,20 @@ class SystemService:
     _binance_latency_cache: Optional[Dict[str, Any]] = None
     _binance_latency_cached_at: float = 0.0
     _BINANCE_CACHE_TTL_SEC: float = 8.0
+    _BINANCE_GUARD_CACHE_MAX_AGE_SEC: float = 30.0
+    _LATENCY_GUARD_REDIS_KEY: str = "sys:latency_guard:config"
+    _DEFAULT_LATENCY_GUARD_CONFIG: Dict[str, Any] = {
+        "guard_enabled": True,
+        "block_on_degraded": True,
+        "binance_warn_ms": 180,
+        "binance_block_ms": 350,
+        "client_warn_ms": 600,
+        "client_block_ms": 1000,
+    }
+    _latency_guard_config_cache: Optional[Dict[str, Any]] = None
+    _latency_guard_config_cached_at: float = 0.0
+    _last_published_latency_state: str = "optimal"
+    _last_latency_alert_ts: float = 0.0
     _probe_sessions: Dict[int, Any] = {}
     _probe_last_warm_ts: Dict[str, float] = {}
     _probe_thread_loop: Optional[asyncio.AbstractEventLoop] = None
@@ -475,4 +492,236 @@ class SystemService:
         }
         cls._binance_latency_cache = result
         cls._binance_latency_cached_at = time.monotonic()
+        cls._maybe_publish_latency_alert(result)
         return result
+
+    @classmethod
+    def _normalize_guard_config(cls, raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        cfg = dict(cls._DEFAULT_LATENCY_GUARD_CONFIG)
+        if isinstance(raw, dict):
+            if "guard_enabled" in raw:
+                cfg["guard_enabled"] = bool(raw["guard_enabled"])
+            if "block_on_degraded" in raw:
+                cfg["block_on_degraded"] = bool(raw["block_on_degraded"])
+            for key, lo, hi in (
+                ("binance_warn_ms", 80, 5000),
+                ("binance_block_ms", 100, 10000),
+                ("client_warn_ms", 200, 10000),
+                ("client_block_ms", 300, 15000),
+            ):
+                if key in raw and raw[key] is not None:
+                    try:
+                        cfg[key] = max(lo, min(hi, int(raw[key])))
+                    except (TypeError, ValueError):
+                        pass
+            if cfg["binance_block_ms"] < cfg["binance_warn_ms"]:
+                cfg["binance_block_ms"] = cfg["binance_warn_ms"]
+            if cfg["client_block_ms"] < cfg["client_warn_ms"]:
+                cfg["client_block_ms"] = cfg["client_warn_ms"]
+        return cfg
+
+    @classmethod
+    def get_latency_guard_config(cls) -> Dict[str, Any]:
+        """Return persisted latency safety guard thresholds (short TTL RAM cache + Redis fallback)."""
+        now = time.monotonic()
+        if cls._latency_guard_config_cache is not None and (now - cls._latency_guard_config_cached_at) < 10.0:
+            return dict(cls._latency_guard_config_cache)
+
+        cfg = dict(cls._DEFAULT_LATENCY_GUARD_CONFIG)
+        try:
+            r = get_redis_client()
+            raw = r.get(cls._LATENCY_GUARD_REDIS_KEY)
+            if raw:
+                cfg = cls._normalize_guard_config(json.loads(raw))
+        except Exception:
+            pass
+
+        cls._latency_guard_config_cache = cfg
+        cls._latency_guard_config_cached_at = now
+        return dict(cfg)
+
+    @classmethod
+    def set_latency_guard_config(cls, updates: Dict[str, Any]) -> Dict[str, Any]:
+        """Update and persist latency safety guard configuration."""
+        merged = {**cls.get_latency_guard_config(), **(updates or {})}
+        cfg = cls._normalize_guard_config(merged)
+        cls._latency_guard_config_cache = cfg
+        cls._latency_guard_config_cached_at = time.monotonic()
+        try:
+            r = get_redis_client()
+            r.set(cls._LATENCY_GUARD_REDIS_KEY, json.dumps(cfg))
+        except Exception as e:
+            logger.debug(f"Could not persist latency guard config to Redis: {e}")
+        return dict(cfg)
+
+    @classmethod
+    def evaluate_latency_health(
+        cls,
+        network_data: Optional[Dict[str, Any]],
+        guard_config: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Evaluate VPS -> Binance latency samples against configured warning & protection thresholds."""
+        cfg = guard_config or cls.get_latency_guard_config()
+        if not network_data:
+            return {
+                "severity": "optimal",
+                "should_warn": False,
+                "should_guard": False,
+                "avg_ms": None,
+                "max_ms": None,
+                "reasons": [],
+            }
+
+        spot_ms = network_data.get("binance_spot_ms")
+        futures_ms = network_data.get("binance_futures_ms")
+        ws_ms = network_data.get("binance_ws_ms")
+        samples = [float(v) for v in (spot_ms, futures_ms, ws_ms) if v is not None]
+        status = str(network_data.get("status") or ("unreachable" if not samples else "optimal"))
+
+        avg_ms = round(sum(samples) / len(samples), 1) if samples else None
+        max_ms = round(max(samples), 1) if samples else None
+
+        warn_ms = int(cfg.get("binance_warn_ms", 180))
+        block_ms = int(cfg.get("binance_block_ms", 350))
+        guard_enabled = bool(cfg.get("guard_enabled", True))
+        block_on_degraded = bool(cfg.get("block_on_degraded", True))
+
+        reasons = []
+        if status == "unreachable" or not samples:
+            severity = "unreachable"
+            reasons.append("Binance Spot/Futures/WS unreachable from VPS")
+        else:
+            for label, val in (
+                ("VPS -> Spot REST", spot_ms),
+                ("VPS -> Futures REST", futures_ms),
+                ("VPS -> Binance WS", ws_ms),
+            ):
+                if val is not None and float(val) >= warn_ms:
+                    reasons.append(f"{label} {round(float(val))}ms")
+
+            if (max_ms is not None and max_ms >= block_ms) or (avg_ms is not None and avg_ms >= block_ms):
+                severity = "critical"
+            elif status == "degraded" or reasons:
+                severity = "warning"
+            elif status == "good":
+                severity = "good"
+            else:
+                severity = "optimal"
+
+        should_warn = severity in ("warning", "critical", "unreachable")
+        should_guard = guard_enabled and (
+            severity in ("critical", "unreachable")
+            or (block_on_degraded and severity == "warning")
+        )
+        return {
+            "severity": severity,
+            "should_warn": should_warn,
+            "should_guard": should_guard,
+            "avg_ms": avg_ms,
+            "max_ms": max_ms,
+            "reasons": reasons,
+        }
+
+    @classmethod
+    def _maybe_publish_latency_alert(cls, network_data: Dict[str, Any]) -> None:
+        """Emit deduplicated latency spike / recovery events to the Sys Monitor `system_alerts` pubsub."""
+        try:
+            health = cls.evaluate_latency_health(network_data)
+            sev = health["severity"]
+            prev = cls._last_published_latency_state
+            now_m = time.monotonic()
+
+            if sev in ("warning", "critical", "unreachable"):
+                is_worse = prev in ("optimal", "good") or (prev == "warning" and sev in ("critical", "unreachable"))
+                cooldown_elapsed = (now_m - cls._last_latency_alert_ts) >= 60.0
+                if not is_worse and not cooldown_elapsed:
+                    return
+                cls._last_published_latency_state = sev
+                cls._last_latency_alert_ts = now_m
+
+                level = "CRITICAL" if sev in ("critical", "unreachable") else "WARNING"
+                metrics_str = ", ".join(health["reasons"]) if health["reasons"] else f"Status={network_data.get('status')}"
+                msg = f"High Exchange Latency Detected ({sev.upper()}): {metrics_str}"
+            elif prev in ("warning", "critical", "unreachable"):
+                # Reset tracked state so any subsequent spike re-triggers immediately,
+                # without emitting an 'INFO' severity into the CRITICAL/ERROR/WARNING alert stream.
+                cls._last_published_latency_state = sev
+                cls._last_latency_alert_ts = now_m
+                return
+            else:
+                cls._last_published_latency_state = sev
+                return
+
+            snippet = [
+                f"Spot REST: {network_data.get('binance_spot_ms')} ms",
+                f"Futures REST: {network_data.get('binance_futures_ms')} ms",
+                f"Binance WS: {network_data.get('binance_ws_ms')} ms",
+                f"Status: {network_data.get('status')}",
+            ]
+            payload = json.dumps({
+                "type": "system_alert",
+                "id": f"lat_{int(time.time() * 1000)}",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "container": "network_latency",
+                "display_name": "Network & Exchange Latency",
+                "severity": level,
+                "category": "NETWORK_LATENCY",
+                "message": msg,
+                "snippet": snippet,
+            })
+            r = get_redis_client()
+            r.publish("system_alerts", payload)
+        except Exception:
+            pass
+
+    @classmethod
+    async def enforce_latency_guard(
+        cls,
+        *,
+        confirm_high_latency: bool = False,
+        header_confirm: Optional[str] = None,
+        is_exit_or_reduce: bool = False,
+        allow_probe: bool = False,
+        action_label: str = "execution",
+    ) -> None:
+        """
+        Reject accidental bot starts / new entry trades during high VPS->Binance latency
+        unless explicitly overridden or performing a reduce-only/exit action.
+        When `allow_probe=False` (manual-trade hot path), reads RAM cache in 0ms without blocking I/O.
+        """
+        if is_exit_or_reduce or confirm_high_latency:
+            return
+        if (header_confirm or "").strip().lower() in ("1", "true", "yes"):
+            return
+
+        cfg = cls.get_latency_guard_config()
+        if not cfg.get("guard_enabled", True):
+            return
+
+        network_data: Optional[Dict[str, Any]] = None
+        if allow_probe:
+            network_data = await cls.measure_binance_latency(force=False)
+        else:
+            now = time.monotonic()
+            if (
+                cls._binance_latency_cache is not None
+                and (now - cls._binance_latency_cached_at) <= cls._BINANCE_GUARD_CACHE_MAX_AGE_SEC
+            ):
+                network_data = cls._binance_latency_cache
+
+        if not network_data:
+            return
+
+        health = cls.evaluate_latency_health(network_data, cfg)
+        if health["should_guard"]:
+            from fastapi import HTTPException
+
+            summary = ", ".join(health["reasons"]) or f"status={network_data.get('status')}"
+            raise HTTPException(
+                status_code=423,
+                detail=(
+                    f"[HIGH_LATENCY_GUARD] Network/Exchange latency is {health['severity'].upper()} "
+                    f"({summary}). Aborting {action_label} to prevent accidental slippage/lag. "
+                    f"Retry with confirm_high_latency to override."
+                ),
+            )

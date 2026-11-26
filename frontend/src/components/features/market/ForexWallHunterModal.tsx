@@ -4,6 +4,7 @@ import { GripVertical, X } from 'lucide-react';
 import { botService } from '../../../services/botService';
 import { useFloatingModalDrag } from '../../../hooks/useFloatingModalDrag';
 import { useDeviceProfile } from '../../../hooks/useDeviceProfile';
+import { useLatencyGuard } from '../../../context/LatencyGuardContext';
 import { FloatingModalCyberFX } from '../../common/FloatingModalCyberFX';
 
 export const ForexWallHunterModal: FC<{
@@ -12,6 +13,7 @@ export const ForexWallHunterModal: FC<{
     onDeploySuccess?: (botId: number) => void;
 }> = ({ isOpen, onClose, onDeploySuccess }) => {
     const { isThermalGuardActive } = useDeviceProfile();
+    const { confirmIfHighLatency } = useLatencyGuard();
     const [isLoading, setIsLoading] = useState(false);
     const [errorMsg, setErrorMsg] = useState('');
     const [activeTab, setActiveTab] = useState('basic');
@@ -60,6 +62,12 @@ export const ForexWallHunterModal: FC<{
             return;
         }
 
+        const latGate = await confirmIfHighLatency({
+            actionLabel: `Deploy & Start Forex Bot (${form.symbol})`,
+            details: `Lot ${form.lotSize}`,
+        });
+        if (!latGate.proceed) return;
+
         setErrorMsg('');
         setIsLoading(true);
 
@@ -95,7 +103,7 @@ export const ForexWallHunterModal: FC<{
             };
 
             const createdBot = await botService.createBot(payload);
-            await botService.controlBot(createdBot.id, 'start');
+            await botService.controlBot(createdBot.id, 'start', latGate.overriddenHighLatency ? { confirmHighLatency: true } : undefined);
 
             setTimeout(() => {
                 setIsLoading(false);

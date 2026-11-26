@@ -13,6 +13,7 @@ import { CustomMLModel } from '../../../types';
 import { AdvancedRiskManager } from './AdvancedRiskManager';
 import { GodModeBotTriggerSettings } from './GodModeBotTriggerSettings';
 import { useDeviceProfile } from '../../../hooks/useDeviceProfile';
+import { useLatencyGuard } from '../../../context/LatencyGuardContext';
 import { beginFloatingModalDrag, endFloatingModalDrag } from '../../../hooks/useFloatingModalDrag';
 import { FloatingModalCyberFX } from '../../common/FloatingModalCyberFX';
 import { useBotStore } from '../../../store/botStore';
@@ -47,6 +48,7 @@ const toSafeInt = (val: unknown, fallback: number): number => {
 
 export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol: string; exchange?: string; bids?: any[]; asks?: any[]; onDeploySuccess?: (botId: number) => void }> = ({ isOpen, onClose, symbol, exchange = 'binance', bids = [], asks = [], onDeploySuccess }) => {
     const { isThermalGuardActive } = useDeviceProfile();
+    const { confirmIfHighLatency } = useLatencyGuard();
     const [savedKeys, setSavedKeys] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [errorMsg, setErrorMsg] = useState('');
@@ -1061,6 +1063,16 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
             }
         }
 
+        let whOverriddenHighLatency = false;
+        if (!(existingBot && deployMode === 'update')) {
+            const latGate = await confirmIfHighLatency({
+                actionLabel: `Deploy & Start Bot (${form.symbol})`,
+                details: `${form.botName || form.selectedStrategy} • $${form.amount}`,
+            });
+            if (!latGate.proceed) return;
+            whOverriddenHighLatency = latGate.overriddenHighLatency;
+        }
+
         setErrorMsg('');
         setIsLoading(true);
 
@@ -1309,7 +1321,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                 }, 1000);
             } else {
                 const createdBot = await botService.createBot(payload);
-                await botService.controlBot(createdBot.id, 'start');
+                await botService.controlBot(createdBot.id, 'start', whOverriddenHighLatency ? { confirmHighLatency: true } : undefined);
 
                 setTimeout(() => {
                     setIsLoading(false);

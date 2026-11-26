@@ -48,6 +48,8 @@ class _QuietPollingAccessFilter(logging.Filter):
     _QUIET_POLL_SUBSTRINGS = (
         "/api/v1/system/update-status",
         "/api/v1/system/ping",
+        "/api/v1/system/network-status",
+        "/api/v1/system/latency-guard",
         "/api/v1/system/hardware-telemetry",
         "/api/v1/system/health",
         "/api/v1/trading/active-software-brackets/",

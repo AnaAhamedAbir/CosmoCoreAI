@@ -92,6 +92,7 @@ class OrderRequest(BaseModel):
     ml_execution_mode: Optional[str] = 'basic'
     ml_bullish_threshold: Optional[float] = 0.50
     ml_bearish_threshold: Optional[float] = 0.50
+    confirm_high_latency: Optional[bool] = False
 
 class ConnectionTestRequest(BaseModel):
     exchange_id: str
@@ -186,7 +187,23 @@ async def place_order(
     try:
         import time
         start_time = time.perf_counter()
-        
+
+        params_dict = order.params if isinstance(order.params, dict) else {}
+        is_futures_sym = ":" in (order.symbol or "") or "leverage" in params_dict or "marginMode" in params_dict
+        is_reduce_only = bool(params_dict.get("reduceOnly", False))
+        # Allow closing Spot positions via plain sell (no attached entry TP/SL) without friction
+        is_spot_sell_exit = (not is_futures_sym) and (order.side or "").lower() == "sell" and not (
+            (order.attached_tp and order.attached_tp.enabled) or (order.attached_sl and order.attached_sl.enabled)
+        )
+
+        from app.services.system_service import SystemService
+        await SystemService.enforce_latency_guard(
+            confirm_high_latency=bool(order.confirm_high_latency),
+            is_exit_or_reduce=(is_reduce_only or is_spot_sell_exit),
+            allow_probe=False,
+            action_label=f"{order.symbol} {order.side} order",
+        )
+
         from app.services.manual_trade_service import manual_trade_service
         return await manual_trade_service.place_manual_trade(db, current_user.id, order, start_time)
     except HTTPException as he:

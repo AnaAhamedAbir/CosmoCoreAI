@@ -9,6 +9,7 @@ import { mlModelsService } from '../../../services/mlModelsService';
 import { trainingStudioToolsService } from '../../../services/trainingStudioToolsService';
 import { CustomMLModel } from '../../../types';
 import { useDeviceProfile } from '@/hooks/useDeviceProfile';
+import { useLatencyGuard } from '@/context/LatencyGuardContext';
 import { beginFloatingModalDrag, endFloatingModalDrag } from '@/hooks/useFloatingModalDrag';
 import { FloatingModalCyberFX } from '../../common/FloatingModalCyberFX';
 import { findBestWallsForTrade, OrderbookWall } from '../../../utils/liquidityWallMagnet';
@@ -86,6 +87,13 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
   onChartDragBracketEnd
 }) => {
   const { isThermalGuardActive, timings } = useDeviceProfile();
+  const {
+    shouldWarn: isLatencyWarning,
+    shouldProtect: isLatencyGuarded,
+    severity: latencySeverity,
+    reasons: latencyReasons,
+    confirmIfHighLatency,
+  } = useLatencyGuard();
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [hudDrawer, setHudDrawer] = useState<'none' | 'force' | 'ai' | 'wall'>('none');
@@ -2896,6 +2904,18 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       dragIcebergQty = rawSlice;
     }
 
+    const isExitOrReduceDrag =
+      (isFutures && reduceOnly) ||
+      (!isFutures && side === 'Sell' && !attachedTpPayload && !attachedSlPayload);
+    const dragLatGate = await confirmIfHighLatency({
+      actionLabel: `Drag ${side} ${isSmartPeg ? 'SmartPeg' : 'Limit'} (${activeSymbol})`,
+      details: `Entry ~$${formatDisplayPrice(dropPrice)} • Qty ${((isInverseFutures && contractsCount) ? contractsCount : baseAmount).toFixed(4)} ${baseCurrency}`,
+      isExitOrReduce: isExitOrReduceDrag,
+    });
+    if (!dragLatGate.proceed) {
+      return;
+    }
+
     const toastId = toast.loading(
       isSmartPeg
         ? `⚡ Placing Smart Peg ${side} anchored at $${formatDisplayPrice(dropPrice)}...`
@@ -2961,6 +2981,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
         iceberg_qty: dragIcebergQty,
         attached_tp: attachedTpPayload,
         attached_sl: attachedSlPayload,
+        ...(dragLatGate.overriddenHighLatency ? { confirm_high_latency: true } : {}),
       };
 
       if (mlFilterConfig.enabled && mlFilterConfig.modelId && !(isFutures && reduceOnly)) {
@@ -3372,6 +3393,18 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       baseAmount = Number(resolvedSizeStr) / convPrice;
     }
 
+    const isExitOrReduceForm =
+      (isFutures && reduceOnly) ||
+      (!isFutures && side === 'Sell' && !tpConfig.enabled && !slConfig.enabled);
+    const formLatGate = await confirmIfHighLatency({
+      actionLabel: `${side} ${orderType} (${activeSymbol})`,
+      details: `Qty ${baseAmount.toFixed(4)} ${baseCurrency}`,
+      isExitOrReduce: isExitOrReduceForm,
+    });
+    if (!formLatGate.proceed) {
+      return;
+    }
+
     setIsSubmitting(true);
     setSubmittingSide(side);
     let formOptTempId = '';
@@ -3437,7 +3470,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
         params: Object.keys(paramsPayload).length > 0 ? paramsPayload : undefined,
         client_timestamp: Date.now(),
         use_native_tp_sl: isNativeTpSlSupported ? Boolean(useNativeTpSl) : false,
-        iceberg_qty: resolvedIcebergQty
+        iceberg_qty: resolvedIcebergQty,
+        ...(formLatGate.overriddenHighLatency ? { confirm_high_latency: true } : {}),
       };
 
       if (tpConfig.enabled && tpConfig.value && Number(tpConfig.value) > 0) {
@@ -4301,6 +4335,26 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                     </div>
 
                     <HudCompactPnlStrip preview={tradePnlPreview} />
+
+                    {isLatencyWarning && (
+                      <div
+                        data-no-drag="true"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onTouchStart={(e) => e.stopPropagation()}
+                        className="px-2 py-1 rounded-lg bg-rose-950/60 border border-rose-500/45 flex items-center justify-between gap-2 text-[9.5px] font-mono text-rose-200"
+                      >
+                        <span className="flex items-center gap-1 min-w-0 truncate">
+                          <AlertTriangle className="w-3 h-3 text-rose-400 shrink-0" />
+                          <strong className="text-rose-300 shrink-0">Latency {latencySeverity.toUpperCase()}:</strong>
+                          <span className="truncate">{latencyReasons[0] || 'High network delay'}</span>
+                        </span>
+                        {isLatencyGuarded && (
+                          <span className="px-1 py-0.5 rounded bg-rose-600/80 text-white text-[8px] font-black shrink-0">
+                            GUARDED
+                          </span>
+                        )}
+                      </div>
+                    )}
 
                     {/* Compact AI Shield Rejection Notice (Visible in Minimized HUD) */}
                     {aiRejectNotice && (
@@ -6428,6 +6482,20 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
                     {/* Sticky Sci-Fi Footer */}
                     <div className="px-3 py-2 bg-[#04070e]/95 border-t border-cyan-500/20 shrink-0 space-y-1.5">
+                      {isLatencyWarning && (
+                        <div className="px-2.5 py-1.5 rounded-xl bg-rose-950/60 border border-rose-500/45 flex items-center justify-between gap-2 text-[10px] font-mono text-rose-200">
+                          <span className="flex items-center gap-1.5 min-w-0 truncate">
+                            <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                            <strong className="text-rose-300 uppercase shrink-0">High Latency ({latencySeverity}):</strong>
+                            <span className="truncate">{latencyReasons.join(' • ') || 'Exchange / Network delay detected'}</span>
+                          </span>
+                          {isLatencyGuarded && (
+                            <span className="px-1.5 py-0.5 rounded bg-rose-600 text-white text-[8.5px] font-black uppercase shrink-0">
+                              Entry Guard Active
+                            </span>
+                          )}
+                        </div>
+                      )}
                       {/* Inline AI Trade Shield Rejection Card */}
                       <AnimatePresence>
                         {aiRejectNotice && (

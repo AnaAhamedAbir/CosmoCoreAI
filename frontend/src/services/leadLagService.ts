@@ -60,8 +60,12 @@ export const leadLagService = {
     },
 
     // 5. Start the Bot
-    startBot: async (id: number): Promise<{ status: string, message: string }> => {
-        const response = await apiClient.post<{ status: string, message: string }>(`/lead-lag-bot/${id}/start`);
+    startBot: async (id: number, confirmHighLatency = false): Promise<{ status: string, message: string }> => {
+        const response = await apiClient.post<{ status: string, message: string }>(
+            `/lead-lag-bot/${id}/start`,
+            null,
+            { params: confirmHighLatency ? { confirm_high_latency: true } : undefined }
+        );
         return response.data;
     },
 

@@ -24,6 +24,15 @@ class UpdateStatusSchema(BaseModel):
     message: Optional[str] = None
     version: Optional[str] = None
 
+
+class LatencyGuardConfigSchema(BaseModel):
+    guard_enabled: Optional[bool] = None
+    block_on_degraded: Optional[bool] = None
+    binance_warn_ms: Optional[int] = None
+    binance_block_ms: Optional[int] = None
+    client_warn_ms: Optional[int] = None
+    client_block_ms: Optional[int] = None
+
 class AutoArchiverSwitchSchema(BaseModel):
     active: bool
 
@@ -192,6 +201,41 @@ async def ping_server():
     return {"ok": True, "ts": datetime.now(pytz.utc).isoformat()}
 
 
+@router.get("/network-status")
+async def get_network_latency_status(
+    refresh: bool = False,
+    current_user: models.User = Depends(deps.get_current_user),
+):
+    """Authenticated lightweight exchange latency + guard verdict for continuous monitoring."""
+    network = await SystemService.measure_binance_latency(force=refresh)
+    guard_config = SystemService.get_latency_guard_config()
+    health = SystemService.evaluate_latency_health(network, guard_config)
+    return {
+        "network": network,
+        "health": health,
+        "guard_config": guard_config,
+        "timestamp": datetime.now(pytz.utc).isoformat(),
+    }
+
+
+@router.get("/latency-guard")
+async def get_latency_guard_settings(
+    current_user: models.User = Depends(deps.get_current_user),
+):
+    """Return current latency warning & execution protection settings."""
+    return SystemService.get_latency_guard_config()
+
+
+@router.put("/latency-guard")
+async def update_latency_guard_settings(
+    payload: LatencyGuardConfigSchema,
+    current_user: models.User = Depends(deps.get_current_active_superuser),
+):
+    """Update and persist global latency warning & trade/bot protection thresholds."""
+    updates = payload.dict(exclude_none=True)
+    return SystemService.set_latency_guard_config(updates)
+
+
 @router.get("/update-status")
 def get_version_update_status():
     """Return whether a rolling server/version update is currently in progress."""
@@ -246,6 +290,9 @@ async def get_vps_hardware_telemetry(
             SystemService.measure_binance_latency(force=refresh),
         )
         data["network"] = network
+        guard_config = SystemService.get_latency_guard_config()
+        data["network_health"] = SystemService.evaluate_latency_health(network, guard_config)
+        data["guard_config"] = guard_config
         data["timestamp"] = datetime.now(pytz.utc).isoformat()
         return data
     except Exception as e:

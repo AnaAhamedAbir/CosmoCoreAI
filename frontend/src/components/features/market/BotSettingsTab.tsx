@@ -2,11 +2,13 @@ import * as React from 'react';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Search, ChevronDown, Check } from 'lucide-react';
 import { useSettings } from '../../../context/SettingsContext';
+import { useLatencyGuard } from '../../../context/LatencyGuardContext';
 import { useCCXTMarkets } from '../../../hooks/useCCXTMarkets';
 import { botService } from '../../../services/botService';
 
 export const BotSettingsTab: React.FC = () => {
     const { apiKeys } = useSettings();
+    const { confirmIfHighLatency } = useLatencyGuard();
     const {
         exchanges, selectedExchange, setSelectedExchange,
         quoteCurrencies, selectedQuote, setSelectedQuote,
@@ -110,10 +112,18 @@ export const BotSettingsTab: React.FC = () => {
 
     const handleToggleActive = async () => {
         if (isProcessing) return;
+        const newState = !isEnabled;
+        let overriddenHighLatency = false;
+        if (newState) {
+            const latGate = await confirmIfHighLatency({
+                actionLabel: `Start Level2 Wallhunter (${selectedPair})`,
+                details: `${strategy} • ${botTimeframe}`,
+            });
+            if (!latGate.proceed) return;
+            overriddenHighLatency = latGate.overriddenHighLatency;
+        }
         setIsProcessing(true);
         try {
-            const newState = !isEnabled;
-
             let targetBotId = currentBotId;
 
             // If activating but no bot exists yet, create one first.
@@ -147,7 +157,7 @@ export const BotSettingsTab: React.FC = () => {
 
             if (targetBotId) {
                 if (newState) {
-                    await botService.controlBot(targetBotId, 'start');
+                    await botService.controlBot(targetBotId, 'start', overriddenHighLatency ? { confirmHighLatency: true } : undefined);
                 } else {
                     await botService.controlBot(targetBotId, 'stop');
                 }

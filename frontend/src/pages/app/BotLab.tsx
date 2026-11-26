@@ -4,6 +4,7 @@ import { useBotStore } from '@/store/botStore';
 import Button from '@/components/common/Button';
 import type { ActiveBot, BacktestResult } from '@/types';
 import { useToast } from '@/context/ToastContext';
+import { useLatencyGuard } from '@/context/LatencyGuardContext';
 import { botService } from '@/services/botService';
 import BotSettingsModal from './BotSettingsModal';
 import BotLabModal from './BotLabModal';
@@ -26,6 +27,7 @@ const BotLab: React.FC = () => {
     const [isVisualBuilderOpen, setIsVisualBuilderOpen] = useState(false);
     const [bots, setBots] = useState<ActiveBot[]>([]);
     const { showToast } = useToast();
+    const { shouldWarn: isLatencyWarning, shouldProtect: isLatencyGuarded, severity: latencySeverity, reasons: latencyReasons, confirmIfHighLatency } = useLatencyGuard();
     const [backtestingBotId, setBacktestingBotId] = useState<string | null>(null);
     const [isBacktestModalOpen, setIsBacktestModalOpen] = useState(false);
     const [selectedBot, setSelectedBot] = useState<ActiveBot | null>(null);
@@ -214,9 +216,20 @@ const BotLab: React.FC = () => {
         const statusToUse = currentStatus || bot.status;
         const action = statusToUse === 'active' ? 'stop' : 'start';
 
+        let overriddenHighLatency = false;
+        if (action === 'start') {
+            const latGate = await confirmIfHighLatency({
+                actionLabel: `Start Bot: ${bot.name}`,
+                details: `${bot.market || ''} • ${bot.strategy || ''}`,
+                isExitOrReduce: false,
+            });
+            if (!latGate.proceed) return;
+            overriddenHighLatency = latGate.overriddenHighLatency;
+        }
+
         try {
             setBots((prev) => prev.map((b) => (b.id === id ? { ...b, status: action === 'start' ? 'active' : 'inactive' } : b)));
-            await botService.controlBot(id, action);
+            await botService.controlBot(id, action, overriddenHighLatency ? { confirmHighLatency: true } : undefined);
 
             if (action === 'start') {
                 setActiveWallHunterId(Number(id));
@@ -345,6 +358,25 @@ const BotLab: React.FC = () => {
                         </Button>
                     </div>
                 </div>
+
+                {isLatencyWarning && (
+                    <div className="rounded-xl border border-rose-500/40 bg-rose-950/35 px-4 py-2.5 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                            <ShieldAlert className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                            <div className="min-w-0">
+                                <span className="text-xs font-black uppercase tracking-wider text-rose-300 block">
+                                    High Network Latency Warning ({latencySeverity.toUpperCase()})
+                                </span>
+                                <span className="text-[11px] font-mono text-rose-200/85 block truncate">
+                                    {latencyReasons.join(' • ') || 'Elevated latency detected — accidental bot starts are guarded.'}
+                                </span>
+                            </div>
+                        </div>
+                        <span className="px-2 py-0.5 rounded bg-rose-600/80 text-white text-[10px] font-black uppercase tracking-wider flex-shrink-0">
+                            {isLatencyGuarded ? 'Start Guard Active' : 'Latency Lag'}
+                        </span>
+                    </div>
+                )}
 
                 <BotLabHeader
                     bots={bots}

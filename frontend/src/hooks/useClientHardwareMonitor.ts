@@ -178,18 +178,33 @@ export function useClientHardwareMonitor(enabled: boolean, includeVpsTelemetry =
         ? await systemService.getHardwareTelemetry(forceLatencyProbe)
         : null;
       if (data) setVps(data);
+      let latestJitter: number | null = null;
       if (rttMs !== null) {
         setClientToVpsMs((prev) => {
           if (prev !== null) {
             const rawDiff = Math.abs(rttMs - prev);
-            setClientToVpsJitterMs((prevJitter) =>
-              prevJitter === null
-                ? Math.round(rawDiff * 10) / 10
-                : Math.round((prevJitter * 0.6 + rawDiff * 0.4) * 10) / 10
-            );
+            setClientToVpsJitterMs((prevJitter) => {
+              latestJitter =
+                prevJitter === null
+                  ? Math.round(rawDiff * 10) / 10
+                  : Math.round((prevJitter * 0.6 + rawDiff * 0.4) * 10) / 10;
+              return latestJitter;
+            });
           }
           return rttMs;
         });
+      }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('cosmo:telemetry-sample', {
+            detail: {
+              clientToVpsMs: rttMs,
+              ...(latestJitter !== null ? { clientToVpsJitterMs: latestJitter } : {}),
+              network: data?.network ?? null,
+              guardConfig: data?.guard_config ?? null,
+            },
+          })
+        );
       }
       setVpsError(null);
       setLastUpdatedAt(Date.now());

@@ -10,6 +10,37 @@ export interface SystemHealth {
     timestamp: string;
 }
 
+export interface NetworkLatencySnapshot {
+    binance_spot_ms: number | null;
+    binance_futures_ms: number | null;
+    binance_ws_ms: number | null;
+    status: 'optimal' | 'good' | 'degraded' | 'unreachable';
+    cached: boolean;
+}
+
+export interface LatencyGuardConfig {
+    guard_enabled: boolean;
+    block_on_degraded: boolean;
+    binance_warn_ms: number;
+    binance_block_ms: number;
+    client_warn_ms: number;
+    client_block_ms: number;
+}
+
+export interface NetworkLatencyStatusResponse {
+    network: NetworkLatencySnapshot;
+    health: {
+        severity: 'optimal' | 'good' | 'warning' | 'critical' | 'unreachable';
+        should_warn: boolean;
+        should_guard: boolean;
+        avg_ms: number | null;
+        max_ms: number | null;
+        reasons: string[];
+    };
+    guard_config: LatencyGuardConfig;
+    timestamp: string;
+}
+
 export interface VpsHardwareTelemetry {
     hostname: string;
     os: string;
@@ -40,13 +71,9 @@ export interface VpsHardwareTelemetry {
         sensor_label: string | null;
         available: boolean;
     };
-    network?: {
-        binance_spot_ms: number | null;
-        binance_futures_ms: number | null;
-        binance_ws_ms: number | null;
-        status: 'optimal' | 'good' | 'degraded' | 'unreachable';
-        cached: boolean;
-    };
+    network?: NetworkLatencySnapshot;
+    network_health?: NetworkLatencyStatusResponse['health'];
+    guard_config?: LatencyGuardConfig;
     timestamp: string;
 }
 
@@ -77,6 +104,23 @@ export const systemService = {
         const t0 = performance.now();
         await client.get('/system/ping', { params: { _t: Date.now() } });
         return Math.round((performance.now() - t0) * 10) / 10;
+    },
+
+    getNetworkStatus: async (refresh = false): Promise<NetworkLatencyStatusResponse> => {
+        const response = await client.get('/system/network-status', {
+            params: refresh ? { refresh: true } : undefined,
+        });
+        return response.data;
+    },
+
+    getLatencyGuard: async (): Promise<LatencyGuardConfig> => {
+        const response = await client.get('/system/latency-guard');
+        return response.data;
+    },
+
+    updateLatencyGuard: async (updates: Partial<LatencyGuardConfig>): Promise<LatencyGuardConfig> => {
+        const response = await client.put('/system/latency-guard', updates);
+        return response.data;
     },
 
     getAutoArchiverStatus: async () => {

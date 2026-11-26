@@ -60,6 +60,7 @@ export interface OrderPayload {
   ml_execution_mode?: 'basic' | 'advanced';
   ml_bullish_threshold?: number;
   ml_bearish_threshold?: number;
+  confirm_high_latency?: boolean;
 }
 
 export interface ApiKey {

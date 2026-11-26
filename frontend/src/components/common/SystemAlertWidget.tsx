@@ -10,6 +10,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useSystemAlerts, type SystemAlert, type AlertSeverity } from '@/hooks/useSystemAlerts';
 import { useTheme } from '@/context/ThemeContext';
+import { useLatencyGuard } from '@/context/LatencyGuardContext';
 import DeviceTelemetryPanel from '@/components/common/DeviceTelemetryPanel';
 import { isThermalGuardActive } from '@/utils/deviceProfile';
 import { buildAuthenticatedWsUrl } from '@/utils/wsAuth';
@@ -382,9 +383,33 @@ const getCenterPosition = (modalWidth: number, modalHeight: number) => {
 };
 
 const SystemAlertWidget: React.FC = () => {
-  const { alerts, unreadCount, connected, clearAlerts, markAllRead } = useSystemAlerts();
+  const { alerts: wsAlerts, unreadCount, connected, clearAlerts, markAllRead } = useSystemAlerts();
+  const {
+    latencyAlerts,
+    unreadLatencyCount,
+    latestTransitionAlert,
+    severity: latencySeverity,
+    shouldWarn: isLatencyWarning,
+    shouldProtect: isLatencyGuarded,
+    markLatencyAlertsRead,
+    clearLatencyAlerts,
+    dismissTransitionAlert,
+  } = useLatencyGuard();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
+
+  const alerts = React.useMemo(() => {
+    const wsNetworkTs = wsAlerts
+      .filter((a) => a.container === 'network_latency')
+      .map((a) => new Date(a.timestamp).getTime());
+    const dedupedLatencyAlerts = latencyAlerts.filter((la) => {
+      const laTs = new Date(la.timestamp).getTime();
+      return !wsNetworkTs.some((wt) => Math.abs(wt - laTs) < 20000);
+    });
+    const combined = [...wsAlerts, ...dedupedLatencyAlerts];
+    combined.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    return combined.slice(0, 60);
+  }, [latencyAlerts, wsAlerts]);
 
   const [open, setOpen]       = useState(false);
   const [tab, setTab]         = useState<'alerts' | 'logs' | 'device'>('alerts');
@@ -393,15 +418,21 @@ const SystemAlertWidget: React.FC = () => {
   const [logFilter, setLogFilter]   = useState<string | null>(null);
   const [logConn, setLogConn]       = useState(false);
 
-
-  // CRITICAL toast
+  // CRITICAL WebSocket toast
   useEffect(() => {
-    if (alerts.length > prevLen.current) {
-      const n = alerts[0];
+    if (wsAlerts.length > prevLen.current) {
+      const n = wsAlerts[0];
       if (n?.severity === 'CRITICAL') setToasts(p => [...p, n]);
     }
-    prevLen.current = alerts.length;
-  }, [alerts]);
+    prevLen.current = wsAlerts.length;
+  }, [wsAlerts]);
+
+  // Real-time Network / Exchange Latency Drop Toast (fires on state transition into warning/critical)
+  useEffect(() => {
+    if (!latestTransitionAlert) return;
+    setToasts((p) => (p.some((x) => x.id === latestTransitionAlert.id) ? p : [...p, latestTransitionAlert]));
+    dismissTransitionAlert();
+  }, [latestTransitionAlert, dismissTransitionAlert]);
 
   // Container log WebSocket (connect only when Logs drawer is open on 'logs' tab)
   useEffect(() => {
@@ -591,6 +622,7 @@ const SystemAlertWidget: React.FC = () => {
       if (next) {
         setPosition(getCenterPosition(530, 530));
         markAllRead();
+        markLatencyAlertsRead();
       }
       return next;
     });
@@ -599,8 +631,10 @@ const SystemAlertWidget: React.FC = () => {
   const critical = alerts.filter(a => a.severity === 'CRITICAL').length;
   const error    = alerts.filter(a => a.severity === 'ERROR').length;
   const warning  = alerts.filter(a => a.severity === 'WARNING').length;
+  const totalUnread = unreadCount + unreadLatencyCount;
   const bothLive = open && tab === 'logs' ? connected && logConn : connected;
-  const hasAlert = unreadCount > 0;
+  const hasAlert = totalUnread > 0 || isLatencyWarning;
+  const isCriticalStyle = totalUnread > 0 || latencySeverity === 'critical' || latencySeverity === 'unreachable';
 
   return (
     <>
@@ -616,10 +650,15 @@ const SystemAlertWidget: React.FC = () => {
         className={`relative flex items-center gap-2 px-2.5 sm:px-3 h-9 rounded-xl border transition-colors cursor-pointer select-none overflow-hidden ${open ? 'ring-1 ring-cyan-500/45' : ''}`}
         style={{
           background: hasAlert
-            ? 'linear-gradient(135deg, rgba(239,68,68,0.16), rgba(15,23,42,0.5))'
+            ? isCriticalStyle
+              ? 'linear-gradient(135deg, rgba(239,68,68,0.16), rgba(15,23,42,0.5))'
+              : 'linear-gradient(135deg, rgba(245,158,11,0.16), rgba(15,23,42,0.5))'
             : isDark ? '#0B1120' : 'rgba(241,245,249,0.95)',
-          borderColor: hasAlert ? 'rgba(239,68,68,0.45)' : isDark ? 'rgba(30,41,59,0.85)' : 'rgba(203,213,225,0.9)',
+          borderColor: hasAlert
+            ? isCriticalStyle ? 'rgba(239,68,68,0.45)' : 'rgba(245,158,11,0.55)'
+            : isDark ? 'rgba(30,41,59,0.85)' : 'rgba(203,213,225,0.9)',
         }}
+        title={isLatencyWarning ? `Network Latency Warning (${latencySeverity.toUpperCase()})${isLatencyGuarded ? ' • Execution Guard Active' : ''}` : 'System Monitor & Latency Guard'}
       >
         {/* Flash Feedback */}
         {btnFlash && (
@@ -636,24 +675,43 @@ const SystemAlertWidget: React.FC = () => {
         {/* Live dot (static to preserve mobile battery & thermal guard) */}
         <div
           className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-            hasAlert ? 'bg-rose-400' : bothLive ? 'bg-emerald-400' : isDark ? 'bg-slate-600' : 'bg-slate-400'
+            isCriticalStyle && hasAlert
+              ? 'bg-rose-400'
+              : isLatencyWarning
+                ? 'bg-amber-400'
+                : bothLive
+                  ? 'bg-emerald-400'
+                  : isDark ? 'bg-slate-600' : 'bg-slate-400'
           }`}
         />
 
         {/* Hex icon */}
-        <svg className={`w-3.5 h-3.5 flex-shrink-0 transition-colors ${hasAlert ? 'text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}
+        <svg className={`w-3.5 h-3.5 flex-shrink-0 transition-colors ${hasAlert ? (isCriticalStyle ? 'text-rose-400' : 'text-amber-400') : 'text-slate-500 dark:text-slate-400'}`}
           fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8}
             d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18" />
         </svg>
 
-        <span className={`text-[11px] font-bold tracking-wider uppercase hidden sm:inline whitespace-nowrap transition-colors ${hasAlert ? 'text-rose-500 dark:text-rose-300' : 'text-slate-600 dark:text-slate-300'}`}>
-          {hasAlert ? `${unreadCount} Alert${unreadCount > 1 ? 's' : ''}` : 'Sys Monitor'}
+        <span className={`text-[11px] font-bold tracking-wider uppercase hidden sm:inline whitespace-nowrap transition-colors ${
+          hasAlert
+            ? (isCriticalStyle ? 'text-rose-500 dark:text-rose-300' : 'text-amber-600 dark:text-amber-300')
+            : 'text-slate-600 dark:text-slate-300'
+        }`}>
+          {totalUnread > 0
+            ? `${totalUnread} Alert${totalUnread > 1 ? 's' : ''}`
+            : isLatencyWarning
+              ? 'Latency !'
+              : 'Sys Monitor'}
         </span>
 
-        {hasAlert && (
-          <span className="min-w-[18px] h-[18px] px-1 text-white text-[9px] font-black rounded-full flex items-center justify-center bg-rose-600">
-            {unreadCount > 99 ? '99+' : unreadCount}
+        {totalUnread > 0 && (
+          <span className={`min-w-[18px] h-[18px] px-1 text-white text-[9px] font-black rounded-full flex items-center justify-center ${isCriticalStyle ? 'bg-rose-600' : 'bg-amber-600'}`}>
+            {totalUnread > 99 ? '99+' : totalUnread}
+          </span>
+        )}
+        {totalUnread === 0 && isLatencyWarning && (
+          <span className={`px-1.5 py-0.5 text-[8.5px] font-black rounded uppercase text-white ${isCriticalStyle ? 'bg-rose-600' : 'bg-amber-600'}`}>
+            {isLatencyGuarded ? 'GUARD' : 'LAG'}
           </span>
         )}
       </button>
@@ -871,7 +929,7 @@ const SystemAlertWidget: React.FC = () => {
                   <div className="flex-shrink-0 flex items-center justify-between px-4 py-1.5 border-b" style={{ borderColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(226,232,240,0.8)' }}>
                     <p className="text-slate-500 dark:text-gray-400 text-[9px] font-mono tracking-wider font-semibold">{alerts.length} EVENTS STORED</p>
                     {alerts.length > 0 && (
-                      <button onClick={clearAlerts}
+                      <button onClick={() => { clearAlerts(); clearLatencyAlerts(); }}
                         className="text-[9.5px] font-bold tracking-wider text-slate-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors uppercase cursor-pointer">
                         Clear
                       </button>

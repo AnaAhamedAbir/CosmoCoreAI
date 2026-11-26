@@ -4,6 +4,7 @@ import { GripVertical, BrainCircuit, X, Play, Loader2, Database, Key, DollarSign
 import { mlModelsService } from '@/services/mlModelsService';
 import { botService } from '@/services/botService';
 import { useSettings } from '@/context/SettingsContext';
+import { useLatencyGuard } from '@/context/LatencyGuardContext';
 import { useFloatingModalDrag } from '@/hooks/useFloatingModalDrag';
 import { useDeviceProfile } from '@/hooks/useDeviceProfile';
 import { FloatingModalCyberFX } from '@/components/common/FloatingModalCyberFX';
@@ -33,6 +34,7 @@ export const AIModelDeploymentModal: React.FC<AIModelDeploymentModalProps> = ({ 
     
     const { apiKeys } = useSettings();
     const { isThermalGuardActive } = useDeviceProfile();
+    const { confirmIfHighLatency } = useLatencyGuard();
     const { modalContainerRef, handleStartDrag, containerStyle } = useFloatingModalDrag({
         isOpen,
         storageKey: 'cosmo_ai_deploy_modal_pos_v1',
@@ -79,11 +81,16 @@ export const AIModelDeploymentModal: React.FC<AIModelDeploymentModalProps> = ({ 
             toast.error("Please select an AI Model");
             return;
         }
+
+        const selectedModel = models.find(m => m.id === selectedModelId);
+        const latGate = await confirmIfHighLatency({
+            actionLabel: `Deploy & Start AI Bot (${symbol})`,
+            details: `Model: ${selectedModel?.name || selectedModelId} • ${timeframe}`,
+        });
+        if (!latGate.proceed) return;
         
         try {
             setIsDeploying(true);
-            
-            const selectedModel = models.find(m => m.id === selectedModelId);
             
             const botData = {
                 name: `AI Bot: ${selectedModel?.name || selectedModelId}`,
@@ -107,7 +114,7 @@ export const AIModelDeploymentModal: React.FC<AIModelDeploymentModalProps> = ({ 
             const newBot = await botService.createBot(botData);
             
             // Start Bot
-            await botService.controlBot(newBot.id, 'start');
+            await botService.controlBot(newBot.id, 'start', latGate.overriddenHighLatency ? { confirmHighLatency: true } : undefined);
             
             toast.success("AI Trading Bot Deployed Successfully!");
             onDeploySuccess(newBot.id.toString());

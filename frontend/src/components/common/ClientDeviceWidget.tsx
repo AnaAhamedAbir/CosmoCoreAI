@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { MonitorSmartphone, X } from 'lucide-react';
 import { useTheme } from '@/context/ThemeContext';
 import { useDeviceProfile } from '@/hooks/useDeviceProfile';
+import { useLatencyGuard } from '@/context/LatencyGuardContext';
 import DeviceTelemetryPanel from '@/components/common/DeviceTelemetryPanel';
 
 /**
@@ -16,6 +17,7 @@ const ClientDeviceWidget: React.FC = () => {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const profile = useDeviceProfile();
+  const { shouldWarn: isLatencyWarning, shouldProtect: isLatencyGuarded, severity: latencySeverity } = useLatencyGuard();
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -36,23 +38,33 @@ const ClientDeviceWidget: React.FC = () => {
           open ? 'ring-1 ring-cyan-500/50' : ''
         }`}
         style={{
-          background: isDark ? '#0B1120' : 'rgba(241,245,249,0.95)',
-          borderColor: profile.isThermalGuardActive
-            ? 'rgba(16,185,129,0.45)'
-            : isDark ? 'rgba(30,41,59,0.85)' : 'rgba(203,213,225,0.9)',
+          background: isLatencyWarning
+            ? 'linear-gradient(135deg, rgba(244,63,94,0.16), rgba(15,23,42,0.5))'
+            : isDark ? '#0B1120' : 'rgba(241,245,249,0.95)',
+          borderColor: isLatencyWarning
+            ? 'rgba(244,63,94,0.5)'
+            : profile.isThermalGuardActive
+              ? 'rgba(16,185,129,0.45)'
+              : isDark ? 'rgba(30,41,59,0.85)' : 'rgba(203,213,225,0.9)',
         }}
-        title="Device Telemetry, Thermal Mode, Connection Ping & App Install"
+        title={isLatencyWarning ? `High Network Latency (${latencySeverity.toUpperCase()})` : 'Device Telemetry, Thermal Mode, Connection Ping & App Install'}
       >
         <span
           className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-            profile.isThermalGuardActive ? 'bg-emerald-400' : 'bg-cyan-400'
+            isLatencyWarning
+              ? 'bg-rose-400'
+              : profile.isThermalGuardActive ? 'bg-emerald-400' : 'bg-cyan-400'
           }`}
         />
-        <MonitorSmartphone className="w-3.5 h-3.5 text-cyan-400 flex-shrink-0" />
-        <span className="hidden sm:inline text-[11px] font-bold tracking-wider uppercase text-slate-600 dark:text-slate-300">
-          Device
+        <MonitorSmartphone className={`w-3.5 h-3.5 flex-shrink-0 ${isLatencyWarning ? 'text-rose-400' : 'text-cyan-400'}`} />
+        <span className={`hidden sm:inline text-[11px] font-bold tracking-wider uppercase ${isLatencyWarning ? 'text-rose-400' : 'text-slate-600 dark:text-slate-300'}`}>
+          {isLatencyWarning ? 'Latency !' : 'Device'}
         </span>
-        {profile.isThermalGuardActive && (
+        {isLatencyWarning ? (
+          <span className="hidden md:inline text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/35">
+            {isLatencyGuarded ? 'GUARD' : 'LAG'}
+          </span>
+        ) : profile.isThermalGuardActive && (
           <span className="hidden md:inline text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">
             ECO
           </span>

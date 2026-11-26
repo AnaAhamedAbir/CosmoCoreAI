@@ -250,6 +250,7 @@ async def control_bot(
     db: Session = Depends(deps.get_db),
     bot_id: int,
     action: str, # "start", "stop"
+    confirm_high_latency: bool = False,
     current_user: models.User = Depends(deps.get_current_user),
 ) -> Any:
     """
@@ -267,6 +268,15 @@ async def control_bot(
             raise HTTPException(status_code=400, detail="Bot is already running")
         from app.core.quotas import check_bot_quota
         check_bot_quota(db, current_user)
+
+        from app.services.system_service import SystemService
+        await SystemService.enforce_latency_guard(
+            confirm_high_latency=confirm_high_latency,
+            header_confirm=request.headers.get("X-Confirm-High-Latency"),
+            is_exit_or_reduce=False,
+            allow_probe=True,
+            action_label=f"starting bot '{bot.name}'",
+        )
             
         # ✅ BotManager Call
         result = await request.app.state.bot_manager.start_bot(bot_id, db)

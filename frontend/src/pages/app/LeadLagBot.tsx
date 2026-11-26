@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { leadLagService, LeadLagBot as BotConfig, LeadLagTradeLog } from '../../services/leadLagService';
 import { useMarketStore } from '@/store/marketStore';
 import { useTheme } from '@/context/ThemeContext';
+import { useLatencyGuard } from '@/context/LatencyGuardContext';
 
 // Reusable Components
 const GlassCard: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
@@ -15,6 +16,7 @@ const GlassCard: React.FC<{ children: React.ReactNode; className?: string }> = (
 
 const LeadLagBot = () => {
     const { theme } = useTheme();
+    const { confirmIfHighLatency } = useLatencyGuard();
     const [bot, setBot] = useState<BotConfig | null>(null);
     const [isRunning, setIsRunning] = useState(false);
 
@@ -171,6 +173,12 @@ const LeadLagBot = () => {
 
         try {
             if (!isRunning) {
+                const latGate = await confirmIfHighLatency({
+                    actionLabel: `Start Lead-Lag Bot (${targetPair})`,
+                    details: `Trade Size: ${tradeSize} • ${timeframe}`,
+                });
+                if (!latGate.proceed) return;
+
                 // Update bot configuration before starting
                 await leadLagService.updateBot(bot.id, {
                     target_pair: targetPair,
@@ -180,7 +188,7 @@ const LeadLagBot = () => {
                     timeframe: timeframe
                 });
 
-                const res = await leadLagService.startBot(bot.id);
+                const res = await leadLagService.startBot(bot.id, latGate.overriddenHighLatency);
                 if (res.status === 'success') {
                     setIsRunning(true);
                     toast.success(res.message || "Lead-Lag Bot Started");

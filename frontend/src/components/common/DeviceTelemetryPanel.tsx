@@ -12,8 +12,11 @@ import {
   Wifi,
   Download,
   CheckCircle2,
+  ShieldAlert,
+  ShieldCheck,
 } from 'lucide-react';
 import { useClientHardwareMonitor, ThermalRiskLevel } from '@/hooks/useClientHardwareMonitor';
+import { useLatencyGuard } from '@/context/LatencyGuardContext';
 import { usePwaInstall } from '@/hooks/usePwaInstall';
 import type { ThermalMode, PhoneViewMode } from '@/utils/deviceProfile';
 import { setPhoneViewMode } from '@/utils/deviceProfile';
@@ -64,10 +67,15 @@ const RISK_STYLE: Record<ThermalRiskLevel, { badge: string; dot: string }> = {
   },
 };
 
-const getLatencyTone = (ms: number | null | undefined): string => {
+const getLatencyTone = (ms: number | null | undefined, isClientToVps = false): string => {
   if (ms === null || ms === undefined) return 'text-gray-400';
-  if (ms < 60) return 'text-emerald-400';
-  if (ms < 150) return 'text-amber-400';
+  if (isClientToVps) {
+    if (ms < 350) return 'text-emerald-400';
+    if (ms < 600) return 'text-amber-400';
+    return 'text-rose-400';
+  }
+  if (ms < 80) return 'text-emerald-400';
+  if (ms < 180) return 'text-amber-400';
   return 'text-rose-400';
 };
 
@@ -89,6 +97,14 @@ const DeviceTelemetryPanel: React.FC<DeviceTelemetryPanelProps> = ({ active, cli
     refreshNow,
   } = useClientHardwareMonitor(active, !clientOnly);
   const pwa = usePwaInstall();
+  const {
+    shouldWarn: isLatencyWarning,
+    shouldProtect: isLatencyGuarded,
+    severity: latencySeverity,
+    reasons: latencyReasons,
+    guardConfig,
+    updateGuardConfig,
+  } = useLatencyGuard();
 
   const clientHeapPct =
     client.ram.heapUsedMb !== null && client.ram.heapLimitMb
@@ -510,7 +526,7 @@ const DeviceTelemetryPanel: React.FC<DeviceTelemetryPanelProps> = ({ active, cli
             <span className="text-[8.5px] font-bold text-slate-500 dark:text-gray-400 block">
               {clientOnly ? 'SERVER PING' : 'DEVICE ↔ VPS'}
             </span>
-            <span className={`text-xs font-mono font-black ${getLatencyTone(clientToVpsMs)}`}>
+            <span className={`text-xs font-mono font-black ${getLatencyTone(clientToVpsMs, true)}`}>
               {formatMs(clientToVpsMs)}
             </span>
             <span className="text-[8px] font-mono text-slate-400 dark:text-gray-500 block">
@@ -521,8 +537,8 @@ const DeviceTelemetryPanel: React.FC<DeviceTelemetryPanelProps> = ({ active, cli
           {clientOnly && (
             <div className="rounded-lg bg-white dark:bg-black/30 border border-slate-200 dark:border-white/5 p-2 space-y-0.5 shadow-sm dark:shadow-none">
               <span className="text-[8.5px] font-bold text-slate-500 dark:text-gray-400 block">CONNECTION</span>
-              <span className="text-xs font-mono font-black text-emerald-400">
-                {clientToVpsMs === null ? 'Measuring...' : clientToVpsMs < 150 ? 'OPTIMAL' : 'MODERATE'}
+              <span className={`text-xs font-mono font-black ${getLatencyTone(clientToVpsMs, true)}`}>
+                {clientToVpsMs === null ? 'Measuring...' : clientToVpsMs < 350 ? 'NORMAL' : clientToVpsMs < 600 ? 'ELEVATED' : 'HIGH LAG'}
               </span>
               <span className="text-[8px] font-mono text-slate-400 dark:text-gray-500 block">Encrypted HTTPS</span>
             </div>
@@ -554,6 +570,90 @@ const DeviceTelemetryPanel: React.FC<DeviceTelemetryPanelProps> = ({ active, cli
                 <span className="text-[8px] font-mono text-slate-400 dark:text-gray-500 block">stream.binance:9443</span>
               </div>
             </>
+          )}
+        </div>
+
+        {/* Trade & Bot High-Latency Safety Guard Controls */}
+        <div
+          className={`rounded-lg border px-2.5 py-2 space-y-1.5 ${
+            isLatencyWarning
+              ? 'bg-rose-500/10 border-rose-500/35'
+              : 'bg-emerald-500/5 border-emerald-500/20'
+          }`}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0">
+              {isLatencyWarning ? (
+                <ShieldAlert className="w-3.5 h-3.5 text-rose-400 flex-shrink-0" />
+              ) : (
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+              )}
+              <div className="min-w-0">
+                <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-800 dark:text-slate-100 block truncate">
+                  Trade &amp; Bot Latency Guard
+                </span>
+                <span className="text-[8.5px] font-mono text-slate-500 dark:text-gray-400 block truncate">
+                  {isLatencyWarning
+                    ? `${latencySeverity.toUpperCase()}: ${latencyReasons[0] || 'High network lag'}`
+                    : `Warn ≥${guardConfig.binance_warn_ms}ms EX / ≥${guardConfig.client_warn_ms}ms DEV`}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => void updateGuardConfig({ guard_enabled: !guardConfig.guard_enabled })}
+                className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border transition-colors cursor-pointer ${
+                  guardConfig.guard_enabled
+                    ? isLatencyGuarded
+                      ? 'bg-rose-600 text-white border-rose-500'
+                      : 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border-emerald-500/40'
+                    : 'bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-gray-400 border-slate-300 dark:border-white/10'
+                }`}
+                title="Toggle automatic confirmation guard before placing trades or starting bots during high latency"
+              >
+                {guardConfig.guard_enabled ? 'Guard ON' : 'Paused'}
+              </button>
+            </div>
+          </div>
+
+          {!clientOnly && (
+            <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200/70 dark:border-white/10">
+              <span className="text-[8.5px] font-mono text-slate-500 dark:text-gray-400">
+                Sensitivity Preset:
+              </span>
+              <div className="flex items-center gap-1">
+                {[
+                  { label: 'Strict', bw: 120, bb: 250, cw: 450, cb: 800 },
+                  { label: 'Balanced', bw: 180, bb: 350, cw: 600, cb: 1000 },
+                  { label: 'Relaxed', bw: 250, bb: 500, cw: 800, cb: 1400 },
+                ].map((preset) => {
+                  const activePreset = guardConfig.binance_warn_ms === preset.bw && guardConfig.binance_block_ms === preset.bb;
+                  return (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() =>
+                        void updateGuardConfig({
+                          binance_warn_ms: preset.bw,
+                          binance_block_ms: preset.bb,
+                          client_warn_ms: preset.cw,
+                          client_block_ms: preset.cb,
+                        })
+                      }
+                      className={`px-1.5 py-0.5 rounded text-[8.5px] font-bold uppercase transition-colors cursor-pointer ${
+                        activePreset
+                          ? 'bg-cyan-600 text-white'
+                          : 'bg-slate-200/80 dark:bg-white/5 text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           )}
         </div>
 

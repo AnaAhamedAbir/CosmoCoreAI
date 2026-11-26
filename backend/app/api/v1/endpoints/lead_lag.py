@@ -68,6 +68,7 @@ async def update_bot(
 @router.post("/{bot_id}/start")
 async def start_bot(
     bot_id: int,
+    confirm_high_latency: bool = False,
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_user)
 ):
@@ -82,6 +83,14 @@ async def start_bot(
 
     from app.core.quotas import check_bot_quota
     check_bot_quota(db, current_user)
+
+    from app.services.system_service import SystemService
+    await SystemService.enforce_latency_guard(
+        confirm_high_latency=confirm_high_latency,
+        is_exit_or_reduce=False,
+        allow_probe=True,
+        action_label=f"starting Lead-Lag bot #{bot_id}",
+    )
 
     if not bot.is_paper_trading and not bot.api_key_id:
         raise HTTPException(status_code=400, detail="API Key required for real trading.")

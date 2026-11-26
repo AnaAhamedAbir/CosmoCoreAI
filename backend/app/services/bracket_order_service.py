@@ -17,10 +17,12 @@ from decimal import Decimal
 from typing import Optional
 from app.services.exchange_pool import get_or_create_exchange
 try:
-    from app.services.exchange_pool import is_ws_api_ready
+    from app.services.exchange_pool import is_ws_api_ready, schedule_ws_api_prewarm
 except ImportError:
     def is_ws_api_ready(exchange, is_futures: bool = False, is_inverse: bool = False) -> bool:
         return True
+    def schedule_ws_api_prewarm(exchange, is_futures: bool = False, is_inverse: bool = False) -> None:
+        return None
 from app.core.security import decrypt_key
 from app.services.notification import NotificationService
 
@@ -2231,27 +2233,67 @@ class BracketOrderService:
                 final_tp_price = BracketOrderService._safe_price_to_precision(order_ex, symbol, tp_price)
 
                 t_tp_start = time.perf_counter()
+                spawn_setup_ms = max(0, int((t_tp_start - t_spawn_start) * 1000))
                 ex_params = await BracketOrderService._apply_futures_exit_params(order_ex, symbol, opposite_side) if is_futures else {}
+                tp_channel = "REST"
+                ws_ready_tp = bool(
+                    is_ws_api_ready(order_ex, is_futures=is_futures, is_inverse=is_inverse)
+                )
+                bbo_chk_ms = 0
+                api_ms = 0
+                tp_attempts = 0
+                max_loop_lag_ms = 0
+                probe_done = False
+
+                async def _measure_loop_lag():
+                    nonlocal max_loop_lag_ms
+                    for _ in range(200):
+                        if probe_done:
+                            break
+                        t_tick = time.perf_counter()
+                        await asyncio.sleep(0.025)
+                        elapsed = time.perf_counter() - t_tick
+                        if elapsed < 0.001:
+                            break
+                        lag = max(0, int((elapsed - 0.025) * 1000))
+                        if lag > max_loop_lag_ms:
+                            max_loop_lag_ms = lag
+
+                lag_task = asyncio.create_task(_measure_loop_lag())
                 try:
                     tp_res = None
                     async def _place_tp_limit(px: float, amt: float, p_dict: dict):
-                        if getattr(order_ex, 'has', {}).get('createOrderWs') and is_ws_api_ready(
-                            order_ex, is_futures=is_futures, is_inverse=is_inverse
-                        ):
-                            try:
-                                from app.services.manual_trade_service import ManualTradeService
-                                ws_type, ws_params = ManualTradeService._sanitize_ws_order_args(
-                                    order_ex, 'limit', p_dict, is_futures, is_edit=False
-                                )
-                                return await order_ex.create_order_ws(symbol, ws_type, opposite_side, amt, px, ws_params)
-                            except Exception as ws_tp_err:
-                                logger.warning(f"⚠️ Bracket TP create_order_ws fallback to REST for {symbol}: {ws_tp_err}")
-                        return await order_ex.create_limit_order(symbol, opposite_side, amt, px, p_dict)
+                        nonlocal tp_channel, ws_ready_tp, api_ms, tp_attempts
+                        tp_attempts += 1
+                        t_api = time.perf_counter()
+                        try:
+                            has_ws_create = bool(getattr(order_ex, 'has', {}).get('createOrderWs'))
+                            ws_ready_tp = bool(
+                                is_ws_api_ready(order_ex, is_futures=is_futures, is_inverse=is_inverse)
+                            )
+                            if has_ws_create and ws_ready_tp:
+                                try:
+                                    from app.services.manual_trade_service import ManualTradeService
+                                    ws_type, ws_params = ManualTradeService._sanitize_ws_order_args(
+                                        order_ex, 'limit', p_dict, is_futures, is_edit=False
+                                    )
+                                    res = await order_ex.create_order_ws(symbol, ws_type, opposite_side, amt, px, ws_params)
+                                    tp_channel = "WS"
+                                    return res
+                                except Exception as ws_tp_err:
+                                    logger.warning(f"⚠️ Bracket TP create_order_ws fallback to REST for {symbol}: {ws_tp_err}")
+                            elif has_ws_create and not ws_ready_tp:
+                                schedule_ws_api_prewarm(order_ex, is_futures=is_futures, is_inverse=is_inverse)
+                            tp_channel = "REST"
+                            return await order_ex.create_limit_order(symbol, opposite_side, amt, px, p_dict)
+                        finally:
+                            api_ms += max(1, int((time.perf_counter() - t_api) * 1000))
 
                     if tp_order_type == 'limit':
                         # 1ms local RAM/Redis BBO check: if final_tp_price already crosses the book,
                         # skip the doomed Post-Only (GTX) attempt to avoid wasting 1 extra RTT (~255ms)
                         skip_post_only = False
+                        t_bbo = time.perf_counter()
                         try:
                             from app.services.smart_peg_entry_executor import _fetch_bbo_fast
                             bbo_ob = await asyncio.wait_for(
@@ -2267,6 +2309,7 @@ class BracketOrderService:
                                     skip_post_only = True
                         except Exception:
                             pass
+                        bbo_chk_ms = max(0, int((time.perf_counter() - t_bbo) * 1000))
 
                         if not skip_post_only:
                             # 1st attempt: Post-Only Maker limit order (saves fees)
@@ -2298,10 +2341,14 @@ class BracketOrderService:
                         if is_futures:
                             tp_cond_params = dict(ex_params)
                             tp_cond_params['stopPrice'] = final_tp_price
+                            t_api = time.perf_counter()
                             tp_res = await BracketOrderService._place_futures_conditional_order(
                                 order_ex, symbol, 'TAKE_PROFIT_MARKET', opposite_side, final_amount,
                                 stop_price=final_tp_price, extra_params=tp_cond_params
                             )
+                            api_ms = max(1, int((time.perf_counter() - t_api) * 1000))
+                            tp_channel = "COND"
+                            tp_attempts = 1
                             logger.info(f"✅ Bracket Monitor: Conditional TAKE_PROFIT_MARKET placed at {final_tp_price}! ID: {tp_res.get('id')}")
                         else:
                             ex_params_gtc = dict(ex_params)
@@ -2310,6 +2357,9 @@ class BracketOrderService:
                             tp_res = await _place_tp_limit(final_tp_price, final_amount, ex_params_gtc)
                             logger.info(f"✅ Bracket Monitor: Spot Limit TP placed at {final_tp_price}! ID: {tp_res.get('id')}")
 
+                    probe_done = True
+                    if not lag_task.done():
+                        lag_task.cancel()
                     tp_placement_ms = max(1, int((time.perf_counter() - t_tp_start) * 1000))
                     if tp_res:
                         tp_order_id = tp_res.get('id')
@@ -2317,7 +2367,12 @@ class BracketOrderService:
                         if tp_order_id:
                             BracketOrderService.KNOWN_TP_ORDER_IDS.add(str(tp_order_id))
 
-                    logger.info(f"✅ Bracket Monitor: TP placed in {tp_placement_ms}ms! ID: {tp_res.get('id') if tp_res else 'N/A'}")
+                    logger.info(
+                        f"✅ Bracket Monitor: TP placed in {tp_placement_ms}ms! "
+                        f"ID: {tp_res.get('id') if tp_res else 'N/A'} | "
+                        f"Ch={tp_channel} | WSReady={ws_ready_tp} | BBO={bbo_chk_ms}ms | "
+                        f"API={api_ms}ms | LoopLag={max_loop_lag_ms}ms | Setup={spawn_setup_ms}ms | Attempts={tp_attempts}"
+                    )
 
                     if user_id and tp_res:
                         async def _notify_tp():
@@ -2355,6 +2410,10 @@ class BracketOrderService:
                                 user_id, symbol, "Take-Profit (TP)", str(ex_e)
                             )
                         )
+                finally:
+                    probe_done = True
+                    if not lag_task.done():
+                        lag_task.cancel()
 
             async def _exec_sl_leg():
                 if not sl_config:

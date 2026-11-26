@@ -335,9 +335,8 @@ def calculate_plp_features(df: pd.DataFrame, selected_features: list) -> pd.Data
     existing_cols = [c for c in selected_features if c in df.columns]
     plp_df = df[existing_cols].replace([np.inf, -np.inf], np.nan).ffill().fillna(0)
     
-    # RAM Management
+    # RAM Management: release local reference so refcounting frees DataFrame immediately
+    # without stop-the-world gc.collect() stalling the GIL/event loop during live trading.
     del df
-    import gc
-    gc.collect()
     
     return plp_df

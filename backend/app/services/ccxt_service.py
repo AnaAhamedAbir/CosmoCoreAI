@@ -1,5 +1,4 @@
 import asyncio
-import gc
 import ccxt.async_support as ccxt
 import json
 import logging
@@ -162,7 +161,6 @@ class CcxtService:
             finally:
                 if api:
                     await api.close()
-                await asyncio.to_thread(gc.collect)
 
     # --- NEW FUTURES & EXECUTION HELPERS ---
     

@@ -1741,6 +1741,21 @@ class TestLatencyWarningAndExecutionGuard(unittest.IsolatedAsyncioTestCase):
         self.assertIn("BTC/USDC:USDC", ex_fut.markets)
         self.assertNotIn("DOGE/FDUSD", ex_fut.markets)
 
+    def test_calculate_plp_features_does_not_call_stop_the_world_gc(self):
+        import gc
+        import pandas as pd
+        from app.services.predatory_liquidity_pipeline import calculate_plp_features
+
+        df = pd.DataFrame({
+            "price": [0.0570 + i * 0.0001 for i in range(60)],
+            "qty": [100.0 + i for i in range(60)],
+        })
+        with patch.object(gc, "collect", side_effect=AssertionError("gc.collect must not be called in hot loop")):
+            out = calculate_plp_features(df, ["abs_long_liq_pool", "dark_pool_proxy_index"])
+        self.assertEqual(len(out), 60)
+        self.assertIn("abs_long_liq_pool", out.columns)
+        self.assertIn("dark_pool_proxy_index", out.columns)
+
 
 if __name__ == "__main__":
     unittest.main()

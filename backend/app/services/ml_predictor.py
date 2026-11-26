@@ -480,9 +480,9 @@ def _trigger_bg_feature_refresh(
 
 
 def _trim_process_memory() -> None:
-    """Release temporary DataFrame buffers back to the OS allocator."""
+    """Release temporary DataFrame buffers back to the OS allocator without full gen-2 GC pauses."""
     import gc
-    gc.collect()
+    gc.collect(0)
     try:
         import ctypes
         ctypes.CDLL("libc.so.6").malloc_trim(0)

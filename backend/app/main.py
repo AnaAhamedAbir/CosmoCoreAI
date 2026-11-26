@@ -999,95 +999,9 @@ async def startup_event():
     running_tasks.add(autopilot_task)
     autopilot_task.add_done_callback(running_tasks.discard)
 
-    # Task Q: Lightweight Event-Loop Stall Watchdog (captures exact culprit stack if loop blocks >= 200ms)
-    try:
-        import os as _os
-        import threading as _threading
-        import time as _time
-        import traceback as _traceback
-
-        _loop_tid = _threading.get_ident()
-        _watchdog_tid_box = {"id": None}
-        _watchdog_state = {
-            "hb": _time.perf_counter(),
-            "hb_cpu": _time.process_time(),
-            "last_warn": 0.0,
-            "stop": False,
-        }
-        app.state._loop_watchdog_state = _watchdog_state
-
-        async def _loop_heartbeat_updater():
-            while not _watchdog_state["stop"]:
-                _watchdog_state["hb"] = _time.perf_counter()
-                _watchdog_state["hb_cpu"] = _time.process_time()
-                await asyncio.sleep(0.05)
-
-        def _stall_watchdog_thread():
-            _watchdog_tid_box["id"] = _threading.get_ident()
-            _idle_funcs = {"_worker", "wait", "get", "sleep", "select", "poll", "_wait_for_tstate_lock"}
-            while not _watchdog_state["stop"]:
-                _time.sleep(0.05)
-                if _watchdog_state["stop"]:
-                    break
-                now_pc = _time.perf_counter()
-                lag_ms = int((now_pc - _watchdog_state["hb"]) * 1000)
-                if lag_ms >= 200 and (now_pc - _watchdog_state["last_warn"]) >= 0.4:
-                    _watchdog_state["last_warn"] = now_pc
-                    cpu_ms = max(0, int((_time.process_time() - _watchdog_state["hb_cpu"]) * 1000))
-                    stack_str = "no-frame"
-                    worker_stacks = []
-                    try:
-                        all_frames = sys._current_frames()
-                        frame = all_frames.get(_loop_tid)
-                        if frame is not None:
-                            frames = _traceback.extract_stack(frame, limit=14)
-                            stack_str = " -> ".join(
-                                f"{_os.path.basename(f.filename)}:{f.lineno}({f.name})"
-                                for f in frames[-10:]
-                            )
-                        for tid, wframe in list(all_frames.items()):
-                            if tid in (_loop_tid, _watchdog_tid_box["id"]):
-                                continue
-                            wframes = _traceback.extract_stack(wframe, limit=10)
-                            if not wframes:
-                                continue
-                            top = wframes[-1]
-                            if top.name in _idle_funcs or _os.path.basename(top.filename) in ("threading.py", "thread.py", "queue.py", "selectors.py"):
-                                continue
-                            w_summary = " -> ".join(
-                                f"{_os.path.basename(f.filename)}:{f.lineno}({f.name})"
-                                for f in wframes[-5:]
-                            )
-                            worker_stacks.append(f"[T{tid}: {w_summary}]")
-                            if len(worker_stacks) >= 3:
-                                break
-                    except Exception:
-                        pass
-                    extra = f" | Workers={' ; '.join(worker_stacks)}" if worker_stacks else ""
-                    logger.warning(
-                        f"🐢 [EventLoopStall] Main asyncio loop blocked ~{lag_ms}ms (ProcCPU={cpu_ms}ms) | {stack_str}{extra}"
-                    )
-
-        hb_task = asyncio.create_task(_loop_heartbeat_updater())
-        running_tasks.add(hb_task)
-        hb_task.add_done_callback(running_tasks.discard)
-        _threading.Thread(
-            target=_stall_watchdog_thread,
-            name="event_loop_stall_watchdog",
-            daemon=True,
-        ).start()
-    except Exception as _wd_err:
-        logger.debug(f"[Watchdog] Startup skipped: {_wd_err}")
-
 @app.on_event("shutdown")
 async def shutdown_event():
     print("🛑 Server Shutdown Initiated...")
-    try:
-        wd_state = getattr(app.state, "_loop_watchdog_state", None)
-        if isinstance(wd_state, dict):
-            wd_state["stop"] = True
-    except Exception:
-        pass
     try:
         from app.services.manual_trade_persistence import flush_active_monitors_on_shutdown
         await flush_active_monitors_on_shutdown(timeout_seconds=3.0)

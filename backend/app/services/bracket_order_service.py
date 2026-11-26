@@ -13,6 +13,7 @@ Fixes applied:
 import time
 import asyncio
 import logging
+from decimal import Decimal
 from typing import Optional
 from app.services.exchange_pool import get_or_create_exchange
 try:
@@ -103,6 +104,12 @@ class BracketOrderService:
             return 0.0
         if val <= 0:
             return 0.0
+        # Normalize IEEE-754 binary float dust (e.g. 0.009 - 0.005 = 0.003999999999999999 -> 0.004)
+        # before CCXT's TRUNCATE-mode amount_to_precision floors away an entire lot step!
+        try:
+            val = float(Decimal(f"{val:.12g}"))
+        except Exception:
+            pass
         try:
             if exchange and getattr(exchange, 'markets', None) and symbol in exchange.markets:
                 return float(exchange.amount_to_precision(symbol, val))
@@ -1515,8 +1522,8 @@ class BracketOrderService:
                     if status in ('closed', 'filled') and filled <= 0 and amount > 0:
                         filled = float(amount)
 
-                    if filled > processed_amount:
-                        newly_filled = filled - processed_amount
+                    if filled > processed_amount + 1e-12:
+                        newly_filled = float(Decimal(str(filled)) - Decimal(str(processed_amount)))
                         average_price = float(
                             order_status.get('average') or
                             order_status.get('price') or
@@ -1541,14 +1548,15 @@ class BracketOrderService:
                         else:
                             logger.info(f"⚡ Partial/Full fill detected for {polled_entry_id}: {newly_filled} @ {average_price} (Total: {filled}/{amount})")
                             
-                            # Spawning bracket for this chunk
+                            # Spawning bracket for this chunk (pass authoritative cumulative_filled to prevent any truncation drift)
                             asyncio.create_task(
                                 BracketOrderService._spawn_bracket_for_amount(
                                     exchange, symbol, side, newly_filled, average_price,
                                     is_futures, tp_config, sl_config, user_id, api_key_record,
                                     entry_order_id=polled_entry_id,
                                     linked_tp_order_id=linked_tp_order_id,
-                                    linked_tp_price=linked_tp_price
+                                    linked_tp_price=linked_tp_price,
+                                    cumulative_filled=filled,
                                 )
                             )
                             # Send Entry Order Fill notification to Telegram
@@ -1575,7 +1583,9 @@ class BracketOrderService:
                                 except Exception:
                                     pass
 
-                    if status in ('closed', 'filled') or processed_amount >= amount * 0.99:
+                    exchange_order_amt = float(order_status.get('amount') or 0.0)
+                    target_full_amt = exchange_order_amt if exchange_order_amt > 0 else float(amount or 0.0)
+                    if status in ('closed', 'filled') or (target_full_amt > 0 and processed_amount >= target_full_amt - 1e-9):
                         order_closed = True
                         break
 
@@ -1739,6 +1749,7 @@ class BracketOrderService:
         is_consolidation_chunk: bool = True,
         linked_tp_order_id: str = None,
         linked_tp_price: float = None,
+        cumulative_filled: Optional[float] = None,
     ):
         lock_key = str(entry_order_id) if entry_order_id else (f"tp:{linked_tp_order_id}" if linked_tp_order_id else None)
         entry_lock = None
@@ -1850,7 +1861,16 @@ class BracketOrderService:
             if existing_sl is not None:
                 if is_consolidation_chunk:
                     prev_amt = float(existing_sl.get('amount') or 0.0)
-                    raw_total = prev_amt + final_amount
+                    raw_sum = float(Decimal(str(prev_amt)) + Decimal(str(final_amount)))
+                    if cumulative_filled is not None and float(cumulative_filled) > 0:
+                        cum_prec = (
+                            max(1.0, round(float(cumulative_filled)))
+                            if is_inverse
+                            else BracketOrderService._safe_amount_to_precision(exchange, symbol, float(cumulative_filled))
+                        )
+                        raw_total = max(raw_sum, cum_prec)
+                    else:
+                        raw_total = raw_sum
                     new_total_amt = BracketOrderService._safe_amount_to_precision(exchange, symbol, raw_total)
                     prev_entry = float(existing_sl.get('entry_price') or average_price)
                     weighted_entry = ((prev_amt * prev_entry) + (final_amount * average_price)) / raw_total if raw_total > 0 else average_price
@@ -1889,8 +1909,9 @@ class BracketOrderService:
                                 await exchange.cancel_order(old_tp_id, symbol)
                             await asyncio.sleep(0.15)
                         if old_tp_filled > 0 and is_consolidation_chunk:
+                            rem_after_old_tp = float(Decimal(str(raw_total)) - Decimal(str(old_tp_filled)))
                             tp_target_amt = BracketOrderService._safe_amount_to_precision(
-                                exchange, symbol, max(final_amount, raw_total - old_tp_filled)
+                                exchange, symbol, max(final_amount, rem_after_old_tp)
                             )
 
                     tp_order_type = tp_config.get('order_type', 'Limit').lower()

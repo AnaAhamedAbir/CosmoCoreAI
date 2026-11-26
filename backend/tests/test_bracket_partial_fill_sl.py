@@ -357,6 +357,73 @@ class TestBracketPartialFillSL(unittest.IsolatedAsyncioTestCase):
         )
         self.assertAlmostEqual(sl_entry["trigger_price"], 0.06760, places=5)
 
+    async def test_partial_fill_ieee754_truncation_never_drops_lot(self):
+        """Regression for BTC/USDC:USDC live incident:
+        Partial fills 0.001 -> 0.005 -> 0.009 -> 0.014 produced 0.009 - 0.005 = 0.003999999999999999,
+        which CCXT's TRUNCATE amount_to_precision floored to 0.003, leaving 0.001 BTC unprotected!
+        Final consolidated TP & SL MUST match the exact 0.014 BTC filled position."""
+        import math
+
+        class TruncatingFuturesExchange(MockExchange):
+            def __init__(self):
+                super().__init__(symbol="BTC/USDC:USDC", tick=0.1, bids=[[60859.0, 5.0]], asks=[[60860.0, 5.0]])
+                self.markets["BTC/USDC:USDC"]["precision"] = {"price": 0.1, "amount": 0.001}
+                self.markets["BTC/USDC:USDC"]["linear"] = True
+
+            def price_to_precision(self, symbol, price):
+                return f"{round(float(price), 1):.1f}"
+
+            def amount_to_precision(self, symbol, amount):
+                # Replicate CCXT Binance TRUNCATE mode (step = 0.001)
+                stepped = math.floor(float(amount) * 1000.0) / 1000.0
+                return f"{stepped:.3f}"
+
+            async def fetch_order(self, order_id, symbol):
+                return self.orders.get(str(order_id), {"id": str(order_id), "status": "open", "filled": 0.0})
+
+            async def cancel_order(self, order_id, symbol, params=None):
+                self.cancelled_orders.append(str(order_id))
+                return {"id": str(order_id), "status": "canceled"}
+
+        ex = TruncatingFuturesExchange()
+        api_rec = SimpleNamespace(id=4, exchange="binance", api_key="k", secret_key="s", passphrase=None)
+        tp_cfg = {"enabled": True, "order_type": "Limit", "mode": "price", "value": 15.0}
+        sl_cfg = {"enabled": True, "type": "smart_chase", "mode": "price", "value": 30.0}
+
+        # Confirm _safe_amount_to_precision cleans IEEE-754 dust (0.009 - 0.005 = 0.003999999999999999 -> 0.004)
+        self.assertEqual(
+            BracketOrderService._safe_amount_to_precision(ex, "BTC/USDC:USDC", 0.009 - 0.005),
+            0.004,
+        )
+
+        # Replay the exact 4 partial fills from the user's live BTC/USDC:USDC trade
+        fills = [
+            (0.001, 0.001),
+            (0.005 - 0.001, 0.005),
+            (0.009 - 0.005, 0.009),  # IEEE-754 -> 0.003999999999999999!
+            (0.014 - 0.009, 0.014),  # IEEE-754 -> 0.005000000000000001!
+        ]
+        for chunk, cum in fills:
+            await BracketOrderService._spawn_bracket_for_amount(
+                exchange=ex,
+                symbol="BTC/USDC:USDC",
+                side="sell",
+                filled_amount=chunk,
+                average_price=60859.8,
+                is_futures=True,
+                tp_config=tp_cfg,
+                sl_config=sl_cfg,
+                user_id=0,
+                api_key_record=api_rec,
+                entry_order_id="86199582159",
+                cumulative_filled=cum,
+            )
+
+        # Final TP order and active SL monitor MUST BOTH cover the full 0.014 BTC (zero residual!)
+        self.assertEqual(ex.limit_orders_placed[-1]["amount"], 0.014)
+        sl_entry = next(iter(BracketOrderService.ACTIVE_SOFTWARE_SL.values()))
+        self.assertEqual(sl_entry["amount"], 0.014)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

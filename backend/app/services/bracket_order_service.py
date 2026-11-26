@@ -2244,9 +2244,13 @@ class BracketOrderService:
                 tp_attempts = 0
                 max_loop_lag_ms = 0
                 probe_done = False
+                t_sched_create = time.perf_counter()
 
                 async def _measure_loop_lag():
                     nonlocal max_loop_lag_ms
+                    sched_lag = max(0, int((time.perf_counter() - t_sched_create) * 1000))
+                    if sched_lag > max_loop_lag_ms:
+                        max_loop_lag_ms = sched_lag
                     for _ in range(200):
                         if probe_done:
                             break

@@ -1221,19 +1221,8 @@ class BracketOrderService:
                         api_key_rec = sl_meta.get('api_key_record')
                         if api_key_rec and hasattr(api_key_rec, 'api_key') and hasattr(api_key_rec, 'secret_key'):
                             try:
-                                dec_api = decrypt_key(api_key_rec.api_key)
-                                dec_sec = decrypt_key(api_key_rec.secret_key)
-                                raw_pp = getattr(api_key_rec, 'passphrase', None)
-                                dec_pp = decrypt_key(raw_pp) if raw_pp else None
-                                cand_ex = await get_or_create_exchange(
-                                    api_key_id=api_key_rec.id,
-                                    exchange_name=api_key_rec.exchange,
-                                    decrypted_api_key=dec_api,
-                                    decrypted_secret=dec_sec,
-                                    is_futures=is_futures,
-                                    passphrase=dec_pp,
-                                    purpose="order",
-                                )
+                                from app.services.manual_trade_service import ManualTradeService
+                                cand_ex = await ManualTradeService._get_exchange(api_key_rec, is_futures, purpose="order")
                                 if cand_ex is not None:
                                     order_ex = cand_ex
                             except Exception:
@@ -1896,8 +1885,8 @@ class BracketOrderService:
                             if is_futures:
                                 await BracketOrderService._cancel_futures_order_universal(exchange, old_tp_id, symbol)
                             else:
-                                await exchange.cancel_order(old_tp_id, symbol)
-                            await asyncio.sleep(0.15)
+                                await BracketOrderService._cancel_futures_order_universal(exchange, old_tp_id, symbol, is_conditional=False)
+                                await asyncio.sleep(0.04)
                         if old_tp_filled > 0 and is_consolidation_chunk:
                             rem_after_old_tp = float(Decimal(str(raw_total)) - Decimal(str(old_tp_filled)))
                             tp_target_amt = BracketOrderService._safe_amount_to_precision(
@@ -1910,13 +1899,30 @@ class BracketOrderService:
                     final_tp_price = BracketOrderService._safe_price_to_precision(order_ex, symbol, tp_price)
                     t_cons_tp_start = time.perf_counter()
                     ex_params = await BracketOrderService._apply_futures_exit_params(order_ex, symbol, opposite_side) if is_futures else {}
+                    cons_ws_ready = is_ws_api_ready(order_ex, is_futures=is_futures, is_inverse=bool(is_inverse))
+
+                    async def _place_consolidated_limit(l_params: dict):
+                        if getattr(order_ex, 'has', {}).get('createOrderWs') and hasattr(order_ex, 'create_order_ws') and cons_ws_ready:
+                            try:
+                                from app.services.manual_trade_service import ManualTradeService
+                                ws_t, ws_p = ManualTradeService._sanitize_ws_order_args(
+                                    order_ex, 'limit', l_params, is_futures, is_edit=False
+                                )
+                                return await order_ex.create_order_ws(symbol, ws_t, opposite_side, tp_target_amt, final_tp_price, ws_p)
+                            except Exception as ws_c_err:
+                                err_l = str(ws_c_err).lower()
+                                if '-5022' in err_l or 'post' in err_l or 'maker' in err_l:
+                                    raise
+                                logger.debug(f"Consolidated TP create_order_ws fallback to REST: {ws_c_err}")
+                        return await order_ex.create_limit_order(symbol, opposite_side, tp_target_amt, final_tp_price, l_params)
+
                     try:
                         tp_res = None
                         if tp_order_type == 'limit':
                             ex_params_po = dict(ex_params)
                             ex_params_po['postOnly'] = True
                             try:
-                                tp_res = await order_ex.create_limit_order(symbol, opposite_side, tp_target_amt, final_tp_price, ex_params_po)
+                                tp_res = await _place_consolidated_limit(ex_params_po)
                             except Exception as po_cons_err:
                                 logger.warning(f"Consolidated TP Post-Only rejected ({po_cons_err}). Retrying with standard GTC Limit...")
                                 tp_res = None
@@ -1924,7 +1930,7 @@ class BracketOrderService:
                                 ex_params_gtc = dict(ex_params)
                                 ex_params_gtc.pop('postOnly', None)
                                 ex_params_gtc['timeInForce'] = 'GTC'
-                                tp_res = await order_ex.create_limit_order(symbol, opposite_side, tp_target_amt, final_tp_price, ex_params_gtc)
+                                tp_res = await _place_consolidated_limit(ex_params_gtc)
                         else:
                             if is_futures:
                                 tp_cond_params = dict(ex_params)
@@ -1937,7 +1943,7 @@ class BracketOrderService:
                                 ex_params_gtc = dict(ex_params)
                                 ex_params_gtc.pop('postOnly', None)
                                 ex_params_gtc['timeInForce'] = 'GTC'
-                                tp_res = await order_ex.create_limit_order(symbol, opposite_side, tp_target_amt, final_tp_price, ex_params_gtc)
+                                tp_res = await _place_consolidated_limit(ex_params_gtc)
                         cons_tp_ms = max(1, int((time.perf_counter() - t_cons_tp_start) * 1000))
                         if tp_res and tp_res.get('id'):
                             new_tp_id = str(tp_res.get('id'))

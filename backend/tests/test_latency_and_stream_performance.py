@@ -605,27 +605,28 @@ class TestLatencyWarningAndExecutionGuard(unittest.IsolatedAsyncioTestCase):
         SystemService._latency_guard_config_cache = {
             "guard_enabled": True,
             "block_on_degraded": True,
-            "binance_warn_ms": 180,
-            "binance_block_ms": 350,
-            "client_warn_ms": 600,
-            "client_block_ms": 1000,
+            "binance_warn_ms": 1000,
+            "binance_block_ms": 1200,
+            "client_warn_ms": 1000,
+            "client_block_ms": 1500,
         }
         SystemService._latency_guard_config_cached_at = time.monotonic()
 
-        # Optimal -> no warning, no block
+        # Up to 500ms -> NORMAL (optimal), no warning, no guard block
         SystemService._binance_latency_cache = {
-            "binance_spot_ms": 24.0,
-            "binance_futures_ms": 21.0,
-            "binance_ws_ms": 18.0,
+            "binance_spot_ms": 480.0,
+            "binance_futures_ms": 490.0,
+            "binance_ws_ms": 500.0,
             "status": "optimal",
         }
         SystemService._binance_latency_cached_at = time.monotonic()
         h_ok = SystemService.evaluate_latency_health(SystemService._binance_latency_cache)
         self.assertEqual(h_ok["severity"], "optimal")
+        self.assertFalse(h_ok["should_warn"])
         self.assertFalse(h_ok["should_guard"])
         await SystemService.enforce_latency_guard(allow_probe=False, action_label="test order")
 
-        # Critical latency -> rejects accidental new entry/bot start with HTTP 423 HIGH_LATENCY_GUARD
+        # Warning threshold (>= 1000ms) -> rejects accidental new entry/bot start with HTTP 423 HIGH_LATENCY_GUARD
         SystemService._binance_latency_cache = {
             "binance_spot_ms": 1039.0,
             "binance_futures_ms": 1038.0,
@@ -666,10 +667,10 @@ class TestLatencyWarningAndExecutionGuard(unittest.IsolatedAsyncioTestCase):
         SystemService._latency_guard_config_cache = {
             "guard_enabled": True,
             "block_on_degraded": True,
-            "binance_warn_ms": 180,
-            "binance_block_ms": 350,
-            "client_warn_ms": 600,
-            "client_block_ms": 1000,
+            "binance_warn_ms": 1000,
+            "binance_block_ms": 1200,
+            "client_warn_ms": 1000,
+            "client_block_ms": 1500,
         }
         SystemService._latency_guard_config_cached_at = time.monotonic()
         SystemService._last_published_latency_state = "optimal"
@@ -680,32 +681,32 @@ class TestLatencyWarningAndExecutionGuard(unittest.IsolatedAsyncioTestCase):
         fake_redis.publish.side_effect = lambda ch, msg: published.append((ch, json.loads(msg)))
 
         with patch("app.services.system_service.get_redis_client", return_value=fake_redis):
-            # 1st spike -> emits CRITICAL NETWORK_LATENCY alert
+            # 1st spike (>= 1200ms) -> emits CRITICAL NETWORK_LATENCY alert
             SystemService._maybe_publish_latency_alert({
-                "binance_spot_ms": 980.0,
-                "binance_futures_ms": 920.0,
-                "binance_ws_ms": 1150.0,
+                "binance_spot_ms": 1280.0,
+                "binance_futures_ms": 1120.0,
+                "binance_ws_ms": 1350.0,
                 "status": "degraded",
             })
             # Repeat same critical state within 60s cooldown -> suppressed
             SystemService._maybe_publish_latency_alert({
-                "binance_spot_ms": 990.0,
-                "binance_futures_ms": 930.0,
-                "binance_ws_ms": 1100.0,
+                "binance_spot_ms": 1290.0,
+                "binance_futures_ms": 1130.0,
+                "binance_ws_ms": 1300.0,
                 "status": "degraded",
             })
-            # Recovery -> resets tracked state quietly
+            # Recovery (<= 500ms) -> resets tracked state quietly
             SystemService._maybe_publish_latency_alert({
-                "binance_spot_ms": 22.0,
-                "binance_futures_ms": 19.0,
-                "binance_ws_ms": 20.0,
+                "binance_spot_ms": 420.0,
+                "binance_futures_ms": 440.0,
+                "binance_ws_ms": 410.0,
                 "status": "optimal",
             })
-            # Subsequent new spike after recovery -> emits a new alert cleanly
+            # Subsequent new spike (>= 1000ms) after recovery -> emits a new WARNING alert cleanly
             SystemService._maybe_publish_latency_alert({
-                "binance_spot_ms": 260.0,
-                "binance_futures_ms": 240.0,
-                "binance_ws_ms": 250.0,
+                "binance_spot_ms": 1020.0,
+                "binance_futures_ms": 1050.0,
+                "binance_ws_ms": 1010.0,
                 "status": "degraded",
             })
 
@@ -797,6 +798,296 @@ class TestLatencyWarningAndExecutionGuard(unittest.IsolatedAsyncioTestCase):
             ManualTradeService._ORDER_META_CACHE.pop((99, "111"), None)
             ManualTradeService._ORDER_META_CACHE.pop((99, "222"), None)
             await exchange_pool.close_all()
+
+    async def test_spot_emergency_force_skips_redundant_cancel_and_unlock_loops(self):
+        """
+        Spot Emergency Force Buy with SmartPeg when no open order exists (-2011)
+        must NOT fall back to REST cancel_all_orders and must NOT loop 6x fetch_balance
+        even when other pairs hold non-zero `used` quote balance.
+        """
+        from app.services import manual_trade_service as mts_mod
+        from app.services.manual_trade_service import ManualTradeService
+
+        ManualTradeService._OPEN_ORDERS_CACHE.pop((77, "DOGE/FDUSD"), None)
+        ManualTradeService._WALLET_BALANCE_CACHE.clear()
+
+        fake_ex = MagicMock()
+        fake_ex.id = "binance"
+        fake_ex.apiKey = "k77"
+        fake_ex.markets = {
+            "DOGE/FDUSD": {
+                "id": "DOGEFDUSD",
+                "symbol": "DOGE/FDUSD",
+                "base": "DOGE",
+                "quote": "FDUSD",
+                "spot": True,
+                "linear": False,
+                "inverse": False,
+                "contractSize": 1.0,
+            }
+        }
+        fake_ex.has = {"cancelAllOrdersWs": True, "createOrderWs": False}
+
+        async def slow_ws_cancel_all(sym):
+            await asyncio.sleep(0.08)
+            raise Exception("binance -2011 Unknown order sent")
+
+        async def slow_bal(*args, **kwargs):
+            await asyncio.sleep(0.08)
+            return {
+                "FDUSD": {"free": 20.0, "used": 50.0, "total": 70.0},
+                "DOGE": {"free": 0.0, "used": 0.0, "total": 0.0},
+            }
+
+        async def fast_bbo(*args, **kwargs):
+            return {"bids": [[0.0567, 1000.0]], "asks": [[0.0568, 1000.0]]}
+
+        fake_ex.cancel_all_orders_ws = AsyncMock(side_effect=slow_ws_cancel_all)
+        fake_ex.cancel_all_orders = AsyncMock(side_effect=AssertionError("Must not call REST cancel_all_orders after -2011"))
+
+        fake_rec = SimpleNamespace(
+            id=77, user_id=5, exchange="binance", api_key="k", secret_key="s", passphrase=None, is_enabled=True
+        )
+        fake_db = MagicMock()
+        fake_db.query.return_value.filter.return_value.first.return_value = fake_rec
+
+        spawned_pegs = []
+
+        async def fake_spawn_peg(**kwargs):
+            spawned_pegs.append(kwargs)
+
+        with patch.object(ManualTradeService, "_get_exchange", new=AsyncMock(return_value=fake_ex)), \
+             patch.object(ManualTradeService, "get_open_limit_orders", new=AsyncMock(side_effect=AssertionError("Must not synchronously block on get_open_limit_orders"))), \
+             patch.object(ManualTradeService, "_fetch_wallet_balance", new=AsyncMock(side_effect=slow_bal)) as m_bal, \
+             patch.object(mts_mod.bracket_order_service, "_safe_amount_to_precision", side_effect=lambda ex, sym, amt: round(float(amt), 1)), \
+             patch("app.services.user_order_stream.ensure_user_order_stream", return_value=None), \
+             patch("app.services.smart_peg_entry_executor._fetch_bbo_fast", new=AsyncMock(side_effect=fast_bbo)), \
+             patch("app.services.smart_peg_entry_executor.execute_smart_peg_entry", side_effect=fake_spawn_peg), \
+             patch("app.services.smart_peg_entry_executor.stop_smart_peg", new=AsyncMock(return_value=0)):
+            t0 = time.perf_counter()
+            res = await ManualTradeService.execute_emergency_force_order(
+                db=fake_db,
+                user_id=5,
+                api_key_id=77,
+                symbol="DOGE/FDUSD",
+                side="buy",
+                execution_mode="limit_maker",
+                size_pct=100.0,
+            )
+            await asyncio.sleep(0)
+            elapsed_ms = (time.perf_counter() - t0) * 1000.0
+
+        self.assertEqual(res["status"], "pegging")
+        self.assertEqual(fake_ex.cancel_all_orders.call_count, 0)
+        self.assertEqual(m_bal.call_count, 1)
+        # Parallel wave completed in ~1 RTT (<160ms for two 80ms tasks)
+        self.assertLess(elapsed_ms, 160.0)
+        self.assertEqual(len(spawned_pegs), 1)
+        self.assertIsNotNone(spawned_pegs[0]["preloaded_ob"])
+        self.assertIsNotNone(spawned_pegs[0]["preloaded_balance"])
+
+    async def test_cancel_and_close_use_order_pool_and_parallel_cleanup(self):
+        from app.services.manual_trade_service import ManualTradeService
+        from app.services.bracket_order_service import bracket_order_service
+        import app.services.manual_smart_chase_executor as chase_mod
+        import app.services.smart_peg_entry_executor as peg_mod
+        import app.services.user_order_stream as stream_mod
+
+        pool_purposes = []
+        ws_orders = []
+        cancelled_universal = []
+        cancelled_all_calls = []
+
+        class _CloseFakeEx:
+            id = "binance"
+            urls = {"api": {"fapiPrivate": "https://fapi.binance.com"}}
+            has = {"createOrderWs": True, "cancelOrderWs": True}
+            markets = {
+                "ETH/USDT:USDT": {"id": "ETHUSDT", "base": "ETH", "quote": "USDT", "contractSize": 1.0, "inverse": False, "linear": True, "limits": {"cost": {"min": 5.0}}},
+                "DOGE/FDUSD": {"id": "DOGEFDUSD", "base": "DOGE", "quote": "FDUSD", "limits": {"cost": {"min": 5.0}}},
+            }
+
+            def amount_to_precision(self, sym, amt):
+                return str(round(float(amt), 4))
+
+            async def create_order_ws(self, symbol, otype, side, amount, price=None, params=None):
+                ws_orders.append((symbol, otype, side, float(amount), params))
+                return {"id": "ws-close-1", "status": "closed", "filled": float(amount)}
+
+            async def create_market_order(self, *args, **kwargs):
+                raise AssertionError("Should not fall back to REST create_market_order when WS-API is ready")
+
+            async def fetch_balance(self, params=None):
+                return {"DOGE": {"free": 150.0, "used": 0.0, "total": 150.0}, "free": {"DOGE": 150.0}, "used": {"DOGE": 0.0}}
+
+            async def cancel_all_orders(self, symbol, params=None):
+                cancelled_all_calls.append((symbol, params))
+                return []
+
+        fake_ex = _CloseFakeEx()
+        fake_key = SimpleNamespace(id=77, user_id=5, exchange="binance", is_enabled=True, api_key="enc", secret_key="enc")
+
+        class _FakeQuery:
+            def filter(self, *args, **kwargs):
+                return self
+            def first(self):
+                return fake_key
+
+        fake_db = MagicMock()
+        fake_db.query.return_value = _FakeQuery()
+
+        async def _fake_get_exchange(rec, is_fut, purpose="general"):
+            pool_purposes.append((is_fut, purpose))
+            return fake_ex
+
+        async def _fake_cancel_universal(ex, oid, sym, is_conditional=False):
+            cancelled_universal.append((str(oid), sym))
+            return {"status": "canceled", "id": oid}
+
+        async def _noop_async(*args, **kwargs):
+            return 0
+
+        sw_sl_dict = {
+            "sl_fut_1": {
+                "api_key_id": 77,
+                "symbol": "ETH/USDT:USDT",
+                "tp_order_id": "tp_fut_1",
+                "disaster_sl_order_id": "dis_fut_1",
+                "cancelled": False,
+            }
+        }
+
+        with patch.object(ManualTradeService, "_get_exchange", side_effect=_fake_get_exchange), \
+             patch.object(ManualTradeService, "get_active_position", new=AsyncMock(return_value={"amount": 1.25, "side": "long", "contracts": 0})), \
+             patch.object(ManualTradeService, "_is_binance_hedge_mode", new=AsyncMock(return_value=False)), \
+             patch("app.services.manual_trade_service.is_ws_api_ready", return_value=True), \
+             patch.object(bracket_order_service, "ACTIVE_SOFTWARE_SL", sw_sl_dict), \
+             patch.object(bracket_order_service, "ACTIVE_ENTRY_BRACKETS", {}), \
+             patch.object(bracket_order_service, "ACTIVE_ENTRY_MONITORS", {}), \
+             patch.object(bracket_order_service, "_safe_amount_to_precision", side_effect=lambda ex, sym, amt: round(float(amt), 4)), \
+             patch.object(bracket_order_service, "_cancel_futures_order_universal", side_effect=_fake_cancel_universal), \
+             patch.object(chase_mod, "stop_smart_chase", side_effect=_noop_async), \
+             patch.object(peg_mod, "stop_smart_peg", side_effect=_noop_async), \
+             patch.object(stream_mod, "ensure_user_order_stream", return_value=None), \
+             patch.object(stream_mod, "publish_order_sync_event", new=AsyncMock()), \
+             patch("app.services.manual_trade_persistence.schedule_mark_terminal", MagicMock()), \
+             patch("app.services.manual_trade_persistence.schedule_mark_terminal_by_scope", MagicMock()), \
+             patch("app.services.manual_trade_service._send_trade_fired_notification", new=AsyncMock()), \
+             patch("app.services.manual_trade_service._emit_manual_trade_in_app", new=AsyncMock()):
+            fut_close = await ManualTradeService.close_active_position(fake_db, 5, 77, "ETH/USDT:USDT")
+            spot_close = await ManualTradeService.close_active_position(fake_db, 5, 77, "DOGE/FDUSD")
+            await ManualTradeService.cancel_manual_order(fake_db, 5, 77, "ord_99", "ETH/USDT:USDT")
+            await ManualTradeService.cancel_all_manual_orders(fake_db, 5, 77, "ETH/USDT:USDT")
+
+        self.assertTrue(fut_close["success"])
+        self.assertTrue(spot_close["success"])
+        # All 4 calls must use purpose="order" unthrottled pool
+        self.assertEqual(pool_purposes, [(True, "order"), (False, "order"), (True, "order"), (True, "order")])
+        # Both Futures TP and Disaster SL cancelled before WS Market Close
+        cancelled_oids = {x[0] for x in cancelled_universal}
+        self.assertIn("tp_fut_1", cancelled_oids)
+        self.assertIn("dis_fut_1", cancelled_oids)
+        # Futures & Spot close used create_order_ws
+        self.assertEqual(len(ws_orders), 2)
+        self.assertEqual(ws_orders[0][0], "ETH/USDT:USDT")
+        self.assertEqual(ws_orders[1][0], "DOGE/FDUSD")
+        # Spot close did not waste a REST cancel_all_orders call when no open/locked orders existed (only cancel_all_manual_orders called cancel_all_orders)
+        self.assertEqual([c[0] for c in cancelled_all_calls], ["ETH/USDT:USDT", "ETH/USDT:USDT"])
+
+    async def test_smart_chase_uses_order_pool_ws_api_and_fast_bbo_polling(self):
+        import app.services.manual_smart_chase_executor as chase_mod
+        from app.services.manual_trade_service import ManualTradeService
+        import app.services.smart_peg_entry_executor as peg_mod
+
+        bbo_calls = {"n": 0}
+        ws_actions = []
+
+        async def _fake_bbo(exchange, symbol):
+            bbo_calls["n"] += 1
+            # First quote: 100.0 / 100.1; subsequent urgent shift (3+ ticks away): 99.5 / 99.6
+            if bbo_calls["n"] <= 2:
+                return {"bids": [[100.0, 5.0]], "asks": [[100.1, 5.0]]}
+            return {"bids": [[99.5, 5.0]], "asks": [[99.6, 5.0]]}
+
+        class _ChaseFakeEx:
+            id = "binance"
+            urls = {"api": {"fapiPrivate": "https://fapi.binance.com"}}
+            has = {"createOrderWs": True, "editOrderWs": True, "cancelOrderWs": True, "editOrder": True}
+            markets = {
+                "SOL/USDT:USDT": {
+                    "id": "SOLUSDT",
+                    "base": "SOL",
+                    "quote": "USDT",
+                    "contractSize": 1.0,
+                    "inverse": False,
+                    "linear": True,
+                    "precision": {"price": 0.1, "amount": 0.1},
+                    "limits": {"cost": {"min": 5.0}},
+                }
+            }
+
+            def price_to_precision(self, sym, px):
+                return str(round(float(px), 1))
+
+            def amount_to_precision(self, sym, amt):
+                return str(round(float(amt), 1))
+
+            async def create_order_ws(self, symbol, otype, side, amount, price=None, params=None):
+                ws_actions.append(("create_ws", otype, side, float(price or 0.0), dict(params or {})))
+                if len([a for a in ws_actions if a[0] == "create_ws"]) == 1:
+                    return {"id": "chase-ws-1", "status": "open", "filled": 0.0}
+                return {"id": "chase-ws-2", "status": "closed", "filled": float(amount), "average": float(price or 99.6)}
+
+            async def cancel_order_ws(self, oid, symbol):
+                ws_actions.append(("cancel_ws", str(oid)))
+                return {"id": oid, "status": "canceled"}
+
+            async def edit_order_ws(self, *args, **kwargs):
+                raise AssertionError("Futures GTX must skip editOrderWs (-5026) and use PARALLEL-1RTT")
+
+            async def edit_order(self, *args, **kwargs):
+                raise AssertionError("Futures GTX must skip REST editOrder (-5026) and use PARALLEL-1RTT")
+
+            async def fetch_order(self, oid, symbol):
+                return {"id": oid, "status": "open", "filled": 0.0}
+
+        fake_ex = _ChaseFakeEx()
+        fake_key = SimpleNamespace(id=88, user_id=5, exchange="binance", is_enabled=True, api_key="enc", secret_key="enc")
+
+        t0 = time.perf_counter()
+        with patch.object(ManualTradeService, "_get_exchange", new=AsyncMock(return_value=fake_ex)) as mock_get_ex, \
+             patch.object(ManualTradeService, "_is_binance_hedge_mode", new=AsyncMock(return_value=False)), \
+             patch.object(chase_mod, "_get_live_position_contracts", new=AsyncMock(return_value=2.0)), \
+             patch.object(peg_mod, "_fetch_bbo_fast", side_effect=_fake_bbo), \
+             patch("app.services.manual_trade_persistence.schedule_update_monitor", MagicMock()), \
+             patch("app.services.manual_trade_persistence.schedule_mark_terminal", MagicMock()), \
+             patch("app.services.exchange_pool.is_ws_api_ready", return_value=True):
+            res = await chase_mod.execute_manual_smart_chase(
+                exchange=fake_ex,
+                symbol="SOL/USDT:USDT",
+                exit_side="sell",
+                sell_amount_raw=2.0,
+                entry_price=101.0,
+                original_sl=100.0,
+                max_deviation_pct=2.0,
+                chase_delay_ms=1500,
+                max_attempts=4,
+                is_futures=True,
+                user_id=5,
+                api_key_record=fake_key,
+                chase_id="test_chase_fast_bbo",
+                chase_mode="dynamic_bbo",
+                peg_strategy="bbo",
+            )
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
+
+        self.assertEqual(res.get("status"), "closed")
+        self.assertEqual(res.get("id"), "chase-ws-2")
+        mock_get_ex.assert_awaited_once_with(fake_key, True, purpose="order")
+        # Initial GTX create_order_ws + urgent BBO PARALLEL-1RTT (cancel_order_ws + create_order_ws)
+        self.assertEqual([a[0] for a in ws_actions], ["create_ws", "cancel_ws", "create_ws"])
+        # Must trigger within fast 40ms BBO sampling (not stuck on old 250ms sleep!)
+        self.assertLess(elapsed_ms, 220.0)
 
 
 if __name__ == "__main__":

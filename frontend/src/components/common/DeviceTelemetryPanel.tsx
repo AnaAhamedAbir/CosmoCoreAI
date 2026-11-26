@@ -67,15 +67,10 @@ const RISK_STYLE: Record<ThermalRiskLevel, { badge: string; dot: string }> = {
   },
 };
 
-const getLatencyTone = (ms: number | null | undefined, isClientToVps = false): string => {
+const getLatencyTone = (ms: number | null | undefined, _isClientToVps = false): string => {
   if (ms === null || ms === undefined) return 'text-gray-400';
-  if (isClientToVps) {
-    if (ms < 350) return 'text-emerald-400';
-    if (ms < 600) return 'text-amber-400';
-    return 'text-rose-400';
-  }
-  if (ms < 80) return 'text-emerald-400';
-  if (ms < 180) return 'text-amber-400';
+  if (ms <= 500) return 'text-emerald-400';
+  if (ms < 1000) return 'text-amber-400';
   return 'text-rose-400';
 };
 
@@ -538,7 +533,7 @@ const DeviceTelemetryPanel: React.FC<DeviceTelemetryPanelProps> = ({ active, cli
             <div className="rounded-lg bg-white dark:bg-black/30 border border-slate-200 dark:border-white/5 p-2 space-y-0.5 shadow-sm dark:shadow-none">
               <span className="text-[8.5px] font-bold text-slate-500 dark:text-gray-400 block">CONNECTION</span>
               <span className={`text-xs font-mono font-black ${getLatencyTone(clientToVpsMs, true)}`}>
-                {clientToVpsMs === null ? 'Measuring...' : clientToVpsMs < 350 ? 'NORMAL' : clientToVpsMs < 600 ? 'ELEVATED' : 'HIGH LAG'}
+                {clientToVpsMs === null ? 'Measuring...' : clientToVpsMs <= 500 ? 'NORMAL' : clientToVpsMs < 1000 ? 'ELEVATED' : 'HIGH LAG'}
               </span>
               <span className="text-[8px] font-mono text-slate-400 dark:text-gray-500 block">Encrypted HTTPS</span>
             </div>
@@ -625,9 +620,9 @@ const DeviceTelemetryPanel: React.FC<DeviceTelemetryPanelProps> = ({ active, cli
               </span>
               <div className="flex items-center gap-1">
                 {[
-                  { label: 'Strict', bw: 120, bb: 250, cw: 450, cb: 800 },
-                  { label: 'Balanced', bw: 180, bb: 350, cw: 600, cb: 1000 },
-                  { label: 'Relaxed', bw: 250, bb: 500, cw: 800, cb: 1400 },
+                  { label: 'Strict (700ms)', bw: 700, bb: 1000, cw: 700, cb: 1000 },
+                  { label: 'Default (1000ms)', bw: 1000, bb: 1200, cw: 1000, cb: 1500 },
+                  { label: 'Relaxed (1500ms)', bw: 1500, bb: 2000, cw: 1500, cb: 2000 },
                 ].map((preset) => {
                   const activePreset = guardConfig.binance_warn_ms === preset.bw && guardConfig.binance_block_ms === preset.bb;
                   return (

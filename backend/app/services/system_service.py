@@ -272,14 +272,14 @@ class SystemService:
     _binance_latency_cached_at: float = 0.0
     _BINANCE_CACHE_TTL_SEC: float = 8.0
     _BINANCE_GUARD_CACHE_MAX_AGE_SEC: float = 30.0
-    _LATENCY_GUARD_REDIS_KEY: str = "sys:latency_guard:config"
+    _LATENCY_GUARD_REDIS_KEY: str = "sys:latency_guard:config:v2"
     _DEFAULT_LATENCY_GUARD_CONFIG: Dict[str, Any] = {
         "guard_enabled": True,
         "block_on_degraded": True,
-        "binance_warn_ms": 180,
-        "binance_block_ms": 350,
-        "client_warn_ms": 600,
-        "client_block_ms": 1000,
+        "binance_warn_ms": 1000,
+        "binance_block_ms": 1200,
+        "client_warn_ms": 1000,
+        "client_block_ms": 1500,
     }
     _latency_guard_config_cache: Optional[Dict[str, Any]] = None
     _latency_guard_config_cached_at: float = 0.0
@@ -481,7 +481,7 @@ class SystemService:
             status = "unreachable"
         else:
             avg_ms = sum(samples) / len(samples)
-            status = "optimal" if avg_ms < 80 else "good" if avg_ms < 180 else "degraded"
+            status = "optimal" if avg_ms <= 500 else "good" if avg_ms < 1000 else "degraded"
 
         result = {
             "binance_spot_ms": spot_ms,
@@ -581,8 +581,8 @@ class SystemService:
         avg_ms = round(sum(samples) / len(samples), 1) if samples else None
         max_ms = round(max(samples), 1) if samples else None
 
-        warn_ms = int(cfg.get("binance_warn_ms", 180))
-        block_ms = int(cfg.get("binance_block_ms", 350))
+        warn_ms = int(cfg.get("binance_warn_ms", 1000))
+        block_ms = int(cfg.get("binance_block_ms", 1200))
         guard_enabled = bool(cfg.get("guard_enabled", True))
         block_on_degraded = bool(cfg.get("block_on_degraded", True))
 

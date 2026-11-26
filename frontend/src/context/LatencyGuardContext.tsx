@@ -52,13 +52,13 @@ export interface LatencyGuardContextValue {
 const DEFAULT_GUARD_CONFIG: LatencyGuardConfig = {
   guard_enabled: true,
   block_on_degraded: true,
-  binance_warn_ms: 180,
-  binance_block_ms: 350,
-  client_warn_ms: 600,
-  client_block_ms: 1000,
+  binance_warn_ms: 1000,
+  binance_block_ms: 1200,
+  client_warn_ms: 1000,
+  client_block_ms: 1500,
 };
 
-const STORAGE_KEY = 'cosmo_latency_guard_v1';
+const STORAGE_KEY = 'cosmo_latency_guard_v2';
 
 const loadLocalGuardConfig = (): LatencyGuardConfig => {
   if (typeof window === 'undefined') return DEFAULT_GUARD_CONFIG;
@@ -258,7 +258,7 @@ export const LatencyGuardProvider: React.FC<{
       }
     }
 
-    if (clientToVpsJitterMs !== null && clientToVpsJitterMs >= 250) {
+    if (clientToVpsJitterMs !== null && clientToVpsJitterMs >= 500) {
       sev = maxLatencySeverity(sev, 'warning');
       reasons.push(`Network Jitter ${Math.round(clientToVpsJitterMs)}ms (Unstable)`);
     }

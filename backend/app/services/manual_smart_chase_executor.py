@@ -390,26 +390,73 @@ async def execute_manual_smart_chase(
     # ── STEP 0: Upgrade to dedicated unthrottled order exchange pool instance (purpose='order') ──
     if api_key_record:
         try:
-            from app.services.exchange_pool import get_or_create_exchange
-            from app.core.security import decrypt_key
-            decrypted_api_key = decrypt_key(api_key_record.api_key)
-            decrypted_secret = decrypt_key(api_key_record.secret_key)
-            raw_pp = getattr(api_key_record, 'passphrase', None)
-            passphrase = decrypt_key(raw_pp) if raw_pp else None
-            order_exchange = await get_or_create_exchange(
-                api_key_id=api_key_record.id,
-                exchange_name=api_key_record.exchange,
-                decrypted_api_key=decrypted_api_key,
-                decrypted_secret=decrypted_secret,
-                is_futures=is_futures,
-                passphrase=passphrase,
-                purpose="order"
-            )
+            from app.services.manual_trade_service import ManualTradeService
+            order_exchange = await ManualTradeService._get_exchange(api_key_record, is_futures, purpose="order")
             if order_exchange:
                 exchange = order_exchange
                 logger.info(f"⚡ [Manual Smart Chase] Upgraded to unthrottled dedicated order exchange for {symbol}")
         except Exception as ex_upgrade_err:
             logger.debug(f"Smart Chase exchange upgrade fallback: {ex_upgrade_err}")
+
+    def _sc_ws_ready() -> bool:
+        try:
+            from app.services.exchange_pool import is_ws_api_ready
+            return is_ws_api_ready(exchange, is_futures=is_futures, is_inverse=_is_inverse_market(exchange, symbol))
+        except Exception:
+            return False
+
+    async def _sc_create_limit(order_amt: float, order_px: float, params_dict: dict):
+        if getattr(exchange, 'has', {}).get('createOrderWs') and hasattr(exchange, 'create_order_ws') and _sc_ws_ready():
+            try:
+                from app.services.manual_trade_service import ManualTradeService
+                ws_t, ws_p = ManualTradeService._sanitize_ws_order_args(
+                    exchange, 'limit', params_dict, is_futures, is_edit=False
+                )
+                return await exchange.create_order_ws(symbol, ws_t, exit_side, order_amt, order_px, ws_p)
+            except Exception as ws_e:
+                err_l = str(ws_e).lower()
+                if any(k in err_l for k in ('-5022', '-2010', '-2022', '-4118', 'post', 'reduceonly', 'insufficient')):
+                    raise
+                logger.debug(f"[Manual Smart Chase] create_order_ws limit fallback to REST: {ws_e}")
+        return await exchange.create_limit_order(symbol, exit_side, order_amt, order_px, params_dict)
+
+    async def _sc_create_market(order_amt: float, params_dict: dict):
+        if getattr(exchange, 'has', {}).get('createOrderWs') and hasattr(exchange, 'create_order_ws') and _sc_ws_ready():
+            try:
+                from app.services.manual_trade_service import ManualTradeService
+                ws_t, ws_p = ManualTradeService._sanitize_ws_order_args(
+                    exchange, 'market', params_dict, is_futures, is_edit=False
+                )
+                return await exchange.create_order_ws(symbol, ws_t, exit_side, order_amt, None, ws_p)
+            except Exception as ws_e:
+                logger.debug(f"[Manual Smart Chase] create_order_ws market fallback to REST: {ws_e}")
+        return await exchange.create_market_order(symbol, exit_side, order_amt, params=params_dict)
+
+    async def _sc_edit_limit(oid: str, order_amt: float, order_px: float, params_dict: dict):
+        if getattr(exchange, 'has', {}).get('editOrderWs') and hasattr(exchange, 'edit_order_ws') and _sc_ws_ready():
+            try:
+                from app.services.manual_trade_service import ManualTradeService
+                ws_t, ws_p = ManualTradeService._sanitize_ws_order_args(
+                    exchange, 'limit', params_dict, is_futures, is_edit=True
+                )
+                return await exchange.edit_order_ws(oid, symbol, ws_t, exit_side, order_amt, order_px, ws_p), "WS"
+            except Exception as ws_e:
+                err_l = str(ws_e).lower()
+                if any(k in err_l for k in ('filled', 'unknown order', '-2011', '-2013', '-5022', 'post')):
+                    raise
+                logger.debug(f"[Manual Smart Chase] edit_order_ws fallback to REST: {ws_e}")
+        return await exchange.edit_order(oid, symbol, 'limit', exit_side, order_amt, order_px, params_dict), "Native"
+
+    async def _sc_cancel(oid: str):
+        if getattr(exchange, 'has', {}).get('cancelOrderWs') and hasattr(exchange, 'cancel_order_ws') and _sc_ws_ready():
+            try:
+                return await exchange.cancel_order_ws(oid, symbol)
+            except Exception as ws_e:
+                err_l = str(ws_e).lower()
+                if any(k in err_l for k in ('filled', 'unknown order', '-2011', '-2013')):
+                    raise
+                logger.debug(f"[Manual Smart Chase] cancel_order_ws fallback to REST: {ws_e}")
+        return await exchange.cancel_order(oid, symbol)
 
     chase_delay_sec = max(0.2, chase_delay_ms / 1000.0)
     exchange_name = getattr(api_key_record, 'exchange', 'exchange').capitalize() if api_key_record else 'Exchange'
@@ -566,15 +613,18 @@ async def execute_manual_smart_chase(
             except Exception as open_err:
                 logger.debug(f"Open orders fetch during cleanup non-fatal error: {open_err}")
 
+        cancelled_count = 0
         if cancel_tasks:
             results = await asyncio.gather(*cancel_tasks, return_exceptions=True)
             for (lbl, oid), res in zip(labels, results):
                 if isinstance(res, Exception):
                     logger.debug(f"Failed to cancel {lbl} order {oid}: {res}")
                 else:
+                    cancelled_count += 1
                     logger.info(f"🛡️ [Manual Smart Chase] Cancelled {lbl} order {oid} to release locked balance")
         tp_order_id = None
         disaster_sl_order_id = None
+        return cancelled_count > 0
 
     # Send Notification helper
     async def _send_notify(msg: str):
@@ -589,7 +639,7 @@ async def execute_manual_smart_chase(
                 logger.warning(f"Telegram notification failed (non-fatal): {notify_err}")
 
     # ── STEP 1: IMMEDIATELY CANCEL TP & DISASTER SL CONCURRENTLY ──
-    await _cleanup_other_orders()
+    had_cancelled_orders = await _cleanup_other_orders()
 
     # Format initial amount
     remaining_amount = sell_amount_raw
@@ -689,7 +739,8 @@ async def execute_manual_smart_chase(
     cached_initial_ob = None
     initial_bal = None
     if not is_futures:
-        await asyncio.sleep(0.1)  # Minimal 100ms buffer for Binance ledger release
+        if had_cancelled_orders:
+            await asyncio.sleep(0.08)  # Minimal ledger release buffer only when an exchange order was actually cancelled
         bal_res, ob_res = await asyncio.gather(
             exchange.fetch_balance(),
             _fetch_ob_fast_or_rest(ob_depth_limit),
@@ -944,7 +995,7 @@ async def execute_manual_smart_chase(
             sweep_notional = _calc_order_notional_usd(exchange, symbol, sweep_amt, target_maker_price)
             if sweep_amt > 0 and sweep_notional >= min_notional:
                 try:
-                    final_res = await exchange.create_market_order(symbol, exit_side, sweep_amt, params=params)
+                    final_res = await _sc_create_market(sweep_amt, params)
                     msg = (
                         f"🚨 *Smart Chase Circuit Breaker Triggered!*\n"
                         f"Exchange: {exchange_name}\n"
@@ -981,9 +1032,7 @@ async def execute_manual_smart_chase(
 
         chase_res = None
         try:
-            chase_res = await exchange.create_limit_order(
-                symbol, exit_side, remaining_amount, target_maker_price, ex_params
-            )
+            chase_res = await _sc_create_limit(remaining_amount, target_maker_price, ex_params)
             if chase_res and str(chase_res.get('status', '')).lower() in ('expired', 'rejected', 'canceled', 'cancelled'):
                 raise Exception(f"Post-Only GTX order returned status={chase_res.get('status')}")
         except Exception as place_e:
@@ -1024,9 +1073,7 @@ async def execute_manual_smart_chase(
 
                     if adj_notional >= min_notional and ((exit_side == "sell" and adj_price >= max_chase_price) or (exit_side == "buy" and adj_price <= max_chase_price)):
                         logger.info(f"🔄 Retrying with adjusted maker price {adj_price}...")
-                        chase_res = await exchange.create_limit_order(
-                            symbol, exit_side, remaining_amount, adj_price, ex_params
-                        )
+                        chase_res = await _sc_create_limit(remaining_amount, adj_price, ex_params)
                         if chase_res and str(chase_res.get('status', '')).lower() not in ('expired', 'rejected', 'canceled', 'cancelled') and chase_res.get('id'):
                             target_maker_price = adj_price
                         else:
@@ -1117,7 +1164,8 @@ async def execute_manual_smart_chase(
 
             if latest_order_chk is None:
                 if chase_mode == 'dynamic_bbo':
-                    peg_poll_interval = 0.25  # 250ms orderbook sampling
+                    peg_poll_interval = 0.04 if peg_strategy in ('bbo', 'inside_spread') else 0.15
+                    chk_poll_every = max(1, int(round(0.75 / peg_poll_interval)))
                     min_resting_sec = max(1.2, min(chase_delay_sec, 2.5))  # Minimum 1.2s - 2.5s queue holding time
                     max_peg_watch_time = max(15.0, chase_delay_sec * 5.0)  # Give resting order ample time (15s+) at Top-of-Book
                     start_watch_time = asyncio.get_event_loop().time()
@@ -1208,7 +1256,7 @@ async def execute_manual_smart_chase(
                                                     f"✅ [Dynamic BBO Peg] Remaining ${rem_val:.2f} < Min Notional ${min_notional:.2f} after partial fill."
                                                 )
                                                 try:
-                                                    await exchange.cancel_order(order_id, symbol)
+                                                    await _sc_cancel(order_id)
                                                 except Exception:
                                                     pass
                                                 latest_order_chk = {
@@ -1288,10 +1336,10 @@ async def execute_manual_smart_chase(
                                             and str(getattr(exchange, 'id', '')).lower().startswith('binance')
                                         )
 
-                                        if not is_real_binance_futures_gtx and getattr(exchange, 'has', {}).get('editOrder'):
+                                        if not is_real_binance_futures_gtx and (getattr(exchange, 'has', {}).get('editOrder') or getattr(exchange, 'has', {}).get('editOrderWs')):
                                             try:
-                                                cand_res = await exchange.edit_order(
-                                                    order_id, symbol, 'limit', exit_side, remaining_amount, new_maker_price, ex_params
+                                                cand_res, edit_channel = await _sc_edit_limit(
+                                                    order_id, remaining_amount, new_maker_price, ex_params
                                                 )
                                                 repeg_ms = int((time.perf_counter() - t_repeg_start) * 1000)
                                                 if cand_res and cand_res.get('id'):
@@ -1314,14 +1362,22 @@ async def execute_manual_smart_chase(
                                         # Concurrent 1-RTT cancel + GTX create ONLY for real Binance Futures Post-Only
                                         # (bypasses doomed PUT /order -5026). Standard editOrder fallbacks still use Priority 2 cancel
                                         # so cancel_res partial fills are deducted before placing the replacement order.
+                                        p_postonly_rejected = False
                                         if not edit_res and not filled_during_repeg and is_real_binance_futures_gtx:
                                             t_par = time.perf_counter()
                                             c_res, p_res = await asyncio.gather(
-                                                exchange.cancel_order(order_id, symbol),
-                                                exchange.create_limit_order(symbol, exit_side, remaining_amount, new_maker_price, ex_params),
+                                                _sc_cancel(order_id),
+                                                _sc_create_limit(remaining_amount, new_maker_price, ex_params),
                                                 return_exceptions=True,
                                             )
                                             repeg_ms = int((time.perf_counter() - t_par) * 1000)
+                                            if isinstance(p_res, Exception):
+                                                p_err_l = str(p_res).lower()
+                                                if '-5022' in p_err_l or 'post' in p_err_l or 'expired' in p_err_l:
+                                                    p_postonly_rejected = True
+                                            elif isinstance(p_res, dict) and str(p_res.get('status', '')).lower() in ('expired', 'rejected', 'canceled', 'cancelled'):
+                                                p_postonly_rejected = True
+
                                             if isinstance(c_res, Exception) and any(kw in str(c_res).lower() for kw in ('filled', 'unknown order', '-2011', '-2013')):
                                                 chk_closed = False
                                                 try:
@@ -1334,15 +1390,15 @@ async def execute_manual_smart_chase(
                                                 if chk_closed:
                                                     if isinstance(p_res, dict) and p_res.get('id'):
                                                         try:
-                                                            await exchange.cancel_order(p_res['id'], symbol)
+                                                            await _sc_cancel(p_res['id'])
                                                         except Exception:
                                                             pass
                                                     break
                                                 order_already_cancelled = True
-                                                if isinstance(p_res, dict) and p_res.get('id') and str(p_res.get('status', '')).lower() not in ('expired', 'rejected', 'canceled', 'cancelled'):
+                                                if isinstance(p_res, dict) and p_res.get('id') and not p_postonly_rejected:
                                                     edit_res = p_res
                                                     edit_channel = 'PARALLEL-1RTT'
-                                            elif isinstance(p_res, dict) and p_res.get('id') and str(p_res.get('status', '')).lower() not in ('expired', 'rejected', 'canceled', 'cancelled'):
+                                            elif isinstance(p_res, dict) and p_res.get('id') and not p_postonly_rejected:
                                                 edit_res = p_res
                                                 edit_channel = 'PARALLEL-1RTT'
                                             elif isinstance(c_res, dict):
@@ -1425,7 +1481,7 @@ async def execute_manual_smart_chase(
                                                 )
                                                 if str(edit_res.get('status', '')).lower() not in ('closed', 'filled', 'canceled', 'cancelled', 'expired', 'rejected'):
                                                     try:
-                                                        await exchange.cancel_order(order_id, symbol)
+                                                        await _sc_cancel(order_id)
                                                     except Exception:
                                                         pass
                                                 latest_order_chk = {
@@ -1448,13 +1504,13 @@ async def execute_manual_smart_chase(
 
                                         # Fallback: Break to clean zero-delay cancel + create
                                         repeg_triggered = True
-                                        cached_initial_ob = latest_ob
+                                        cached_initial_ob = None if p_postonly_rejected else latest_ob
                                         break
                             except Exception as ob_poll_e:
                                 logger.debug(f"BBO poll non-fatal error: {ob_poll_e}")
 
-                            # Spawn non-blocking background order check every ~0.75s (3 polls)
-                            if not repeg_handled and poll_count % 3 == 0 and (order_chk_task is None or order_chk_task.done()):
+                            # Spawn non-blocking background order check every ~0.75s
+                            if not repeg_handled and poll_count % chk_poll_every == 0 and (order_chk_task is None or order_chk_task.done()):
                                 order_chk_task = asyncio.create_task(exchange.fetch_order(order_id, symbol))
                     finally:
                         if order_chk_task is not None and not order_chk_task.done():
@@ -1471,7 +1527,7 @@ async def execute_manual_smart_chase(
             if user_cancelled:
                 logger.info(f"🛑 [Manual Smart Chase] User cancelled Smart Chase during attempt {attempts}!")
                 try:
-                    await exchange.cancel_order(order_id, symbol)
+                    await _sc_cancel(order_id)
                     logger.info(f"🛑 Cancelled active maker limit order #{order_id} on exchange.")
                 except Exception as ce:
                     logger.debug(f"Cancel order on stop: {ce}")
@@ -1541,7 +1597,7 @@ async def execute_manual_smart_chase(
                     if not order_already_cancelled:
                         try:
                             t_c0 = time.perf_counter()
-                            cancel_res = await exchange.cancel_order(order_id, symbol)
+                            cancel_res = await _sc_cancel(order_id)
                             c_ms = int((time.perf_counter() - t_c0) * 1000)
                             logger.info(f"⚡ [Dynamic BBO Peg] Cancelled resting limit order #{order_id} in {c_ms}ms")
                         except Exception as cancel_e:
@@ -1682,7 +1738,7 @@ async def execute_manual_smart_chase(
         sweep_notional = sweep_amt * mkt_price
         if sweep_amt > 0 and sweep_notional >= min_notional:
             try:
-                final_res = await exchange.create_market_order(symbol, exit_side, sweep_amt, params=params)
+                final_res = await _sc_create_market(sweep_amt, params)
                 msg = (
                     f"⚠️ *Smart Chase Reached Max Attempts!*\n"
                     f"Exchange: {exchange_name}\n"

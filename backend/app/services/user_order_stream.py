@@ -275,6 +275,19 @@ async def _stream_worker(
                             except Exception:
                                 pass
 
+                        # Wake any active SmartPeg entry monitor IMMEDIATELY (<1ms) on fill, partial-fill, or cancel/expire
+                        if status in TERMINAL_STATUSES or filled_val > 0:
+                            try:
+                                from app.services.smart_peg_entry_executor import ACTIVE_SMART_PEGS
+                                for pdata in list(ACTIVE_SMART_PEGS.values()):
+                                    if str(pdata.get("current_order_id") or "") == oid:
+                                        pdata["ws_order_snapshot"] = o
+                                        ev = pdata.get("order_event")
+                                        if ev and not ev.is_set():
+                                            ev.set()
+                            except Exception:
+                                pass
+
                         prev_status = seen_statuses.get(oid)
                         if prev_status == status:
                             continue

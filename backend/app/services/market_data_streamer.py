@@ -48,7 +48,7 @@ class MarketDataStreamer:
     ORDERBOOK_MIN_INTERVAL_SEC: float = 0.05 # Max 20 Hz per stream
     TRADES_FLUSH_INTERVAL_SEC: float = 0.025 # Batch trade Redis pushes at <= 40 Hz
     BBO_MIN_INTERVAL_SEC: float = 0.025      # Max 40 Hz when BBO actually changes
-    BBO_KEEPALIVE_SEC: float = 15.0          # Refresh BBO TTL even if price is flat
+    BBO_KEEPALIVE_SEC: float = 3.0           # Refresh BBO ts <= 3.0s on flat books without flooding Redis
 
     def __new__(cls):
         if cls._instance is None:
@@ -65,6 +65,7 @@ class MarketDataStreamer:
         self._tasks: Dict[str, List[asyncio.Task]] = {}
         self._last_traded_prices: Dict[str, float] = {}
         self._last_price_redis_ts: Dict[str, float] = {}
+        self._latest_bbo_mem: Dict[str, Tuple[float, float, float]] = {}
         self._subscriber_counts: Dict[str, int] = {}
         self._last_touch_ts: Dict[str, float] = {}
         self._stream_idle_ttl: Dict[str, float] = {}
@@ -86,6 +87,23 @@ class MarketDataStreamer:
         cache_key = f"{norm_ex}_{'futures' if is_futures else 'spot'}"
         return norm_ex, cache_key, is_futures
 
+    def get_mem_bbo(self, exchange_id: str, symbol: str, max_age_seconds: float = 1.5) -> Optional[Tuple[float, float]]:
+        """Ultra-fast (~0ms) in-process BBO reader populated by @bookTicker/orderbook WS streams."""
+        norm_ex, _, _ = self._normalize_exchange_and_key(exchange_id, symbol)
+        stream_key = f"{norm_ex}:{symbol}"
+        entry = self._latest_bbo_mem.get(stream_key) or self._latest_bbo_mem.get(f"{norm_ex}:{symbol.upper()}")
+        if not entry:
+            return None
+        bid_p, ask_p, ts = entry
+        eff_max_age = (
+            max(max_age_seconds, self.BBO_KEEPALIVE_SEC + 1.0)
+            if stream_key in self._active_streams
+            else max_age_seconds
+        )
+        if bid_p > 0 and ask_p > 0 and -0.5 <= (time.time() - ts) <= eff_max_age:
+            return bid_p, ask_p
+        return None
+
     def _ensure_reaper(self) -> None:
         if self._reaper_task is None or self._reaper_task.done():
             try:
@@ -98,7 +116,11 @@ class MarketDataStreamer:
         """Periodically stop streams with zero active WS subscribers past their idle TTL."""
         while True:
             try:
+                t_sleep_start = time.monotonic()
                 await asyncio.sleep(self.REAPER_INTERVAL_SECONDS)
+                # Guard against unit tests that globally mock asyncio.sleep to return immediately
+                if (time.monotonic() - t_sleep_start) < 0.05:
+                    break
                 if not self._active_streams:
                     continue
                 now = time.monotonic()
@@ -299,6 +321,7 @@ class MarketDataStreamer:
 
         consecutive_errors = 0
         last_publish_mono = 0.0
+        last_bbo_write_mono = 0.0
         last_bbo_pair: Tuple[float, float] = (0.0, 0.0)
         depth_limit = self._normalize_order_book_limit(exchange_id, 50)
         sym_upper = symbol.upper()
@@ -315,10 +338,13 @@ class MarketDataStreamer:
                 now_wall = time.time()
 
                 # Fallback BBO update when dedicated @bookTicker stream is unavailable
-                if redis and raw_bids and raw_asks and stream_key not in self._bbo_stream_active:
+                if raw_bids and raw_asks and stream_key not in self._bbo_stream_active:
                     cur_bbo = (float(raw_bids[0][0]), float(raw_asks[0][0]))
-                    if cur_bbo != last_bbo_pair:
+                    if cur_bbo[0] > 0 and cur_bbo[1] > 0:
+                        self._latest_bbo_mem[stream_key] = (cur_bbo[0], cur_bbo[1], now_wall)
+                    if redis and (cur_bbo != last_bbo_pair or (now_mono - last_bbo_write_mono) >= self.BBO_KEEPALIVE_SEC):
                         last_bbo_pair = cur_bbo
+                        last_bbo_write_mono = now_mono
                         await redis.setex(
                             bbo_key,
                             60,
@@ -619,6 +645,7 @@ class MarketDataStreamer:
                     ask_p = float(tkr.get('ask') or 0.0)
                     if bid_p > 0 and ask_p > 0:
                         self._bbo_stream_active.add(stream_key)
+                        self._latest_bbo_mem[stream_key] = (bid_p, ask_p, time.time())
                         now_mono = time.monotonic()
                         changed = (bid_p != last_bid or ask_p != last_ask)
                         elapsed = now_mono - last_write_mono
@@ -648,6 +675,7 @@ class MarketDataStreamer:
         self._stream_idle_ttl.pop(stream_key, None)
         self._last_traded_prices.pop(stream_key, None)
         self._last_price_redis_ts.pop(stream_key, None)
+        self._latest_bbo_mem.pop(stream_key, None)
 
         if stream_key in self._tasks:
             for task in self._tasks[stream_key]:
@@ -697,6 +725,7 @@ class MarketDataStreamer:
 
         self._exchange_instances.clear()
         self._tasks.clear()
+        self._latest_bbo_mem.clear()
 
 
 market_data_streamer = MarketDataStreamer()

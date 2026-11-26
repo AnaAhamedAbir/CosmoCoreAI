@@ -1282,6 +1282,418 @@ class TestLatencyWarningAndExecutionGuard(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(("cancel_all_ws", "DOGE/FDUSD"), calls)
         self.assertEqual(calls, [("cancel_all_rest", "DOGE/FDUSD"), ("fetch_balance",)])
 
+    async def test_market_data_streamer_mem_bbo_prevents_rest_fallback_on_flat_book(self):
+        from app.services.market_data_streamer import market_data_streamer
+        from app.services.smart_peg_entry_executor import _fetch_bbo_fast
+
+        stream_key = "binance:DOGE/FDUSD"
+        market_data_streamer._active_streams.add(stream_key)
+        # Simulate a flat BBO whose timestamp is 2.2s old (> default 1.5s, <= BBO_KEEPALIVE_SEC + 1.0)
+        market_data_streamer._latest_bbo_mem[stream_key] = (0.05692, 0.05693, time.time() - 2.2)
+
+        ex = MagicMock()
+        ex.id = "binance"
+        ex.fetch_order_book = AsyncMock(side_effect=AssertionError("Must NOT hit REST fetch_order_book when active stream mem BBO is fresh"))
+        try:
+            ob = await _fetch_bbo_fast(ex, "DOGE/FDUSD", max_age_seconds=1.5)
+        finally:
+            market_data_streamer._active_streams.discard(stream_key)
+            market_data_streamer._latest_bbo_mem.pop(stream_key, None)
+
+        self.assertEqual(ob["bids"][0][0], 0.05692)
+        self.assertEqual(ob["asks"][0][0], 0.05693)
+        self.assertEqual(ex.fetch_order_book.call_count, 0)
+
+    async def test_smart_peg_wakes_on_user_order_stream_and_no_directional_stall(self):
+        import app.services.smart_peg_entry_executor as peg_mod
+        from app.services.market_data_streamer import market_data_streamer
+
+        stream_key = "binance:DOGE/FDUSD"
+        market_data_streamer._active_streams.add(stream_key)
+        market_data_streamer._latest_bbo_mem[stream_key] = (0.05680, 0.05690, time.time())
+
+        prices_seen = []
+        edit_calls = []
+
+        class _SpotPegEx:
+            id = "binance"
+            urls = {"api": {"ws": {"ws-api": {"spot": "wss://ws-api.binance.com/ws-api/v3"}}}}
+            has = {"createOrderWs": True, "editOrderWs": True, "editOrder": True}
+            markets = {
+                "DOGE/FDUSD": {
+                    "id": "DOGEFDUSD",
+                    "symbol": "DOGE/FDUSD",
+                    "base": "DOGE",
+                    "quote": "FDUSD",
+                    "spot": True,
+                    "inverse": False,
+                    "contractSize": 1.0,
+                    "precision": {"amount": 1.0, "price": 0.00001},
+                    "limits": {"cost": {"min": 1.0}},
+                }
+            }
+
+            def amount_to_precision(self, sym, amt):
+                return str(int(float(amt)))
+
+            def price_to_precision(self, sym, px):
+                return f"{float(px):.5f}"
+
+            async def create_order_ws(self, symbol, otype, side, amount, price, params=None):
+                prices_seen.append(float(price))
+                return {"id": "peg_ord_1", "symbol": symbol, "side": side, "amount": amount, "price": price, "status": "open"}
+
+            async def edit_order_ws(self, oid, symbol, otype, side, amount, price, params=None):
+                edit_calls.append(float(price))
+                return {"id": f"peg_ord_{len(edit_calls) + 1}", "symbol": symbol, "side": side, "amount": amount, "price": price, "status": "open"}
+
+            async def fetch_order(self, oid, symbol):
+                raise AssertionError("Should not need REST fetch_order when UserOrderStream pushes fill!")
+
+        ex = _SpotPegEx()
+        peg_mod.ACTIVE_SMART_PEGS.clear()
+
+        async def _drive_directional_outbids_and_fill():
+            # 7 consecutive directional outbids (exceeds old >=6 throttle threshold) -> must NOT stall 300ms/750ms
+            for i in range(1, 8):
+                await asyncio.sleep(0.03)
+                market_data_streamer._latest_bbo_mem[stream_key] = (round(0.05680 + i * 0.00001, 5), 0.05695, time.time())
+            await asyncio.sleep(0.03)
+            # Push fill via ACTIVE_SMART_PEGS UserOrderStream hook (<1ms wakeup)
+            for pdata in peg_mod.ACTIVE_SMART_PEGS.values():
+                cur_oid = pdata.get("current_order_id")
+                pdata["ws_order_snapshot"] = {
+                    "id": cur_oid,
+                    "status": "closed",
+                    "filled": 363.0,
+                    "average": 0.05687,
+                    "price": 0.05687,
+                }
+                pdata["order_event"].set()
+
+        t0 = time.perf_counter()
+        try:
+            with patch("app.services.smart_peg_entry_executor.is_ws_api_ready", return_value=True, create=True), \
+                 patch("app.services.exchange_pool.is_ws_api_ready", return_value=True), \
+                 patch("app.services.smart_peg_entry_executor.SessionLocal", MagicMock()), \
+                 patch("app.services.user_order_stream.ensure_user_order_stream", return_value=None):
+                driver = asyncio.create_task(_drive_directional_outbids_and_fill())
+                res = await peg_mod.execute_smart_peg_entry(
+                    exchange=ex,
+                    symbol="DOGE/FDUSD",
+                    side="buy",
+                    amount=363.0,
+                    is_futures=False,
+                    user_id=0,
+                    urgent_mode=True,
+                    send_initial_notify=False,
+                    skip_exchange_upgrade=True,
+                )
+                await driver
+        finally:
+            market_data_streamer._active_streams.discard(stream_key)
+            market_data_streamer._latest_bbo_mem.pop(stream_key, None)
+            peg_mod.ACTIVE_SMART_PEGS.clear()
+
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
+        self.assertEqual(res["status"], "closed")
+        self.assertGreaterEqual(len(edit_calls), 6)
+        # All 7 directional re-pegs + WS fill finished well under 650ms (would have been >1000ms with old 300ms/750ms throttle)
+        self.assertLess(elapsed_ms, 650.0)
+
+    async def test_force_order_specific_oid_deduplicates_cancel_and_runs_parallel_bal(self):
+        from app.services.manual_trade_service import ManualTradeService
+        from app.services.bracket_order_service import bracket_order_service
+        import app.services.manual_smart_chase_executor as chase_mod
+        import app.services.smart_peg_entry_executor as peg_mod
+        import app.services.user_order_stream as stream_mod
+
+        cancelled_oids = []
+        bal_calls = []
+        spawned_pegs = []
+
+        class _SpotEx:
+            id = "binance"
+            has = {"cancelOrderWs": True, "fetchBalanceWs": True}
+            markets = {"DOGE/FDUSD": {"base": "DOGE", "quote": "FDUSD", "spot": True, "contractSize": 1.0, "inverse": False}}
+
+            async def fetch_balance_ws(self, params=None):
+                bal_calls.append("ws")
+                await asyncio.sleep(0.06)
+                # Pre-cancel snapshot where FDUSD is still locked in `used`
+                return {"FDUSD": {"free": 0.0, "used": 21.0, "total": 21.0}, "DOGE": {"free": 0.0, "used": 0.0, "total": 0.0}}
+
+        fake_ex = _SpotEx()
+        fake_key = SimpleNamespace(id=57, user_id=5, exchange="binance", is_enabled=True, api_key="enc", secret_key="enc")
+
+        class _FakeQuery:
+            def filter(self, *args, **kwargs):
+                return self
+            def first(self):
+                return fake_key
+
+        fake_db = MagicMock()
+        fake_db.query.return_value = _FakeQuery()
+
+        async def _fake_cancel(ex, oid, sym, is_conditional=None):
+            cancelled_oids.append(str(oid))
+            await asyncio.sleep(0.06)
+            return {"id": oid, "status": "canceled"}
+
+        async def _fake_peg_exec(**kwargs):
+            spawned_pegs.append(kwargs)
+            return {"status": "pegging"}
+
+        # Seed matching tp_order_id in BOTH ACTIVE_SOFTWARE_SL and ACTIVE_ENTRY_BRACKETS
+        sw_sl = {"sc_1": {"api_key_id": 57, "symbol": "DOGE/FDUSD", "tp_order_id": "4051907974", "amount": 364.0, "cancelled": False}}
+        eb_br = {"peg_1": {"api_key_id": 57, "symbol": "DOGE/FDUSD", "tp_order_id": "4051907974", "amount": 364.0, "cancelled": False}}
+
+        ManualTradeService._WALLET_BALANCE_CACHE.pop((57, False, False), None)
+        ManualTradeService._WALLET_BALANCE_CACHE.pop((57, False), None)
+
+        with patch.object(ManualTradeService, "_get_exchange", new=AsyncMock(return_value=fake_ex)), \
+             patch("app.services.manual_trade_service.is_ws_api_ready", return_value=True), \
+             patch.object(bracket_order_service, "ACTIVE_SOFTWARE_SL", sw_sl), \
+             patch.object(bracket_order_service, "ACTIVE_ENTRY_BRACKETS", eb_br), \
+             patch.object(bracket_order_service, "ACTIVE_ENTRY_MONITORS", {}), \
+             patch.object(bracket_order_service, "_cancel_futures_order_universal", side_effect=_fake_cancel), \
+             patch.object(bracket_order_service, "_safe_amount_to_precision", side_effect=lambda ex, sym, amt: round(float(amt), 1)), \
+             patch.object(chase_mod, "ACTIVE_SMART_CHASES", {}), \
+             patch.object(peg_mod, "ACTIVE_SMART_PEGS", {}), \
+             patch.object(peg_mod, "execute_smart_peg_entry", side_effect=_fake_peg_exec), \
+             patch.object(peg_mod, "_fetch_bbo_fast", new=AsyncMock(return_value={"bids": [[0.05692, 100.0]], "asks": [[0.05693, 100.0]]})), \
+             patch.object(stream_mod, "ensure_user_order_stream", return_value=None), \
+             patch("app.services.manual_trade_persistence.schedule_mark_terminal", MagicMock()):
+            t0 = time.perf_counter()
+            res = await ManualTradeService.execute_emergency_force_order(
+                db=fake_db,
+                user_id=5,
+                api_key_id=57,
+                symbol="DOGE/FDUSD",
+                side="buy",
+                execution_mode="limit_maker",
+                target_order_id="4051907974",
+                target_order_amount=364.0,
+                target_order_mode="TP",
+            )
+            await asyncio.sleep(0.01)
+            elapsed_ms = (time.perf_counter() - t0) * 1000.0
+
+        self.assertEqual(res["status"], "pegging")
+        # Deduplicated: TP order cancelled ONCE, not twice
+        self.assertEqual(cancelled_oids, ["4051907974"])
+        # Single parallel balance fetch (not serial + second retry) -> ~60ms wall-clock (<110ms)
+        self.assertEqual(bal_calls, ["ws"])
+        self.assertLess(elapsed_ms, 110.0)
+        # Locked pre-cancel RAM balance invalidated so SmartPeg doesn't clamp to 0
+        self.assertIsNone(ManualTradeService._get_cached_wallet_balance(57, False, max_age_seconds=300.0, is_inverse=False))
+        self.assertIsNone(spawned_pegs[0]["preloaded_balance"])
+
+    async def test_notification_service_caches_user_settings_and_invalidates(self):
+        import importlib.util
+        import os
+
+        notif_path = os.path.join(BACKEND_ROOT, "app", "services", "notification.py")
+        fake_tg = types.ModuleType("telegram")
+        fake_tg.Bot = MagicMock()
+        fake_tg.error = SimpleNamespace(BadRequest=Exception, TimedOut=Exception, NetworkError=Exception)
+        fake_tg_req = types.ModuleType("telegram.request")
+        fake_tg_req.HTTPXRequest = MagicMock()
+        fake_notif_model = types.ModuleType("app.models.notification")
+        fake_notif_model.NotificationSettings = SimpleNamespace(user_id="user_id")
+
+        with patch.dict(
+            sys.modules,
+            {
+                "telegram": fake_tg,
+                "telegram.request": fake_tg_req,
+                "app.models.notification": fake_notif_model,
+            },
+        ):
+            spec = importlib.util.spec_from_file_location("_real_notification_test_mod", notif_path)
+            notif_mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(notif_mod)
+
+            NotificationService = notif_mod.NotificationService
+            notif_mod._NOTIFICATION_SETTINGS_CACHE.clear()
+            fake_row = SimpleNamespace(
+                is_enabled=True,
+                use_master_bot=False,
+                telegram_bot_token=None,
+                telegram_chat_id=None,
+                alert_manual_trade=True,
+            )
+            fake_db = MagicMock()
+            fake_db.get_bind.return_value = object()
+            fake_db.query.return_value.filter.return_value.first.return_value = fake_row
+
+            await NotificationService.send_message(fake_db, 5, "msg 1", alert_type="alert_manual_trade", skip_in_app=True)
+            await NotificationService.send_message(fake_db, 5, "msg 2", alert_type="alert_manual_trade", skip_in_app=True)
+            self.assertEqual(fake_db.query.call_count, 1)
+
+            NotificationService.invalidate_user_cache(5)
+            await NotificationService.send_message(fake_db, 5, "msg 3", alert_type="alert_manual_trade", skip_in_app=True)
+            self.assertEqual(fake_db.query.call_count, 2)
+
+    async def test_bracket_tp_limit_checks_bbo_fast_without_import_error(self):
+        from app.services.smart_peg_entry_executor import _fetch_bbo_fast
+
+        ex = MagicMock()
+        ex.id = "binance"
+        ex.fetch_order_book = AsyncMock(side_effect=AssertionError("rest_fallback=False must never hit REST fetch_order_book"))
+        with patch("app.services.user_order_stream._get_redis_pub", new=AsyncMock(return_value=None)):
+            res = await _fetch_bbo_fast(ex, "DOGE/FDUSD", max_age_seconds=2.5, rest_fallback=False)
+        self.assertIsNone(res)
+        self.assertEqual(ex.fetch_order_book.call_count, 0)
+
+    async def test_futures_force_entry_prewarms_coinm_skips_stop_cancel_and_reuses_unlocked_bal(self):
+        from app.services.manual_trade_service import ManualTradeService
+        from app.services.bracket_order_service import bracket_order_service
+        import app.services.manual_smart_chase_executor as chase_mod
+        import app.services.smart_peg_entry_executor as peg_mod
+        import app.services.user_order_stream as stream_mod
+
+        prewarm_calls = []
+        stop_cancel_calls = []
+        bal_fetch_calls = []
+        spawned_pegs = []
+
+        class _FutEntryEx:
+            id = "binance"
+            apiKey = "fut-entry-k"
+            has = {"cancelAllOrdersWs": True, "fetchBalanceWs": True}
+            markets = {
+                "BTC/USDC:USDC": {
+                    "id": "BTCUSDC",
+                    "base": "BTC",
+                    "quote": "USDC",
+                    "contractSize": 1.0,
+                    "inverse": False,
+                    "linear": True,
+                },
+                "DOGE/USD:DOGE": {
+                    "id": "DOGEUSD_PERP",
+                    "base": "DOGE",
+                    "quote": "USD",
+                    "settle": "DOGE",
+                    "contractSize": 10.0,
+                    "inverse": True,
+                    "linear": False,
+                },
+            }
+
+            async def cancel_all_orders_ws(self, symbol):
+                return [{"id": "o1", "side": "buy", "amount": 0.01, "remaining": 0.01, "price": 60000.0}]
+
+            async def cancel_all_orders(self, symbol, params=None):
+                if (params or {}).get("stop"):
+                    stop_cancel_calls.append(symbol)
+                return []
+
+            async def fetch_balance_ws(self, params=None):
+                bal_fetch_calls.append(params)
+                return {"USDC": {"free": 10.0, "used": 60.0, "total": 70.0}, "DOGE": {"free": 500.0, "used": 0.0, "total": 500.0}}
+
+        fake_ex = _FutEntryEx()
+        fake_key = SimpleNamespace(id=58, user_id=5, exchange="binance", is_enabled=True, api_key="enc", secret_key="enc")
+
+        class _FakeQuery:
+            def filter(self, *args, **kwargs):
+                return self
+            def first(self):
+                return fake_key
+
+        fake_db = MagicMock()
+        fake_db.query.return_value = _FakeQuery()
+
+        now_ts = time.time()
+        # Cached open limit order (no stop orders) + warm caches -> must skip REST stop cancel and serial 2nd balance fetch
+        ManualTradeService._OPEN_ORDERS_CACHE[(58, "BTC/USDC:USDC")] = (
+            now_ts,
+            {"orders": [{"id": "o1", "side": "buy", "price": 60000.0, "amount": 0.01, "remaining": 0.01, "mode": "LIMIT"}]},
+        )
+        ManualTradeService._POSITION_CACHE[(58, "BTC/USDC:USDC")] = (now_ts, {"amount": 0.0, "side": "none", "contracts": 0})
+        ManualTradeService._WALLET_BALANCE_CACHE[(58, True, False)] = (
+            {"USDC": {"free": 10.0, "used": 60.0, "total": 70.0}, "free": {"USDC": 10.0}, "total": {"USDC": 70.0}},
+            now_ts,
+        )
+        ManualTradeService._MARGIN_MODE_CACHE["fut-entry-k_BTC/USDC:USDC"] = ("ISOLATED", now_ts + 3600)
+        ManualTradeService._LEVERAGE_CACHE["fut-entry-k_BTC/USDC:USDC"] = (10, now_ts + 3600)
+        ManualTradeService._MARGIN_MODE_CACHE["fut-entry-k_DOGE/USD:DOGE"] = ("ISOLATED", now_ts + 3600)
+        ManualTradeService._LEVERAGE_CACHE["fut-entry-k_DOGE/USD:DOGE"] = (5, now_ts + 3600)
+
+        async def _fake_peg_exec(**kwargs):
+            spawned_pegs.append(kwargs)
+            return {"status": "pegging"}
+
+        async def _noop_async(*args, **kwargs):
+            return 0
+
+        try:
+            with patch.object(ManualTradeService, "_get_exchange", new=AsyncMock(return_value=fake_ex)), \
+                 patch("app.services.manual_trade_service.is_ws_api_ready", return_value=True), \
+                 patch("app.services.manual_trade_service.schedule_ws_api_prewarm", side_effect=lambda ex, is_futures=False, is_inverse=False: prewarm_calls.append((is_futures, is_inverse))), \
+                 patch.object(bracket_order_service, "ACTIVE_SOFTWARE_SL", {}), \
+                 patch.object(bracket_order_service, "ACTIVE_ENTRY_BRACKETS", {}), \
+                 patch.object(bracket_order_service, "ACTIVE_ENTRY_MONITORS", {}), \
+                 patch.object(bracket_order_service, "_safe_amount_to_precision", side_effect=lambda ex, sym, amt: round(float(amt), 4)), \
+                 patch.object(chase_mod, "ACTIVE_SMART_CHASES", {}), \
+                 patch.object(peg_mod, "ACTIVE_SMART_PEGS", {}), \
+                 patch.object(chase_mod, "stop_smart_chase", side_effect=_noop_async), \
+                 patch.object(peg_mod, "stop_smart_peg", side_effect=_noop_async), \
+                 patch.object(peg_mod, "execute_smart_peg_entry", side_effect=_fake_peg_exec), \
+                 patch.object(peg_mod, "_fetch_bbo_fast", new=AsyncMock(return_value={"bids": [[60000.0, 1.0]], "asks": [[60001.0, 1.0]]})), \
+                 patch.object(stream_mod, "ensure_user_order_stream", return_value=None), \
+                 patch("app.services.manual_trade_persistence.schedule_mark_terminal_by_scope", MagicMock()):
+                # 1. Linear Futures Force Entry after cancelling limit order -> 0 REST stop cancel, 0 serial balance re-fetches
+                res_lin = await ManualTradeService.execute_emergency_force_order(
+                    db=fake_db,
+                    user_id=5,
+                    api_key_id=58,
+                    symbol="BTC/USDC:USDC",
+                    side="Buy",
+                    execution_mode="limit_maker",
+                    target_order_id="all",
+                    leverage=10,
+                    margin_mode="isolated",
+                )
+                # 2. COIN-M Inverse Force Entry -> must call schedule_ws_api_prewarm(..., is_inverse=True)
+                ManualTradeService._POSITION_CACHE[(58, "DOGE/USD:DOGE")] = (now_ts, {"amount": 0.0, "side": "none", "contracts": 0})
+                ManualTradeService._WALLET_BALANCE_CACHE[(58, True, True)] = (
+                    {"DOGE": {"free": 500.0, "used": 0.0, "total": 500.0}, "free": {"DOGE": 500.0}, "total": {"DOGE": 500.0}},
+                    now_ts,
+                )
+                res_cm = await ManualTradeService.execute_emergency_force_order(
+                    db=fake_db,
+                    user_id=5,
+                    api_key_id=58,
+                    symbol="DOGE/USD:DOGE",
+                    side="Buy",
+                    execution_mode="limit_maker",
+                    target_order_id="all",
+                    leverage=5,
+                    margin_mode="isolated",
+                )
+                await asyncio.sleep(0.01)
+        finally:
+            for k in list(ManualTradeService._OPEN_ORDERS_CACHE.keys()):
+                if k[0] == 58:
+                    ManualTradeService._OPEN_ORDERS_CACHE.pop(k, None)
+            for k in list(ManualTradeService._POSITION_CACHE.keys()):
+                if k[0] == 58:
+                    ManualTradeService._POSITION_CACHE.pop(k, None)
+            for k in list(ManualTradeService._WALLET_BALANCE_CACHE.keys()):
+                if k[0] == 58:
+                    ManualTradeService._WALLET_BALANCE_CACHE.pop(k, None)
+
+        self.assertEqual(res_lin["status"], "pegging")
+        self.assertEqual(res_cm["status"], "pegging")
+        self.assertEqual(stop_cancel_calls, [])
+        self.assertEqual(bal_fetch_calls, [])
+        # Effective quote used total unlocked margin (~69.3 USDC @ 10x -> ~0.0114 BTC), not locked free=10 USDC (~0.0016 BTC)
+        self.assertGreater(res_lin["amount"], 0.01)
+        self.assertIn((True, True), prewarm_calls)
+
 
 if __name__ == "__main__":
     unittest.main()

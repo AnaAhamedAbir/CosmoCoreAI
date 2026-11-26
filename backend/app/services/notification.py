@@ -1,4 +1,5 @@
 import logging
+import time
 import telegram
 from telegram.request import HTTPXRequest
 from sqlalchemy.orm import Session
@@ -11,6 +12,9 @@ logger = logging.getLogger(__name__)
 # Telegram network timeouts (seconds) - Default fallbacks
 DEFAULT_TELEGRAM_TIMEOUT = 30.0
 _SUPPORTED_IN_APP_CATEGORIES = ("manual_trade", "wallhunter", "ml_training", "market_alerts")
+_SETTINGS_CACHE_TTL_SEC = 30.0
+# Key: (bind_id, user_id) -> (expires_ts, cached_snapshot_dict_or_None)
+_NOTIFICATION_SETTINGS_CACHE = {}
 
 
 def _make_bot(token: str) -> telegram.Bot:
@@ -29,6 +33,43 @@ def _make_bot(token: str) -> telegram.Bot:
 
 
 class NotificationService:
+    @staticmethod
+    def invalidate_user_cache(user_id: int) -> None:
+        uid = int(user_id)
+        for k in [key for key in list(_NOTIFICATION_SETTINGS_CACHE.keys()) if key[1] == uid]:
+            _NOTIFICATION_SETTINGS_CACHE.pop(k, None)
+
+    @staticmethod
+    def _get_cached_user_settings(db: Session, user_id: int, alert_type: str = None):
+        bind_id = id(db.get_bind()) if hasattr(db, "get_bind") else id(db)
+        cache_key = (bind_id, int(user_id))
+        now_ts = time.time()
+        cached = _NOTIFICATION_SETTINGS_CACHE.get(cache_key)
+        if cached is not None and now_ts < cached[0]:
+            return cached[1]
+
+        row = db.query(NotificationSettings).filter(
+            NotificationSettings.user_id == user_id
+        ).first()
+        if not row:
+            snap = None
+        else:
+            snap = {
+                "is_enabled": bool(row.is_enabled),
+                "use_master_bot": bool(getattr(row, "use_master_bot", False)),
+                "telegram_bot_token": row.telegram_bot_token,
+                "telegram_chat_id": row.telegram_chat_id,
+                "alerts": {
+                    col: bool(getattr(row, col, True))
+                    for col in ("alert_manual_trade", "alert_wallhunter", "alert_ml_training", "alert_server_errors")
+                },
+                "row": row,
+            }
+        if len(_NOTIFICATION_SETTINGS_CACHE) > 512:
+            _NOTIFICATION_SETTINGS_CACHE.clear()
+        _NOTIFICATION_SETTINGS_CACHE[cache_key] = (now_ts + _SETTINGS_CACHE_TTL_SEC, snap)
+        return snap
+
     @staticmethod
     async def send_message(
         db: Session,
@@ -54,29 +95,35 @@ class NotificationService:
                 logger.debug(f"[SysNotif] In-app emit skipped (non-fatal): {in_app_err}")
 
         try:
-            settings = db.query(NotificationSettings).filter(
-                NotificationSettings.user_id == user_id
-            ).first()
+            snap = NotificationService._get_cached_user_settings(db, user_id, alert_type=alert_type)
 
-            if not settings:
+            if not snap:
                 logger.info(f"Notification settings not found for user {user_id}")
                 return
 
-            if not settings.is_enabled:
+            if not snap["is_enabled"]:
                 logger.info(f"Notifications disabled for user {user_id}")
                 return
 
-            if alert_type and hasattr(settings, alert_type) and not getattr(settings, alert_type, True):
-                logger.info(f"Notification alert_type '{alert_type}' is disabled for user {user_id}")
-                return
+            if alert_type:
+                row_obj = snap.get("row")
+                if alert_type in snap["alerts"]:
+                    allowed = snap["alerts"][alert_type]
+                elif row_obj is not None and hasattr(row_obj, alert_type):
+                    allowed = bool(getattr(row_obj, alert_type, True))
+                else:
+                    allowed = True
+                if not allowed:
+                    logger.info(f"Notification alert_type '{alert_type}' is disabled for user {user_id}")
+                    return
 
-            if getattr(settings, 'use_master_bot', False):
+            if snap["use_master_bot"]:
                 from app.core.config import settings as app_settings
                 bot_token = app_settings.TELEGRAM_MASTER_BOT_TOKEN
             else:
-                bot_token = settings.telegram_bot_token
+                bot_token = snap["telegram_bot_token"]
                 
-            chat_id = settings.telegram_chat_id
+            chat_id = snap["telegram_chat_id"]
 
             if not bot_token or not chat_id:
                 logger.warning(f"Incomplete Telegram credentials for user {user_id}")

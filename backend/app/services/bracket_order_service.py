@@ -2244,30 +2244,27 @@ class BracketOrderService:
                                     order_ex, 'limit', p_dict, is_futures, is_edit=False
                                 )
                                 return await order_ex.create_order_ws(symbol, ws_type, opposite_side, amt, px, ws_params)
-                            except Exception:
-                                pass
+                            except Exception as ws_tp_err:
+                                logger.warning(f"⚠️ Bracket TP create_order_ws fallback to REST for {symbol}: {ws_tp_err}")
                         return await order_ex.create_limit_order(symbol, opposite_side, amt, px, p_dict)
 
                     if tp_order_type == 'limit':
-                        # 1ms local Redis BBO check: if final_tp_price already crosses the book,
+                        # 1ms local RAM/Redis BBO check: if final_tp_price already crosses the book,
                         # skip the doomed Post-Only (GTX) attempt to avoid wasting 1 extra RTT (~255ms)
                         skip_post_only = False
                         try:
-                            import json
-                            from app.services.smart_peg_entry_executor import _get_redis_bbo
-                            r_bbo = await asyncio.wait_for(_get_redis_bbo(), timeout=0.015)
-                            if r_bbo is not None:
-                                ex_name = str(getattr(order_ex, 'id', 'binance')).lower()
-                                raw_bbo = await asyncio.wait_for(r_bbo.get(f"bbo:{ex_name}:{symbol}"), timeout=0.015)
-                                if raw_bbo:
-                                    bbo_d = json.loads(raw_bbo)
-                                    if (time.time() - float(bbo_d.get("ts") or 0)) < 2.5:
-                                        b_bid = float(bbo_d.get("bid") or 0)
-                                        b_ask = float(bbo_d.get("ask") or 0)
-                                        if opposite_side == 'buy' and b_ask > 0 and final_tp_price >= b_ask:
-                                            skip_post_only = True
-                                        elif opposite_side == 'sell' and b_bid > 0 and final_tp_price <= b_bid:
-                                            skip_post_only = True
+                            from app.services.smart_peg_entry_executor import _fetch_bbo_fast
+                            bbo_ob = await asyncio.wait_for(
+                                _fetch_bbo_fast(order_ex, symbol, max_age_seconds=2.5, rest_fallback=False),
+                                timeout=0.040,
+                            )
+                            if bbo_ob and bbo_ob.get('bids') and bbo_ob.get('asks'):
+                                b_bid = float(bbo_ob['bids'][0][0])
+                                b_ask = float(bbo_ob['asks'][0][0])
+                                if opposite_side == 'buy' and b_ask > 0 and final_tp_price >= b_ask:
+                                    skip_post_only = True
+                                elif opposite_side == 'sell' and b_bid > 0 and final_tp_price <= b_bid:
+                                    skip_post_only = True
                         except Exception:
                             pass
 

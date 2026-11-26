@@ -638,7 +638,7 @@ class ManualTradeService:
             ):
                 try:
                     ws_params = {'type': 'delivery'} if (is_fut and is_inv) else ({'type': 'future'} if is_fut else {})
-                    ws_bal = await asyncio.wait_for(exchange.fetch_balance_ws(ws_params), timeout=0.30)
+                    ws_bal = await asyncio.wait_for(exchange.fetch_balance_ws(ws_params), timeout=0.65)
                     bal = ManualTradeService._normalize_ws_balance(exchange, ws_bal, meta, symbol=symbol)
                     if bal is not None:
                         if api_key_id is not None:
@@ -801,6 +801,8 @@ class ManualTradeService:
 
             # Warm shared TCP/TLS pool (deduplicated globally across all users to 1 ping / 20s)
             await prewarm_exchange_connections(exchange, is_futures=True)
+            if is_inverse:
+                schedule_ws_api_prewarm(exchange, is_futures=True, is_inverse=True)
 
             # Fetch PositionRisk first (Weight=1 on COIN-M, Weight=5 on USDT-M) because it returns
             # leverage, marginType, AND positionSide (Hedge Mode) in a single lightweight call,
@@ -2152,6 +2154,13 @@ class ManualTradeService:
             # Pool theke dedicated unthrottled order exchange newa
             exchange = await ManualTradeService._get_exchange(api_key_record, is_futures, purpose="order")
             t_pool = time.perf_counter()
+            try:
+                ex_id_str = str(getattr(exchange, 'id', '') or '').lower()
+                if ex_id_str and isinstance(getattr(exchange, 'urls', None), dict):
+                    from app.services.market_data_streamer import market_data_streamer
+                    asyncio.create_task(market_data_streamer.start_streaming(ex_id_str, order_req.symbol))
+            except Exception:
+                pass
             meta = ManualTradeService._get_contract_meta(exchange, order_req.symbol)
             is_inverse = meta['is_inverse']
             contract_size = meta['contract_size']
@@ -3633,11 +3642,20 @@ class ManualTradeService:
 
             exchange = await ManualTradeService._get_exchange(api_key_record, is_futures, purpose="order")
             t_force_pool = time.perf_counter()
+            try:
+                ex_id_str = str(getattr(exchange, 'id', '') or '').lower()
+                if ex_id_str and isinstance(getattr(exchange, 'urls', None), dict):
+                    from app.services.market_data_streamer import market_data_streamer
+                    asyncio.create_task(market_data_streamer.start_streaming(ex_id_str, symbol))
+            except Exception:
+                pass
             meta = ManualTradeService._get_contract_meta(exchange, symbol)
             is_inverse = meta["is_inverse"]
             contract_size = meta["contract_size"]
             base_part = meta["base"]
             quote_part = meta["quote"]
+            if is_inverse:
+                schedule_ws_api_prewarm(exchange, is_futures=is_futures, is_inverse=True)
 
             def _sym_matches(sa: str, sb: str) -> bool:
                 s1 = str(sa or '').strip()
@@ -3708,10 +3726,22 @@ class ManualTradeService:
                                 from app.api.v1.endpoints.trading import AttachedSLConfig
                                 attached_sl = AttachedSLConfig(enabled=True, mode='absolute', value=safe_sl)
 
+            cancel_wave_ms = 0
+            bal_post_ms = 0
             if specific_oid:
                 # --- TARGETED SINGLE ORDER / BRACKET CANCELLATION (CONCURRENT 1-RTT) ---
                 cancel_tasks = []
+                queued_cancel_oids = set()
                 in_mem_handled = False
+
+                def _queue_cancel_oid(oid_val: Optional[str], is_cond: Optional[bool] = None):
+                    if not oid_val:
+                        return
+                    oid_key = (str(oid_val), is_cond)
+                    if oid_key in queued_cancel_oids:
+                        return
+                    queued_cancel_oids.add(oid_key)
+                    cancel_tasks.append(('ord', bracket_order_service._cancel_futures_order_universal(exchange, str(oid_val), symbol, is_conditional=is_cond)))
 
                 if specific_oid in ACTIVE_SMART_PEGS:
                     in_mem_handled = True
@@ -3728,7 +3758,7 @@ class ManualTradeService:
                     is_exit_order = True
                     tp_oid = cdata.get('tp_order_id')
                     if tp_oid:
-                        cancel_tasks.append(('ord', bracket_order_service._cancel_futures_order_universal(exchange, str(tp_oid), symbol)))
+                        _queue_cancel_oid(str(tp_oid), False if not is_futures else None)
                     cancel_tasks.append(('chase', stop_smart_chase(symbol=symbol, api_key_id=api_key_id, user_id=user_id, chase_id=specific_oid)))
 
                 for sl_id, sdata in list(bracket_order_service.ACTIVE_SOFTWARE_SL.items()):
@@ -3755,22 +3785,23 @@ class ManualTradeService:
                         tp_oid = sdata.get('tp_order_id')
                         dis_oid = sdata.get('disaster_sl_order_id')
                         if tp_oid:
-                            cancel_tasks.append(('ord', bracket_order_service._cancel_futures_order_universal(exchange, str(tp_oid), symbol)))
+                            _queue_cancel_oid(str(tp_oid), False if not is_futures else None)
                         if dis_oid:
-                            cancel_tasks.append(('ord', bracket_order_service._cancel_futures_order_universal(exchange, str(dis_oid), symbol, is_conditional=True)))
+                            _queue_cancel_oid(str(dis_oid), True)
 
                 for eb_id, eb_data in list(bracket_order_service.ACTIVE_ENTRY_BRACKETS.items()):
                     key_match = (eb_data.get('api_key_id') is None or int(eb_data.get('api_key_id')) == int(api_key_id))
                     if not key_match or not _sym_matches(eb_data.get('symbol', ''), symbol) or eb_data.get('cancelled'):
                         continue
                     if str(eb_id) == specific_oid or str(eb_data.get('tp_order_id') or '') == specific_oid:
+                        in_mem_handled = True
                         eb_data['cancelled'] = True
                         is_exit_order = True
                         if resolved_specific_amt <= 0:
                             resolved_specific_amt = float(eb_data.get('amount') or 0.0)
                         tp_oid = eb_data.get('tp_order_id')
                         if tp_oid:
-                            cancel_tasks.append(('ord', bracket_order_service._cancel_futures_order_universal(exchange, str(tp_oid), symbol)))
+                            _queue_cancel_oid(str(tp_oid), False if not is_futures else None)
 
                 if specific_oid in bracket_order_service.ACTIVE_ENTRY_MONITORS:
                     bracket_order_service.ACTIVE_ENTRY_MONITORS[specific_oid]['cancelled'] = True
@@ -3790,14 +3821,24 @@ class ManualTradeService:
                                 resolved_specific_amt = float(ord_info.get('remaining') or ord_info.get('amount') or 0.0)
                         except Exception:
                             pass
-                    cancel_tasks.append(('ord', bracket_order_service._cancel_futures_order_universal(exchange, specific_oid, symbol)))
+                    _queue_cancel_oid(specific_oid, False if not is_futures else None)
 
                 if is_futures and pos_info is None:
                     cancel_tasks.append(('pos', ManualTradeService.get_active_position(db, user_id, api_key_id, symbol)))
+
+                if is_futures:
+                    prewarmed_bal = ManualTradeService._get_cached_wallet_balance(
+                        api_key_id, is_futures, max_age_seconds=15.0, is_inverse=is_inverse
+                    )
+                if prewarmed_bal is None and not (is_futures and (is_exit_order or bool(reduce_only))):
+                    cancel_tasks.append(('bal', ManualTradeService._fetch_wallet_balance(exchange, symbol, meta, api_key_id=api_key_id)))
+
                 cancel_tasks.append(('ob', _fetch_bbo_fast(exchange, symbol)))
 
                 if cancel_tasks:
+                    t_cw0 = time.perf_counter()
                     res_list = await asyncio.gather(*(t[1] for t in cancel_tasks), return_exceptions=True)
+                    cancel_wave_ms = int((time.perf_counter() - t_cw0) * 1000)
                     for (tag, _), r_val in zip(cancel_tasks, res_list):
                         if tag == 'peg' and isinstance(r_val, int):
                             stopped_pegs += r_val
@@ -3807,6 +3848,8 @@ class ManualTradeService:
                             cancelled_open_orders += 1
                         elif tag == 'pos' and not isinstance(r_val, Exception):
                             pos_info = r_val
+                        elif tag == 'bal' and not isinstance(r_val, Exception):
+                            prewarmed_bal = r_val
                         elif tag == 'ob' and not isinstance(r_val, Exception):
                             prewarmed_ob = r_val
             else:
@@ -3902,7 +3945,18 @@ class ManualTradeService:
                     elif hasattr(exchange, 'cancel_all_orders'):
                         parallel_tasks.append(('cancel_all_rest', exchange.cancel_all_orders(symbol)))
 
-                if is_futures and not is_inverse and hasattr(exchange, 'cancel_all_orders') and not skip_cancel_all:
+                has_known_stop_orders = bool(cancelled_brackets > 0) or (not oo_cache_known) or any(
+                    bool(
+                        isinstance(o, dict) and (
+                            o.get('isSoftwareSL')
+                            or str(o.get('mode') or '').upper() in ('STOP', 'SL')
+                            or o.get('stopPrice')
+                            or o.get('triggerPrice')
+                        )
+                    )
+                    for o in pre_open_orders
+                )
+                if is_futures and not is_inverse and hasattr(exchange, 'cancel_all_orders') and not skip_cancel_all and has_known_stop_orders:
                     async def _cancel_all_stop_orders():
                         try:
                             return await exchange.cancel_all_orders(symbol, params={'stop': True})
@@ -3924,6 +3978,7 @@ class ManualTradeService:
                 parallel_tasks.append(('ob', _fetch_bbo_fast(exchange, symbol)))
 
                 par_res = await asyncio.gather(*(t[1] for t in parallel_tasks), return_exceptions=True)
+                cancel_wave_ms = int((time.perf_counter() - t_par_start) * 1000)
                 cancel_all_ok = skip_cancel_all
                 ws_cancel_failed = False
                 for (tag, _), r_val in zip(parallel_tasks, par_res):
@@ -3936,7 +3991,17 @@ class ManualTradeService:
                     elif tag == 'cancel_all_ws':
                         if not isinstance(r_val, Exception):
                             cancel_all_ok = True
-                            if pre_open_orders:
+                            if isinstance(r_val, list) and r_val:
+                                cancelled_open_orders += len(r_val)
+                                if not pre_open_orders:
+                                    for co in r_val:
+                                        if isinstance(co, dict) and str(co.get('side') or '').lower() == side_lower:
+                                            rem_c = float(co.get('remaining') or co.get('amount') or (co.get('info') or {}).get('origQty') or 0.0)
+                                            px_c = float(co.get('price') or (co.get('info') or {}).get('price') or 0.0)
+                                            resolved_all_base_amt += rem_c
+                                            if px_c > 0:
+                                                resolved_all_quote_amt += rem_c * px_c
+                            elif pre_open_orders:
                                 cancelled_open_orders += len(pre_open_orders)
                         else:
                             err_c_low = str(r_val).lower()
@@ -3948,7 +4013,17 @@ class ManualTradeService:
                                 logger.debug(f"cancel_all_orders_ws fallback to REST for {symbol}: {r_val}")
                     elif tag == 'cancel_all_rest' and not isinstance(r_val, Exception):
                         cancel_all_ok = True
-                        if pre_open_orders:
+                        if isinstance(r_val, list) and r_val:
+                            cancelled_open_orders += len(r_val)
+                            if not pre_open_orders:
+                                for co in r_val:
+                                    if isinstance(co, dict) and str(co.get('side') or '').lower() == side_lower:
+                                        rem_c = float(co.get('remaining') or co.get('amount') or (co.get('info') or {}).get('origQty') or 0.0)
+                                        px_c = float(co.get('price') or (co.get('info') or {}).get('price') or 0.0)
+                                        resolved_all_base_amt += rem_c
+                                        if px_c > 0:
+                                            resolved_all_quote_amt += rem_c * px_c
+                        elif pre_open_orders:
                             cancelled_open_orders += len(pre_open_orders)
                     elif tag == 'cancel_all_stop' and not isinstance(r_val, Exception):
                         if pre_open_orders:
@@ -4007,21 +4082,22 @@ class ManualTradeService:
                     except Exception:
                         ob = None
             else:
-                # Re-fetch balance on Spot after cancellation ONLY if existing balance doesn't already track the unlocked amount
-                # (when free + approx_rel already reflects total, reuse it cleanly in 0ms; -2010 auto-clamp protects execution).
-                need_spot_rebalance = False
-                if has_cancelled_orders and not is_futures:
+                # Re-fetch balance after cancellation ONLY if existing balance is missing or doesn't track the unlocked amount
+                # (when total/approx_rel already reflects unlocked funds, reuse it cleanly in 0ms; -2010/-2019 auto-clamp protects execution).
+                need_rebalance = False
+                if has_cancelled_orders:
                     rel_amt_known = (
-                        (side_lower == 'buy' and (resolved_all_quote_amt > 0 or (specific_oid and resolved_specific_amt > 0)))
-                        or (side_lower == 'sell' and (resolved_all_base_amt > 0 or (specific_oid and resolved_specific_amt > 0)))
+                        (is_futures and (resolved_all_quote_amt > 0 or resolved_all_base_amt > 0 or (specific_oid and resolved_specific_amt > 0)))
+                        or (not is_futures and side_lower == 'buy' and (resolved_all_quote_amt > 0 or (specific_oid and resolved_specific_amt > 0)))
+                        or (not is_futures and side_lower == 'sell' and (resolved_all_base_amt > 0 or (specific_oid and resolved_specific_amt > 0)))
                     )
-                    need_spot_rebalance = (bal is None) or (not rel_amt_known)
-                cached_bal = None if need_spot_rebalance else (
+                    need_rebalance = (bal is None) or (not rel_amt_known)
+                cached_bal = None if need_rebalance else (
                     bal or ManualTradeService._get_cached_wallet_balance(
                         api_key_id, is_futures, max_age_seconds=(30.0 if (is_futures and not has_cancelled_orders) else 10.0), is_inverse=is_inverse
                     )
                 )
-                if cached_bal is not None and not (is_futures and has_cancelled_orders):
+                if cached_bal is not None:
                     if ob is None:
                         try:
                             ob = await _fetch_bbo_fast(exchange, symbol)
@@ -4029,10 +4105,12 @@ class ManualTradeService:
                             ob = None
                     bal = cached_bal
                 else:
+                    t_bp0 = time.perf_counter()
                     gather_b = [ManualTradeService._fetch_wallet_balance(exchange, symbol, meta, api_key_id=api_key_id)]
                     if ob is None:
                         gather_b.append(_fetch_bbo_fast(exchange, symbol))
                     gb_res = await asyncio.gather(*gather_b, return_exceptions=True)
+                    bal_post_ms += int((time.perf_counter() - t_bp0) * 1000)
                     if isinstance(gb_res[0], Exception):
                         if cached_bal is not None:
                             bal = cached_bal
@@ -4089,14 +4167,19 @@ class ManualTradeService:
                 if is_futures:
                     # On Linear Futures, margin is ALWAYS quote_part (even on SELL!); on Inverse, it is base_part.
                     margin_asset = base_part if is_inverse else quote_part
-                    needed_margin = (unlock_quote_amt * pct_ratio) / lev_eff if unlock_quote_amt > 0 else 0.0
+                    needed_margin = (
+                        ((unlock_base_amt * pct_ratio) / lev_eff)
+                        if is_inverse
+                        else ((unlock_quote_amt * pct_ratio) / lev_eff)
+                    ) if (unlock_quote_amt > 0 or unlock_base_amt > 0) else 0.0
                     if needed_margin > 0:
-                        for _ in range(2):
-                            fm = _extract_bal(bal, margin_asset, 'free')
-                            if fm >= needed_margin * 0.98:
-                                break
-                            await asyncio.sleep(0.05)
+                        fm = _extract_bal(bal, margin_asset, 'free')
+                        tm = _extract_bal(bal, margin_asset, 'total')
+                        if fm < needed_margin * 0.98 and tm < needed_margin * 0.98 and (fm + needed_margin) > tm * 1.005:
+                            t_bp_fut = time.perf_counter()
+                            await asyncio.sleep(0.04)
                             bal = await ManualTradeService._fetch_wallet_balance(exchange, symbol, meta, api_key_id=api_key_id)
+                            bal_post_ms += int((time.perf_counter() - t_bp_fut) * 1000)
                 else:
                     needed_val = 0.0
                     if side_lower == 'buy' and unlock_quote_amt > 0:
@@ -4107,10 +4190,12 @@ class ManualTradeService:
                     if needed_val > 0:
                         free_asset = _extract_bal(bal, quote_part if side_lower == 'buy' else base_part, 'free')
                         tot_asset = _extract_bal(bal, quote_part if side_lower == 'buy' else base_part, 'total')
-                        # Single brief refresh ONLY if free + known unlocked isn't already accounted for in total
-                        if free_asset < needed_val * 0.98 and (free_asset + needed_val) > tot_asset * 1.005:
+                        # Single brief refresh ONLY if total asset balance is below needed_val (unlocked amount unaccounted for)
+                        if free_asset < needed_val * 0.98 and tot_asset < needed_val * 0.98 and (free_asset + needed_val) > tot_asset * 1.005:
+                            t_bp1 = time.perf_counter()
                             await asyncio.sleep(0.04)
                             bal = await ManualTradeService._fetch_wallet_balance(exchange, symbol, meta, api_key_id=api_key_id)
+                            bal_post_ms += int((time.perf_counter() - t_bp1) * 1000)
 
             target_amount = 0.0
 
@@ -4168,7 +4253,11 @@ class ManualTradeService:
                         total_base = float(bal.get(base_part, {}).get('total', 0.0)) or (
                             float(bal.get('total', {}).get(base_part, 0.0)) if isinstance(bal.get('total'), dict) else free_base
                         )
-                        approx_rel_base = (resolved_specific_amt * pct_ratio) if (specific_oid and resolved_specific_amt > 0) else 0.0
+                        approx_rel_base = (
+                            (resolved_specific_amt * pct_ratio)
+                            if (specific_oid and resolved_specific_amt > 0)
+                            else (resolved_all_base_amt * pct_ratio)
+                        )
                         effective_base = min(free_base + approx_rel_base, total_base * 0.99) if has_cancelled_orders else free_base
                         effective_base = max(effective_base, free_base)
                         if effective_base <= 0:
@@ -4188,7 +4277,11 @@ class ManualTradeService:
                         total_quote = float(bal.get(quote_part, {}).get('total', 0.0)) or (
                             float(bal.get('total', {}).get(quote_part, 0.0)) if isinstance(bal.get('total'), dict) else free_quote
                         )
-                        approx_rel_quote = (resolved_specific_amt * pct_ratio * ref_price) / lev if (specific_oid and resolved_specific_amt > 0) else 0.0
+                        approx_rel_quote = (
+                            (unlock_quote_amt * pct_ratio) / lev
+                            if (specific_oid and resolved_specific_amt > 0) or resolved_all_quote_amt > 0 or resolved_all_base_amt > 0
+                            else 0.0
+                        )
                         effective_quote = min(free_quote + approx_rel_quote, total_quote * 0.99) if has_cancelled_orders else free_quote
                         effective_quote = max(effective_quote, free_quote)
                         if effective_quote <= 0:
@@ -4251,6 +4344,7 @@ class ManualTradeService:
             logger.info(
                 f"⚡ [FORCE TIMING] {symbol} | Mode={mode_lower} | TotalToExec={(time.perf_counter() - t_force_origin)*1000:.0f}ms | "
                 f"DB={(t_force_db - t_force_enter)*1000:.0f}ms | Pool={(t_force_pool - t_force_db)*1000:.0f}ms | "
+                f"CancelWave={cancel_wave_ms}ms | BalPost={bal_post_ms}ms | "
                 f"WSReady={is_ws_api_ready(exchange, is_futures=is_futures, is_inverse=is_inverse)} | "
                 f"SkipCancel={locals().get('skip_cancel_all', False)} | Cancelled={has_cancelled_orders}"
             )
@@ -4277,9 +4371,12 @@ class ManualTradeService:
                     (side_lower == 'sell' and _extract_bal(bal, base_part, 'free') >= target_amount * 0.999)
                     or (side_lower == 'buy' and _extract_bal(bal, quote_part, 'free') >= target_amount * ref_price * 0.998)
                 )
-                # Refresh 1ms Redis BBO only if orders were cancelled on exchange (or if BBO wasn't fetched yet)
+                if not bal_unlocked and has_cancelled_orders:
+                    # Drop stale pre-cancel RAM balance so execute_smart_peg_entry never clamps against old locked `free`
+                    ManualTradeService.invalidate_wallet_balance_cache(api_key_id)
+                # Reuse BBO already fetched in cancel_wave (avoid duplicate REST roundtrip if Redis was cold)
                 fresh_ob = ob
-                if has_cancelled_orders or not fresh_ob:
+                if not fresh_ob:
                     try:
                         latest_bbo = await _fetch_bbo_fast(exchange, symbol)
                         if latest_bbo and latest_bbo.get('bids') and latest_bbo.get('asks'):

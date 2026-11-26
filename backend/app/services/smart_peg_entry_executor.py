@@ -50,13 +50,30 @@ def _is_order_already_closed_error(err: Exception) -> bool:
     return any(kw in err_str for kw in ('filled', 'unknown order', '-2011', '-2013'))
 
 
-async def _fetch_bbo_fast(exchange, symbol: str, max_age_seconds: float = 1.5) -> Optional[Dict[str, Any]]:
-    """Read live orderbook/BBO from Redis WS stream (~1ms) when fresh, else fall back to REST."""
+async def _fetch_bbo_fast(
+    exchange,
+    symbol: str,
+    max_age_seconds: float = 1.5,
+    rest_fallback: bool = True,
+) -> Optional[Dict[str, Any]]:
+    """Read live orderbook/BBO from in-process RAM stream (~0ms) or Redis (~1ms), else fall back to REST."""
+    ex_id = str(getattr(exchange, 'id', 'binance') or 'binance').lower()
+    eff_max_age = max_age_seconds
+    try:
+        from app.services.market_data_streamer import market_data_streamer
+        norm_ex, _, _ = market_data_streamer._normalize_exchange_and_key(ex_id, symbol)
+        if f"{norm_ex}:{symbol}" in market_data_streamer._active_streams:
+            eff_max_age = max(max_age_seconds, market_data_streamer.BBO_KEEPALIVE_SEC + 1.0)
+        mem_bbo = market_data_streamer.get_mem_bbo(ex_id, symbol, max_age_seconds=eff_max_age)
+        if mem_bbo is not None:
+            return {'bids': [[mem_bbo[0], 1.0]], 'asks': [[mem_bbo[1], 1.0]]}
+    except Exception:
+        pass
+
     try:
         from app.services.user_order_stream import _get_redis_pub
         r_cli = await _get_redis_pub()
         if r_cli is not None:
-            ex_id = str(getattr(exchange, 'id', 'binance') or 'binance').lower()
             # Fast-path 1: ultra-compact bbo:{ex_id}:{symbol} key
             raw_bbo = await asyncio.wait_for(
                 r_cli.get(f"bbo:{ex_id}:{symbol}"),
@@ -67,7 +84,7 @@ async def _fetch_bbo_fast(exchange, symbol: str, max_age_seconds: float = 1.5) -
                 ts = bbo_json.get('ts')
                 bid_p = float(bbo_json.get('bid') or 0.0)
                 ask_p = float(bbo_json.get('ask') or 0.0)
-                if ts is not None and bid_p > 0 and ask_p > 0 and -0.5 <= (time.time() - float(ts)) <= max_age_seconds:
+                if ts is not None and bid_p > 0 and ask_p > 0 and -0.5 <= (time.time() - float(ts)) <= eff_max_age:
                     return {'bids': [[bid_p, 1.0]], 'asks': [[ask_p, 1.0]]}
 
             # Fast-path 2: full latest_orderbook:{ex_id}:{symbol} key
@@ -78,7 +95,7 @@ async def _fetch_bbo_fast(exchange, symbol: str, max_age_seconds: float = 1.5) -
             if raw_ob:
                 ob_json = json.loads(raw_ob)
                 ts = ob_json.get('ts')
-                if ts is not None and -0.5 <= (time.time() - float(ts)) <= max_age_seconds:
+                if ts is not None and -0.5 <= (time.time() - float(ts)) <= eff_max_age:
                     bids_raw = ob_json.get('bids') or []
                     asks_raw = ob_json.get('asks') or []
                     if bids_raw and asks_raw:
@@ -94,10 +111,13 @@ async def _fetch_bbo_fast(exchange, symbol: str, max_age_seconds: float = 1.5) -
     except Exception:
         pass
 
+    if not rest_fallback:
+        return None
+
     try:
-        from app.services.market_data_streamer import market_data_streamer
-        ex_id = str(getattr(exchange, 'id', 'binance') or 'binance').lower()
-        asyncio.create_task(market_data_streamer.start_streaming(ex_id, symbol))
+        if isinstance(getattr(exchange, 'urls', None), dict):
+            from app.services.market_data_streamer import market_data_streamer
+            asyncio.create_task(market_data_streamer.start_streaming(ex_id, symbol))
     except Exception:
         pass
 
@@ -211,7 +231,7 @@ async def _place_maker_order(exchange, symbol: str, side: str, amount: float, pr
         except Exception as ws_err:
             if _is_postonly_cross_error(ws_err):
                 raise
-            logger.debug(f"[Smart Peg Entry] createOrderWs fallback to REST: {ws_err}")
+            logger.warning(f"⚠️ [Smart Peg Entry] createOrderWs fallback to REST for {symbol}: {ws_err}")
 
     order = await exchange.create_limit_order(symbol, side.lower(), amount, price, ex_params)
     if order and str(order.get('status', '')).lower() in ('expired', 'rejected', 'canceled', 'cancelled'):
@@ -513,8 +533,26 @@ async def execute_smart_peg_entry(
         logger.warning(f"⚠️ [Smart Peg Entry] Amount {remaining_amount} (~${initial_notional:.2f}) below min notional ${min_notional:.2f}. Aborted.")
         return None
 
+    # Proactively warm live BBO WS stream & User Order WS stream (non-blocking)
+    try:
+        ex_id_str = str(getattr(exchange, 'id', '') or '').lower()
+        if ex_id_str and isinstance(getattr(exchange, 'urls', None), dict):
+            from app.services.market_data_streamer import market_data_streamer
+            asyncio.create_task(market_data_streamer.start_streaming(ex_id_str, symbol))
+    except Exception:
+        pass
+    if user_id and api_key_record:
+        try:
+            from app.services.user_order_stream import ensure_user_order_stream
+            uos_res = ensure_user_order_stream(user_id, api_key_record, is_futures, symbol)
+            if asyncio.iscoroutine(uos_res):
+                uos_res.close()
+        except Exception:
+            pass
+
     cid = peg_id or f"peg_{getattr(api_key_record, 'id', user_id)}_{str(symbol).replace('/', '_').replace(':', '_')}_{int(datetime.utcnow().timestamp())}"
     cancel_event = asyncio.Event()
+    order_event = asyncio.Event()
 
     ACTIVE_SMART_PEGS[cid] = {
         'peg_id': cid,
@@ -538,6 +576,8 @@ async def execute_smart_peg_entry(
         'current_maker_price': initial_benchmark_price,
         'current_order_id': None,
         'cancel_event': cancel_event,
+        'order_event': order_event,
+        'ws_order_snapshot': None,
         'started_at': datetime.utcnow().isoformat()
     }
     try:
@@ -577,6 +617,7 @@ async def execute_smart_peg_entry(
 
     cached_ob = initial_ob
     tracked_wall: Optional[Dict[str, Any]] = None
+    prev_maker_price: Optional[float] = None
     attempts = 0
     total_filled = 0.0
     accumulated_cost = 0.0
@@ -864,8 +905,10 @@ async def execute_smart_peg_entry(
                 continue
 
         order_id = peg_order['id']
+        order_event.clear()
         if cid in ACTIVE_SMART_PEGS:
             ACTIVE_SMART_PEGS[cid]['current_order_id'] = order_id
+            ACTIVE_SMART_PEGS[cid]['ws_order_snapshot'] = None
         try:
             from app.services.manual_trade_persistence import schedule_update_monitor
             schedule_update_monitor(
@@ -987,71 +1030,84 @@ async def execute_smart_peg_entry(
                     await asyncio.sleep(peg_poll_interval)
                     poll_count += 1
 
+                    # PRIORITY 0: Sub-millisecond WS UserOrderStream fill / cancel wakeup
+                    ws_snap = None
+                    if order_event.is_set():
+                        order_event.clear()
+                        peg_entry = ACTIVE_SMART_PEGS.get(cid)
+                        cand_snap = peg_entry.get('ws_order_snapshot') if peg_entry else None
+                        if isinstance(cand_snap, dict) and str(cand_snap.get('id') or '') == str(order_id):
+                            ws_snap = cand_snap
+                            peg_entry['ws_order_snapshot'] = None
+
                     # Harvest non-blocking background fill-check result (0ms blocking on BBO!)
+                    chk_in_loop = ws_snap
                     if order_chk_task is not None and order_chk_task.done():
-                        chk_in_loop = None
                         try:
-                            chk_in_loop = order_chk_task.result()
+                            rest_chk = order_chk_task.result()
+                            if chk_in_loop is None:
+                                chk_in_loop = rest_chk
                         except Exception as order_res_err:
                             logger.debug(f"Entry order poll check notice: {order_res_err}")
                         finally:
                             order_chk_task = None
 
-                        if chk_in_loop:
-                            chk_st = str(chk_in_loop.get('status', '')).lower()
-                            if chk_st in ['closed', 'filled']:
-                                logger.info(f"✅ [Smart Peg Entry] Order #{order_id} filled detected during BBO shadow watch!")
-                                latest_order_chk = chk_in_loop
-                                break
-                            elif chk_st in ['expired', 'canceled', 'cancelled', 'rejected']:
-                                latest_order_chk = chk_in_loop
-                                repeg_triggered = True
-                                order_already_cancelled = True
-                                break
-                            else:
-                                curr_loop_filled = float(chk_in_loop.get('filled') or 0.0)
-                                if curr_loop_filled > order_processed_filled:
-                                    chunk_filled = curr_loop_filled - order_processed_filled
-                                    exec_p = float(chk_in_loop.get('average') or chk_in_loop.get('price') or target_maker_price)
-                                    chunk_notional = _calc_order_notional_usd(exchange, symbol, chunk_filled, exec_p)
-                                    if is_futures or chunk_notional >= min_notional or total_filled > 0:
-                                        order_processed_filled = curr_loop_filled
-                                        total_filled += chunk_filled
-                                        accumulated_cost += (chunk_filled * exec_p)
-                                        remaining_amount = max(0.0, remaining_amount - chunk_filled)
-                                        if cid in ACTIVE_SMART_PEGS:
-                                            ACTIVE_SMART_PEGS[cid]['filled_amount'] = total_filled
-                                            ACTIVE_SMART_PEGS[cid]['amount'] = remaining_amount
-                                        try:
-                                            from app.services.manual_trade_persistence import schedule_update_monitor
-                                            schedule_update_monitor(
-                                                cid,
-                                                fields={'amount': float(remaining_amount)},
-                                                config_patch={'total_filled': float(total_filled)},
-                                            )
-                                        except Exception:
-                                            pass
-                                        logger.info(
-                                            f"⚡ [Smart Peg Entry] Resting Partial Fill detected on #{order_id}: "
-                                            f"+{chunk_filled} @ {exec_p} (Total Filled: {total_filled}/{amount})"
+                    if chk_in_loop:
+                        chk_st = str(chk_in_loop.get('status', '')).lower()
+                        if chk_st in ['closed', 'filled']:
+                            src_lbl = "WS UserOrderStream" if ws_snap is not None else "BBO shadow watch"
+                            logger.info(f"✅ [Smart Peg Entry] Order #{order_id} filled detected via {src_lbl}!")
+                            latest_order_chk = chk_in_loop
+                            break
+                        elif chk_st in ['expired', 'canceled', 'cancelled', 'rejected']:
+                            latest_order_chk = chk_in_loop
+                            repeg_triggered = True
+                            order_already_cancelled = True
+                            break
+                        else:
+                            curr_loop_filled = float(chk_in_loop.get('filled') or 0.0)
+                            if curr_loop_filled > order_processed_filled:
+                                chunk_filled = curr_loop_filled - order_processed_filled
+                                exec_p = float(chk_in_loop.get('average') or chk_in_loop.get('price') or target_maker_price)
+                                chunk_notional = _calc_order_notional_usd(exchange, symbol, chunk_filled, exec_p)
+                                if is_futures or chunk_notional >= min_notional or total_filled > 0:
+                                    order_processed_filled = curr_loop_filled
+                                    total_filled += chunk_filled
+                                    accumulated_cost += (chunk_filled * exec_p)
+                                    remaining_amount = max(0.0, remaining_amount - chunk_filled)
+                                    if cid in ACTIVE_SMART_PEGS:
+                                        ACTIVE_SMART_PEGS[cid]['filled_amount'] = total_filled
+                                        ACTIVE_SMART_PEGS[cid]['amount'] = remaining_amount
+                                    try:
+                                        from app.services.manual_trade_persistence import schedule_update_monitor
+                                        schedule_update_monitor(
+                                            cid,
+                                            fields={'amount': float(remaining_amount)},
+                                            config_patch={'total_filled': float(total_filled)},
                                         )
-                                        if (tp_config or sl_config) and not reduce_only:
-                                            from app.services.bracket_order_service import BracketOrderService
-                                            asyncio.create_task(
-                                                BracketOrderService._spawn_bracket_for_amount(
-                                                    exchange=exchange,
-                                                    symbol=symbol,
-                                                    side=side.lower(),
-                                                    filled_amount=chunk_filled,
-                                                    average_price=exec_p,
-                                                    is_futures=is_futures,
-                                                    tp_config=tp_config,
-                                                    sl_config=sl_config,
-                                                    user_id=user_id,
-                                                    api_key_record=api_key_record,
-                                                    entry_order_id=cid
-                                                )
+                                    except Exception:
+                                        pass
+                                    logger.info(
+                                        f"⚡ [Smart Peg Entry] Resting Partial Fill detected on #{order_id}: "
+                                        f"+{chunk_filled} @ {exec_p} (Total Filled: {total_filled}/{amount})"
+                                    )
+                                    if (tp_config or sl_config) and not reduce_only:
+                                        from app.services.bracket_order_service import BracketOrderService
+                                        asyncio.create_task(
+                                            BracketOrderService._spawn_bracket_for_amount(
+                                                exchange=exchange,
+                                                symbol=symbol,
+                                                side=side.lower(),
+                                                filled_amount=chunk_filled,
+                                                average_price=exec_p,
+                                                is_futures=is_futures,
+                                                tp_config=tp_config,
+                                                sl_config=sl_config,
+                                                user_id=user_id,
+                                                api_key_record=api_key_record,
+                                                entry_order_id=cid
                                             )
+                                        )
 
                     # PRIORITY A: Fetch live BBO / L2 depth from Redis FIRST (~1ms) without ever blocking on REST fetch_order!
                     latest_ob = None
@@ -1129,16 +1185,17 @@ async def execute_smart_peg_entry(
                                         ACTIVE_SMART_PEGS[cid]['tracked_wall'] = tracked_wall
                             if new_maker != target_maker_price:
                                 is_outbid = (new_maker > target_maker_price) if side.lower() == "buy" else (new_maker < target_maker_price)
-                                min_polls_required = 1 if (is_outbid or urgent_mode or spoof_triggered) else 2
+                                min_polls_required = 1 if (is_outbid or urgent_mode or spoof_triggered or eff_peg_strategy == 'bbo') else 2
                                 if poll_count >= min_polls_required:
-                                    # Adaptive anti-ping-pong pacing: 0ms for normal fills (<=5 re-pegs/10s),
-                                    # enforces a small gap between re-pegs on flickery books so Binance UID rate limits aren't hit.
+                                    # Only throttle true ping-pong oscillation (A -> B -> A) or extreme runaway bursts;
+                                    # directional BBO shadowing runs with 0ms pacing delay.
                                     now_rp = time.monotonic()
                                     while repeg_timestamps and (now_rp - repeg_timestamps[0]) > 10.0:
                                         repeg_timestamps.popleft()
                                     recent_rp_cnt = len(repeg_timestamps)
-                                    if recent_rp_cnt >= 6:
-                                        min_gap = 0.75 if recent_rp_cnt >= 12 else 0.30
+                                    is_true_ping_pong = (prev_maker_price is not None and new_maker == prev_maker_price)
+                                    if (is_true_ping_pong and recent_rp_cnt >= 4) or recent_rp_cnt >= 16:
+                                        min_gap = 0.25 if recent_rp_cnt >= 16 else 0.15
                                         wait_needed = min_gap - (now_rp - last_repeg_mono)
                                         if wait_needed > 0:
                                             try:
@@ -1253,19 +1310,40 @@ async def execute_smart_peg_entry(
                                     if order_filled_during_edit:
                                         break
 
-                                    # ── FAST 1-RTT PARALLEL CANCEL + CREATE FOR FUTURES POST-ONLY (GTX) ──
-                                    if not edit_res and is_futures:
+                                    # ── FAST 1-RTT PARALLEL CANCEL + CREATE (FUTURES GTX & SPOT FALLBACK) ──
+                                    if not edit_res:
                                         t_par_start = time.perf_counter()
                                         async def _place_next_leg():
-                                            # Stagger One-Way reduceOnly replacements by 35ms so cancel arrives at Binance matching engine first (-2022 guard)
-                                            if ex_params.get('reduceOnly'):
-                                                await asyncio.sleep(0.035)
+                                            # Stagger replacements slightly so cancel hits matching engine first (-2022/-2019/-2010 guard)
+                                            if ex_params.get('reduceOnly') or (not is_futures and side.lower() == 'sell'):
+                                                await asyncio.sleep(0.030)
+                                            elif is_futures:
+                                                await asyncio.sleep(0.015)
                                             return await _place_maker_order(
                                                 exchange, symbol, side, remaining_amount, new_maker, ex_params, is_futures
                                             )
 
+                                        async def _cancel_prev_leg():
+                                            ws_c_ready = True
+                                            try:
+                                                from app.services.exchange_pool import is_ws_api_ready
+                                                ws_c_ready = is_ws_api_ready(exchange, is_futures=is_futures, is_inverse=is_inverse)
+                                            except Exception:
+                                                ws_c_ready = True
+                                            if (
+                                                getattr(exchange, 'has', {}).get('cancelOrderWs')
+                                                and hasattr(exchange, 'cancel_order_ws')
+                                                and ws_c_ready
+                                            ):
+                                                try:
+                                                    return await exchange.cancel_order_ws(order_id, symbol)
+                                                except Exception as ws_c_err:
+                                                    if _is_order_already_closed_error(ws_c_err):
+                                                        raise
+                                            return await exchange.cancel_order(order_id, symbol)
+
                                         c_res, p_res = await asyncio.gather(
-                                            exchange.cancel_order(order_id, symbol),
+                                            _cancel_prev_leg(),
                                             _place_next_leg(),
                                             return_exceptions=True,
                                         )
@@ -1370,6 +1448,8 @@ async def execute_smart_peg_entry(
                                         old_oid = order_id
                                         order_id = str(edit_res.get('id'))
                                         order_already_cancelled = False
+                                        order_event.clear()
+                                        prev_maker_price = target_maker_price
                                         target_maker_price = new_maker
                                         tracked_wall = next_tracked_wall
                                         attempts += 1
@@ -1408,6 +1488,7 @@ async def execute_smart_peg_entry(
 
                                         if cid in ACTIVE_SMART_PEGS:
                                             ACTIVE_SMART_PEGS[cid]['current_order_id'] = order_id
+                                            ACTIVE_SMART_PEGS[cid]['ws_order_snapshot'] = None
                                             ACTIVE_SMART_PEGS[cid]['current_maker_price'] = target_maker_price
                                             ACTIVE_SMART_PEGS[cid]['tracked_wall'] = tracked_wall
                                             ACTIVE_SMART_PEGS[cid]['current_attempt'] = attempts

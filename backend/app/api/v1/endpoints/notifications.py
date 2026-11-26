@@ -47,6 +47,7 @@ def update_notification_settings(
             
     db.commit()
     db.refresh(settings)
+    NotificationService.invalidate_user_cache(current_user.id)
     return settings
 
 @router.post("/test")
@@ -104,6 +105,7 @@ def disconnect_telegram(
         settings.telegram_bot_token = None
         db.commit()
         db.refresh(settings)
+        NotificationService.invalidate_user_cache(current_user.id)
         return settings
     return NotificationSettingsResponse(
         user_id=current_user.id,

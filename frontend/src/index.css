@@ -1485,6 +1485,30 @@ html.mobile-thermal-guard .animate-marquee-slow:not(.landing-ticker-marquee) {
   animation: none !important;
 }
 
+/* Dedicated 120Hz GPU compositor layers for interactive drawer transitions & touch drag */
+.cosmo-gpu-drawer {
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  contain: layout style paint;
+}
+
+.cosmo-gpu-fade {
+  will-change: opacity;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.cosmo-gpu-floating-drag {
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  touch-action: none !important;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
 /* ============================================================================
    LIGHT THEME ADAPTIVE FLOATING TOOL MODALS (OrderFlow / WallHunter Page)
    Active ONLY when <html class="light">; zero effect in dark mode.

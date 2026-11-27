@@ -119,9 +119,10 @@ const Sidebar: React.FC<{
     isCollapsed: boolean;
     onToggle: () => void;
     isPhoneMobileUI?: boolean;
+    isTouchOverlaySidebar?: boolean;
     isMobileOpen?: boolean;
     onCloseMobile?: () => void;
-}> = React.memo(({ onLogout, isCollapsed, onToggle, isPhoneMobileUI = false, isMobileOpen = false, onCloseMobile }) => {
+}> = React.memo(({ onLogout, isCollapsed, onToggle, isPhoneMobileUI = false, isTouchOverlaySidebar = false, isMobileOpen = false, onCloseMobile }) => {
     const location = useLocation();
     const navigate = useNavigate();
     const currentView = getViewFromPath(location.pathname);
@@ -129,7 +130,7 @@ const Sidebar: React.FC<{
     const { activeMarket } = useMarketStore();
     const [isProfileOpen, setIsProfileOpen] = useState(false);
     const [navQuery, setNavQuery] = useState('');
-    const profileRef = useRef<HTMLDivElement>(null);
+    const profileDrawerRef = useRef<HTMLDivElement>(null);
 
     const previousMarket = useRef(activeMarket);
     useEffect(() => {
@@ -144,9 +145,14 @@ const Sidebar: React.FC<{
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
-                setIsProfileOpen(false);
+            const target = event.target as HTMLElement | null;
+            if (profileDrawerRef.current && profileDrawerRef.current.contains(target)) {
+                return;
             }
+            if (target?.closest?.('[data-profile-trigger="true"]')) {
+                return;
+            }
+            setIsProfileOpen(false);
         };
         document.addEventListener("mousedown", handleClickOutside);
         return () => {
@@ -306,361 +312,423 @@ const Sidebar: React.FC<{
         ];
     }, [activeMarket, userProfile.is_superuser]);
 
+    const isTouchSurface = isPhoneMobileUI || isTouchOverlaySidebar;
     const effectiveCollapsed = isPhoneMobileUI ? false : isCollapsed;
 
-    const filteredCategories = useMemo(() => {
+    const getFilteredCategories = (collapsedState: boolean) => {
         const q = navQuery.trim().toLowerCase();
-        if (!q || effectiveCollapsed) return navCategories;
+        if (!q || collapsedState) return navCategories;
         return navCategories
             .map((cat) => ({
                 ...cat,
                 items: cat.items.filter((item) => item.label.toLowerCase().includes(q)),
             }))
             .filter((cat) => cat.items.length > 0);
-    }, [navCategories, navQuery, effectiveCollapsed]);
+    };
 
-    const sidebarAside = (
-        <aside className={`${
-            isPhoneMobileUI
-                ? `fixed top-0 left-0 h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)] w-[272px] max-w-[84vw] z-[90] transition-transform duration-200 ease-out ${isMobileOpen ? 'translate-x-0 pointer-events-auto' : '-translate-x-full pointer-events-none'}`
-                : `${effectiveCollapsed ? 'w-20' : 'w-72'} h-full max-h-full flex-shrink-0 transition-[width] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] z-30 relative`
-        } bg-[#F8FAFC] dark:bg-[#070B14] border-r border-slate-200 dark:border-slate-800/80 flex flex-col shadow-[4px_0_24px_rgba(0,0,0,0.06)] dark:shadow-[4px_0_28px_rgba(0,0,0,0.45)] group`}>
+    const renderAsidePanel = (
+        collapsedState: boolean,
+        mode: 'phone' | 'tablet-rail' | 'tablet-drawer' | 'desktop'
+    ) => {
+        const panelCategories = getFilteredCategories(collapsedState);
+        const isDrawerPanel = mode === 'phone' || mode === 'tablet-drawer';
+        const isOpenDrawer = mode === 'phone' ? isMobileOpen : !isCollapsed;
 
-            {/* Subtle Top Accent Hairline */}
-            <div className="h-[1px] w-full bg-gradient-to-r from-cyan-500/50 via-indigo-500/40 to-transparent flex-shrink-0" />
+        const asidePositionClass =
+            mode === 'phone'
+                ? `fixed top-0 left-0 h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)] w-[272px] max-w-[84vw] z-[90] cosmo-gpu-drawer transition-transform duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${isMobileOpen ? 'pointer-events-auto' : 'pointer-events-none'}`
+                : mode === 'tablet-drawer'
+                    ? `fixed top-0 left-0 h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)] w-[264px] max-w-[82vw] z-[80] cosmo-gpu-drawer transition-transform duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${!isCollapsed ? 'pointer-events-auto' : 'pointer-events-none'}`
+                    : mode === 'tablet-rail'
+                        ? 'w-20 h-full max-h-full flex-shrink-0 z-30 relative'
+                        : `${collapsedState ? 'w-20' : 'w-72'} h-full max-h-full flex-shrink-0 transition-[width] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] z-30 relative`;
 
-            {/* Mobile Drawer Close Button */}
-            {isPhoneMobileUI ? (
-                <button
-                    type="button"
-                    onClick={onCloseMobile}
-                    aria-label="Close navigation menu"
-                    className="absolute right-3 top-3 w-8 h-8 bg-white dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800 rounded-xl flex items-center justify-center text-slate-500 hover:text-cyan-500 shadow-sm z-30 active:scale-95 cursor-pointer"
-                >
-                    <X className="w-4 h-4" />
-                </button>
-            ) : (
-                /* Collapse Toggle Button (PC / Tablet) */
-                <button
-                    type="button"
-                    onClick={onToggle}
-                    aria-label={effectiveCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                    className="absolute -right-3 top-14 w-6 h-6 bg-white dark:bg-[#0B1120] border border-slate-200 dark:border-slate-700/80 rounded-full flex items-center justify-center text-slate-400 hover:text-cyan-400 hover:border-cyan-500/50 shadow-md z-30 transition-colors cursor-pointer"
-                >
-                    <ChevronDownIcon className={`w-3.5 h-3.5 transition-transform duration-300 ${effectiveCollapsed ? '-rotate-90' : 'rotate-90'}`} />
-                </button>
-            )}
+        const asideStyle: React.CSSProperties | undefined = isDrawerPanel
+            ? {
+                  transform: isOpenDrawer
+                      ? 'translate3d(0, 0, 0)'
+                      : 'translate3d(calc(-100% - 18px), 0, 0)',
+              }
+            : undefined;
 
-            {/* Brand Header + Quick Filter */}
-            <div className="px-4 pt-0 pb-2.5 relative z-10 flex-shrink-0">
-                <div className="flex items-center justify-center">
-                    {effectiveCollapsed ? (
-                        <img
-                            src="/logo.png"
-                            alt="CosmoQuantAI"
-                            className="h-14 w-14 mt-2.5 object-contain select-none drop-shadow-[0_0_12px_rgba(6,182,212,0.4)]"
-                        />
-                    ) : (
-                        <div className="relative flex flex-col items-center w-full select-none -mt-[14px]">
-                            <span className={`absolute ${isPhoneMobileUI ? 'left-0' : 'right-0'} top-6 px-2 py-0.5 rounded-md text-[9px] font-mono font-bold uppercase tracking-widest bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/25 z-20`}>
-                                PRO
-                            </span>
+        const logoShadowClass = isTouchSurface
+            ? ''
+            : collapsedState
+                ? 'drop-shadow-[0_0_12px_rgba(6,182,212,0.4)]'
+                : 'drop-shadow-[0_6px_16px_rgba(15,23,42,0.2)] dark:drop-shadow-[0_0_24px_rgba(6,182,212,0.45)]';
+
+        return (
+            <aside
+                style={asideStyle}
+                aria-hidden={isDrawerPanel ? !isOpenDrawer : undefined}
+                className={`${asidePositionClass} bg-[#F8FAFC] dark:bg-[#070B14] border-r border-slate-200 dark:border-slate-800/80 flex flex-col ${isTouchSurface ? 'shadow-xl dark:shadow-[4px_0_18px_rgba(0,0,0,0.4)]' : 'shadow-[4px_0_24px_rgba(0,0,0,0.06)] dark:shadow-[4px_0_28px_rgba(0,0,0,0.45)]'} group`}
+            >
+                {/* Subtle Top Accent Hairline */}
+                <div className="h-[1px] w-full bg-gradient-to-r from-cyan-500/50 via-indigo-500/40 to-transparent flex-shrink-0" />
+
+                {/* Mobile Drawer Close Button OR PC/Tablet Collapse Toggle */}
+                {mode === 'phone' ? (
+                    <button
+                        type="button"
+                        onClick={onCloseMobile}
+                        aria-label="Close navigation menu"
+                        className="absolute right-3 top-3 w-8 h-8 bg-white dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800 rounded-xl flex items-center justify-center text-slate-500 hover:text-cyan-500 shadow-sm z-30 active:scale-95 cursor-pointer"
+                    >
+                        <X className="w-4 h-4" />
+                    </button>
+                ) : (
+                    <button
+                        type="button"
+                        onClick={onToggle}
+                        aria-label={collapsedState ? 'Expand sidebar' : 'Collapse sidebar'}
+                        className="absolute -right-3 top-14 w-6 h-6 bg-white dark:bg-[#0B1120] border border-slate-200 dark:border-slate-700/80 rounded-full flex items-center justify-center text-slate-400 hover:text-cyan-400 hover:border-cyan-500/50 shadow-md z-30 transition-colors cursor-pointer"
+                    >
+                        <ChevronDownIcon className={`w-3.5 h-3.5 transition-transform duration-300 ${collapsedState ? '-rotate-90' : 'rotate-90'}`} />
+                    </button>
+                )}
+
+                {/* Brand Header + Quick Filter */}
+                <div className="px-4 pt-0 pb-2.5 relative z-10 flex-shrink-0">
+                    <div className="flex items-center justify-center">
+                        {collapsedState ? (
                             <img
                                 src="/logo.png"
                                 alt="CosmoQuantAI"
-                                className="h-[136px] w-[136px] object-contain drop-shadow-[0_6px_16px_rgba(15,23,42,0.2)] dark:drop-shadow-[0_0_24px_rgba(6,182,212,0.45)]"
+                                className={`h-14 w-14 mt-2.5 object-contain select-none ${logoShadowClass}`}
                             />
-                            <span className="-mt-4 font-extrabold text-[19px] leading-tight text-slate-900 dark:text-white tracking-tight whitespace-nowrap">
-                                CosmoQuantAI
-                            </span>
-                        </div>
-                    )}
-                </div>
-
-                {/* Quick Module Search (Expanded only) */}
-                {!effectiveCollapsed && (
-                    <div className="mt-2.5 relative flex items-center">
-                        <Search className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 absolute left-3 pointer-events-none" />
-                        <input
-                            type="text"
-                            value={navQuery}
-                            onChange={(e) => setNavQuery(e.target.value)}
-                            placeholder="Jump to module..."
-                            className="w-full h-8 pl-8 pr-7 rounded-xl text-xs bg-white dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800/90 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:border-cyan-500/50 transition-colors"
-                        />
-                        {navQuery && (
-                            <button
-                                type="button"
-                                onClick={() => setNavQuery('')}
-                                aria-label="Clear filter"
-                                className="absolute right-2 p-0.5 rounded text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
-                            >
-                                <X className="w-3 h-3" />
-                            </button>
+                        ) : (
+                            <div className="relative flex flex-col items-center w-full select-none -mt-[14px]">
+                                <span className={`absolute ${mode === 'phone' ? 'left-0' : 'right-0'} top-6 px-2 py-0.5 rounded-md text-[9px] font-mono font-bold uppercase tracking-widest bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/25 z-20`}>
+                                    PRO
+                                </span>
+                                <img
+                                    src="/logo.png"
+                                    alt="CosmoQuantAI"
+                                    className={`h-[136px] w-[136px] object-contain ${logoShadowClass}`}
+                                />
+                                <span className="-mt-4 font-extrabold text-[19px] leading-tight text-slate-900 dark:text-white tracking-tight whitespace-nowrap">
+                                    CosmoQuantAI
+                                </span>
+                            </div>
                         )}
                     </div>
-                )}
 
-                <div className={`h-px w-full bg-slate-200/80 dark:bg-slate-800/70 mt-3 ${effectiveCollapsed ? 'opacity-40' : 'opacity-100'}`} />
-            </div>
-
-            {/* Vertical Feature List */}
-            <nav className="flex-1 min-h-0 overflow-y-auto px-3 custom-scrollbar pb-4 relative z-10">
-                {filteredCategories.length === 0 ? (
-                    <div className="px-3 py-8 text-center text-xs text-slate-400 dark:text-slate-500">
-                        No modules match "{navQuery}"
-                    </div>
-                ) : (
-                    filteredCategories.map(category => (
-                        <div key={category.title} className="mb-4 last:mb-0">
-                            <div className="relative h-5 mb-1.5 flex items-center justify-between px-2.5">
-                                {!effectiveCollapsed ? (
-                                    <>
-                                        <h3 className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500 select-none">
-                                            {category.title}
-                                        </h3>
-                                        <span className="text-[9px] font-mono text-slate-400/80 dark:text-slate-600">
-                                            {category.items.length}
-                                        </span>
-                                    </>
-                                ) : (
-                                    <div className="w-full h-px bg-slate-200 dark:bg-slate-800/80" />
-                                )}
-                            </div>
-                            <div className="space-y-0.5">
-                                {category.items.map(item => (
-                                    <NavItem
-                                        key={item.view}
-                                        icon={item.icon}
-                                        label={item.label}
-                                        path={getPathFromView(item.view)}
-                                        isActive={currentView === item.view}
-                                        isCollapsed={effectiveCollapsed}
-                                        onClick={isPhoneMobileUI ? onCloseMobile : undefined}
-                                    />
-                                ))}
-                            </div>
-                        </div>
-                    ))
-                )}
-            </nav>
-
-            {/* Profile & Account Footer */}
-            <div className="p-3 border-t border-slate-200 dark:border-slate-800/80 bg-slate-50/70 dark:bg-[#050810] relative z-20 flex-shrink-0" ref={profileRef}>
-                {/* Backdrop Overlay (thermal-safe without heavy blur) */}
-                {isProfileOpen && (
-                    <div
-                        className="fixed inset-0 bg-slate-950/70 z-[100] transition-opacity duration-200 opacity-100 pointer-events-auto"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            setIsProfileOpen(false);
-                        }}
-                    />
-                )}
-
-                {/* Slide-over My Account Drawer */}
-                <div
-                    className={`fixed top-0 left-0 h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)] w-[336px] max-w-[88vw] bg-white dark:bg-[#070B14] shadow-2xl border-r border-slate-200 dark:border-slate-800 z-[110] transform transition-transform duration-300 ease-out ${isProfileOpen ? 'translate-x-0' : '-translate-x-full'}`}
-                    onClick={(e) => e.stopPropagation()}
-                >
-                    <div className="flex flex-col h-full">
-                        {/* Drawer Top Accent */}
-                        <div className="h-[2px] w-full bg-gradient-to-r from-cyan-500 via-indigo-500 to-emerald-500 flex-shrink-0" />
-
-                        {/* Drawer Header */}
-                        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800/80">
-                            <div>
-                                <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 uppercase tracking-wider">
-                                    <UserCircleIcon className="w-4 h-4 text-cyan-500" />
-                                    My Account
-                                </h2>
-                                <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                                    Workspace Identity & Subscription
-                                </p>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => setIsProfileOpen(false)}
-                                aria-label="Close account drawer"
-                                className="p-1.5 rounded-xl bg-slate-100 dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
-                            >
-                                <X className="w-4 h-4" />
-                            </button>
-                        </div>
-
-                        {/* Subscription & Identity Card */}
-                        <div className="p-4 border-b border-slate-200 dark:border-slate-800/80">
-                            <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-900 to-[#0B1120] border border-cyan-500/30 text-white shadow-lg">
-                                <div className="flex items-center gap-3.5">
-                                    <div className="relative flex-shrink-0">
-                                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500 to-indigo-600 text-white flex items-center justify-center font-bold text-base shadow-md">
-                                            {initials}
-                                        </div>
-                                        <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2 border-[#0B1120]" />
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <h3 className="font-bold text-sm text-white truncate">{userProfile.fullName || 'Quant Trader'}</h3>
-                                        <div className="flex items-center gap-1.5 mt-1">
-                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase tracking-wider bg-cyan-500/20 text-cyan-300 border border-cyan-400/30">
-                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                                                {tierLabel}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="mt-3 pt-3 border-t border-white/10 flex items-center justify-between text-[11px]">
-                                    <span className="text-slate-400">Desk Access: <strong className="text-emerald-300">Active</strong></span>
-                                    <button
-                                        type="button"
-                                        onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/billing'); setIsProfileOpen(false); }}
-                                        className="text-cyan-300 hover:text-cyan-200 font-semibold flex items-center gap-1 cursor-pointer"
-                                    >
-                                        Manage Plan <ArrowUpRight className="w-3 h-3" />
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Drawer Menu Items */}
-                        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-                            <div>
-                                <p className="px-2 mb-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
-                                    Account &amp; Connectivity
-                                </p>
-                                <DropdownMenuItem
-                                    icon={<UserCircleIcon className="w-4 h-4" />}
-                                    label="Profile Settings"
-                                    hint="Identity, timezone & desk defaults"
-                                    onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/profile'); setIsProfileOpen(false); }}
-                                />
-                                <DropdownMenuItem
-                                    icon={<CreditCardIcon className="w-4 h-4" />}
-                                    label="Billing & Subscription"
-                                    hint="Pro Quant plan & invoices"
-                                    onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/billing'); setIsProfileOpen(false); }}
-                                />
-                                <DropdownMenuItem
-                                    icon={<Shield className="w-4 h-4" />}
-                                    label="Security & 2FA"
-                                    hint="Session locks & authenticator"
-                                    onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/security'); setIsProfileOpen(false); }}
-                                />
-                                <DropdownMenuItem
-                                    icon={<KeyIcon className="w-4 h-4" />}
-                                    label="API Keys & Brokers"
-                                    hint="Exchange execution credentials"
-                                    onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/api-keys'); setIsProfileOpen(false); }}
-                                />
-                            </div>
-
-                            <div>
-                                <p className="px-2 mb-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
-                                    Terminal Preferences
-                                </p>
-                                <DropdownMenuItem
-                                    icon={<Bell className="w-4 h-4" />}
-                                    label="Notifications"
-                                    hint="Telegram, alerts & signal routing"
-                                    onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/notifications'); setIsProfileOpen(false); }}
-                                />
-                                <DropdownMenuItem
-                                    icon={<Palette className="w-4 h-4" />}
-                                    label="Appearance & Thermal"
-                                    hint="Dark desk theme & Eco Guard"
-                                    onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/appearance'); setIsProfileOpen(false); }}
-                                />
-                            </div>
-
-                            {userProfile.is_superuser && (
-                                <div>
-                                    <p className="px-2 mb-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-cyan-500">
-                                        Owner Administration
-                                    </p>
-                                    <DropdownMenuItem
-                                        accent
-                                        icon={<Shield className="w-4 h-4" />}
-                                        label="Owner Admin Console"
-                                        hint="Platform health, users & telemetry"
-                                        onClick={() => { navigate(getPathFromView(AppView.OWNER_ADMIN)); setIsProfileOpen(false); }}
-                                    />
-                                    <DropdownMenuItem
-                                        icon={<Database className="w-4 h-4" />}
-                                        label="Data Management"
-                                        hint="Cache pools, ingestion & retention"
-                                        onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/data'); setIsProfileOpen(false); }}
-                                    />
-                                </div>
+                    {/* Quick Module Search (Expanded only) */}
+                    {!collapsedState && (
+                        <div className="mt-2.5 relative flex items-center">
+                            <Search className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 absolute left-3 pointer-events-none" />
+                            <input
+                                type="text"
+                                value={navQuery}
+                                onChange={(e) => setNavQuery(e.target.value)}
+                                placeholder="Jump to module..."
+                                className="w-full h-8 pl-8 pr-7 rounded-xl text-xs bg-white dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800/90 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:border-cyan-500/50 transition-colors"
+                            />
+                            {navQuery && (
+                                <button
+                                    type="button"
+                                    onClick={() => setNavQuery('')}
+                                    aria-label="Clear filter"
+                                    className="absolute right-2 p-0.5 rounded text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
+                                >
+                                    <X className="w-3 h-3" />
+                                </button>
                             )}
                         </div>
+                    )}
 
-                        {/* Logout Footer */}
-                        <div className="p-4 border-t border-slate-200 dark:border-slate-800/80 bg-slate-50/70 dark:bg-[#050810]">
-                            <button
-                                type="button"
-                                onClick={onLogout}
-                                className="flex items-center justify-center w-full gap-2 px-4 py-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 font-bold text-xs uppercase tracking-wider hover:bg-rose-500 hover:text-white transition-colors cursor-pointer"
-                            >
-                                <LogoutIcon />
-                                <span>Sign Out Session</span>
-                            </button>
-                        </div>
-                    </div>
+                    <div className={`h-px w-full bg-slate-200/80 dark:bg-slate-800/70 mt-3 ${collapsedState ? 'opacity-40' : 'opacity-100'}`} />
                 </div>
 
-                {/* User Account Button */}
-                <button
-                    type="button"
-                    onClick={() => setIsProfileOpen(!isProfileOpen)}
-                    title={effectiveCollapsed ? `${userProfile.fullName || 'User'} · My Account` : 'Open My Account'}
-                    className={`flex items-center w-full p-2 rounded-2xl border transition-colors cursor-pointer group ${
-                        effectiveCollapsed ? 'justify-center' : ''
-                    } ${isProfileOpen
-                        ? 'bg-cyan-500/10 border-cyan-500/45 shadow-sm'
-                        : 'bg-white dark:bg-[#0B1120] border-slate-200 dark:border-slate-800/80 hover:border-cyan-500/40'
-                    }`}
-                >
-                    <div className="relative flex-shrink-0">
-                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-500 to-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-sm">
-                            {initials}
+                {/* Vertical Feature List */}
+                <nav className="flex-1 min-h-0 overflow-y-auto px-3 custom-scrollbar pb-4 relative z-10 touch-pan-y overscroll-y-contain">
+                    {panelCategories.length === 0 ? (
+                        <div className="px-3 py-8 text-center text-xs text-slate-400 dark:text-slate-500">
+                            No modules match "{navQuery}"
                         </div>
-                        <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 border-2 border-white dark:border-[#0B1120] rounded-full" />
-                    </div>
-                    {!effectiveCollapsed && (
-                        <>
-                            <div className="ml-2.5 flex-1 min-w-0 text-left">
-                                <p className="font-bold text-xs text-slate-900 dark:text-white truncate group-hover:text-cyan-600 dark:group-hover:text-cyan-300 transition-colors">
-                                    {userProfile.fullName || 'Quant Trader'}
-                                </p>
-                                <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate font-mono flex items-center gap-1 mt-0.5">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 flex-shrink-0" />
-                                    {tierLabel}
-                                </p>
+                    ) : (
+                        panelCategories.map(category => (
+                            <div key={category.title} className="mb-4 last:mb-0">
+                                <div className="relative h-5 mb-1.5 flex items-center justify-between px-2.5">
+                                    {!collapsedState ? (
+                                        <>
+                                            <h3 className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500 select-none">
+                                                {category.title}
+                                            </h3>
+                                            <span className="text-[9px] font-mono text-slate-400/80 dark:text-slate-600">
+                                                {category.items.length}
+                                            </span>
+                                        </>
+                                    ) : (
+                                        <div className="w-full h-px bg-slate-200 dark:bg-slate-800/80" />
+                                    )}
+                                </div>
+                                <div className="space-y-0.5">
+                                    {category.items.map(item => (
+                                        <NavItem
+                                            key={item.view}
+                                            icon={item.icon}
+                                            label={item.label}
+                                            path={getPathFromView(item.view)}
+                                            isActive={currentView === item.view}
+                                            isCollapsed={collapsedState}
+                                            onClick={mode === 'phone' ? onCloseMobile : mode === 'tablet-drawer' ? onToggle : undefined}
+                                        />
+                                    ))}
+                                </div>
                             </div>
-                            <div className={`w-7 h-7 rounded-lg flex items-center justify-center transition-transform duration-200 text-slate-400 group-hover:text-cyan-400 ${isProfileOpen ? 'rotate-180 text-cyan-400' : ''}`}>
-                                <ChevronDownIcon className="h-4 w-4" />
-                            </div>
-                        </>
+                        ))
                     )}
-                </button>
+                </nav>
+
+                {/* User Account Button */}
+                <div className="p-3 border-t border-slate-200 dark:border-slate-800/80 bg-slate-50/70 dark:bg-[#050810] relative z-20 flex-shrink-0">
+                    <button
+                        type="button"
+                        data-profile-trigger="true"
+                        onClick={() => setIsProfileOpen((prev) => !prev)}
+                        title={collapsedState ? `${userProfile.fullName || 'User'} · My Account` : 'Open My Account'}
+                        className={`flex items-center w-full p-2 rounded-2xl border transition-colors cursor-pointer group ${
+                            collapsedState ? 'justify-center' : ''
+                        } ${isProfileOpen
+                            ? 'bg-cyan-500/10 border-cyan-500/45 shadow-sm'
+                            : 'bg-white dark:bg-[#0B1120] border-slate-200 dark:border-slate-800/80 hover:border-cyan-500/40'
+                        }`}
+                    >
+                        <div className="relative flex-shrink-0">
+                            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-500 to-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-sm">
+                                {initials}
+                            </div>
+                            <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 border-2 border-white dark:border-[#0B1120] rounded-full" />
+                        </div>
+                        {!collapsedState && (
+                            <>
+                                <div className="ml-2.5 flex-1 min-w-0 text-left">
+                                    <p className="font-bold text-xs text-slate-900 dark:text-white truncate group-hover:text-cyan-600 dark:group-hover:text-cyan-300 transition-colors">
+                                        {userProfile.fullName || 'Quant Trader'}
+                                    </p>
+                                    <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate font-mono flex items-center gap-1 mt-0.5">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 flex-shrink-0" />
+                                        {tierLabel}
+                                    </p>
+                                </div>
+                                <div className={`w-7 h-7 rounded-lg flex items-center justify-center transition-transform duration-200 text-slate-400 group-hover:text-cyan-400 ${isProfileOpen ? 'rotate-180 text-cyan-400' : ''}`}>
+                                    <ChevronDownIcon className="h-4 w-4" />
+                                </div>
+                            </>
+                        )}
+                    </button>
+                </div>
+            </aside>
+        );
+    };
+
+    const accountDrawerOverlay = (
+        <div ref={profileDrawerRef}>
+            {/* Backdrop Overlay (thermal-safe 120Hz fade) */}
+            <div
+                className={`fixed inset-0 bg-slate-950/70 z-[100] cosmo-gpu-fade transition-opacity duration-[260ms] ease-out ${isProfileOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    setIsProfileOpen(false);
+                }}
+            />
+
+            {/* Slide-over My Account Drawer */}
+            <div
+                style={{
+                    transform: isProfileOpen
+                        ? 'translate3d(0, 0, 0)'
+                        : 'translate3d(calc(-100% - 16px), 0, 0)',
+                }}
+                aria-hidden={!isProfileOpen}
+                className={`fixed top-0 left-0 h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)] w-[336px] max-w-[88vw] bg-white dark:bg-[#070B14] shadow-2xl border-r border-slate-200 dark:border-slate-800 z-[110] cosmo-gpu-drawer transition-transform duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${isProfileOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="flex flex-col h-full">
+                    {/* Drawer Top Accent */}
+                    <div className="h-[2px] w-full bg-gradient-to-r from-cyan-500 via-indigo-500 to-emerald-500 flex-shrink-0" />
+
+                    {/* Drawer Header */}
+                    <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800/80">
+                        <div>
+                            <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 uppercase tracking-wider">
+                                <UserCircleIcon className="w-4 h-4 text-cyan-500" />
+                                My Account
+                            </h2>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                Workspace Identity &amp; Subscription
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setIsProfileOpen(false)}
+                            aria-label="Close account drawer"
+                            className="p-1.5 rounded-xl bg-slate-100 dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    </div>
+
+                    {/* Subscription & Identity Card */}
+                    <div className="p-4 border-b border-slate-200 dark:border-slate-800/80">
+                        <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-900 to-[#0B1120] border border-cyan-500/30 text-white shadow-lg">
+                            <div className="flex items-center gap-3.5">
+                                <div className="relative flex-shrink-0">
+                                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500 to-indigo-600 text-white flex items-center justify-center font-bold text-base shadow-md">
+                                        {initials}
+                                    </div>
+                                    <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2 border-[#0B1120]" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <h3 className="font-bold text-sm text-white truncate">{userProfile.fullName || 'Quant Trader'}</h3>
+                                    <div className="flex items-center gap-1.5 mt-1">
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase tracking-wider bg-cyan-500/20 text-cyan-300 border border-cyan-400/30">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                            {tierLabel}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="mt-3 pt-3 border-t border-white/10 flex items-center justify-between text-[11px]">
+                                <span className="text-slate-400">Desk Access: <strong className="text-emerald-300">Active</strong></span>
+                                <button
+                                    type="button"
+                                    onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/billing'); setIsProfileOpen(false); }}
+                                    className="text-cyan-300 hover:text-cyan-200 font-semibold flex items-center gap-1 cursor-pointer"
+                                >
+                                    Manage Plan <ArrowUpRight className="w-3 h-3" />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Drawer Menu Items */}
+                    <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 custom-scrollbar touch-pan-y overscroll-y-contain">
+                        <div>
+                            <p className="px-2 mb-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
+                                Account &amp; Connectivity
+                            </p>
+                            <DropdownMenuItem
+                                icon={<UserCircleIcon className="w-4 h-4" />}
+                                label="Profile Settings"
+                                hint="Identity, timezone & desk defaults"
+                                onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/profile'); setIsProfileOpen(false); }}
+                            />
+                            <DropdownMenuItem
+                                icon={<CreditCardIcon className="w-4 h-4" />}
+                                label="Billing & Subscription"
+                                hint="Pro Quant plan & invoices"
+                                onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/billing'); setIsProfileOpen(false); }}
+                            />
+                            <DropdownMenuItem
+                                icon={<Shield className="w-4 h-4" />}
+                                label="Security & 2FA"
+                                hint="Session locks & authenticator"
+                                onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/security'); setIsProfileOpen(false); }}
+                            />
+                            <DropdownMenuItem
+                                icon={<KeyIcon className="w-4 h-4" />}
+                                label="API Keys & Brokers"
+                                hint="Exchange execution credentials"
+                                onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/api-keys'); setIsProfileOpen(false); }}
+                            />
+                        </div>
+
+                        <div>
+                            <p className="px-2 mb-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
+                                Terminal Preferences
+                            </p>
+                            <DropdownMenuItem
+                                icon={<Bell className="w-4 h-4" />}
+                                label="Notifications"
+                                hint="Telegram, alerts & signal routing"
+                                onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/notifications'); setIsProfileOpen(false); }}
+                            />
+                            <DropdownMenuItem
+                                icon={<Palette className="w-4 h-4" />}
+                                label="Appearance & Thermal"
+                                hint="Dark desk theme & Eco Guard"
+                                onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/appearance'); setIsProfileOpen(false); }}
+                            />
+                        </div>
+
+                        {userProfile.is_superuser && (
+                            <div>
+                                <p className="px-2 mb-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-cyan-500">
+                                    Owner Administration
+                                </p>
+                                <DropdownMenuItem
+                                    accent
+                                    icon={<Shield className="w-4 h-4" />}
+                                    label="Owner Admin Console"
+                                    hint="Platform health, users & telemetry"
+                                    onClick={() => { navigate(getPathFromView(AppView.OWNER_ADMIN)); setIsProfileOpen(false); }}
+                                />
+                                <DropdownMenuItem
+                                    icon={<Database className="w-4 h-4" />}
+                                    label="Data Management"
+                                    hint="Cache pools, ingestion & retention"
+                                    onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/data'); setIsProfileOpen(false); }}
+                                />
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Logout Footer */}
+                    <div className="p-4 border-t border-slate-200 dark:border-slate-800/80 bg-slate-50/70 dark:bg-[#050810]">
+                        <button
+                            type="button"
+                            onClick={onLogout}
+                            className="flex items-center justify-center w-full gap-2 px-4 py-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 font-bold text-xs uppercase tracking-wider hover:bg-rose-500 hover:text-white transition-colors cursor-pointer"
+                        >
+                            <LogoutIcon />
+                            <span>Sign Out Session</span>
+                        </button>
+                    </div>
+                </div>
             </div>
-        </aside>
+        </div>
     );
 
     if (isPhoneMobileUI) {
         return (
             <>
-                {isMobileOpen && (
-                    <div
-                        className="fixed inset-0 bg-slate-950/70 z-[85] transition-opacity duration-200"
-                        onClick={onCloseMobile}
-                    />
-                )}
-                {sidebarAside}
+                <div
+                    className={`fixed inset-0 bg-slate-950/70 z-[85] cosmo-gpu-fade transition-opacity duration-[260ms] ease-out ${isMobileOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+                    onClick={onCloseMobile}
+                />
+                {renderAsidePanel(false, 'phone')}
+                {accountDrawerOverlay}
             </>
         );
     }
 
-    return sidebarAside;
+    if (isTouchOverlaySidebar) {
+        return (
+            <>
+                {/* Fixed w-20 icon rail in layout flow so main workspace NEVER reflows during 120Hz toggle */}
+                {renderAsidePanel(true, 'tablet-rail')}
+
+                {/* Tap-outside backdrop scrim */}
+                <div
+                    className={`fixed inset-0 bg-slate-950/55 z-[70] cosmo-gpu-fade transition-opacity duration-[260ms] ease-out ${!isCollapsed ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+                    onClick={onToggle}
+                />
+
+                {/* Pre-mounted GPU slide-over expanded sidebar drawer */}
+                {renderAsidePanel(false, 'tablet-drawer')}
+                {accountDrawerOverlay}
+            </>
+        );
+    }
+
+    return (
+        <>
+            {renderAsidePanel(effectiveCollapsed, 'desktop')}
+            {accountDrawerOverlay}
+        </>
+    );
 });
 
 const MODAL_VIEWS: AppView[] = [];
@@ -758,6 +826,7 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
     const [modalView, setModalView] = useState<AppView | null>(null);
     const deviceProfile = useDeviceProfile();
     const isPhoneMobileUI = deviceProfile.isPhoneMobileUI;
+    const isTouchOverlaySidebar = deviceProfile.isMobileOrTablet && !isPhoneMobileUI;
     const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
     // Auto-collapse sidebar on laptop/small screens (≤1366px)
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() =>
@@ -878,6 +947,7 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
                         isCollapsed={isSidebarCollapsed} 
                         onToggle={handleSidebarToggle}
                         isPhoneMobileUI={isPhoneMobileUI}
+                        isTouchOverlaySidebar={isTouchOverlaySidebar}
                         isMobileOpen={isMobileSidebarOpen}
                         onCloseMobile={handleCloseMobileSidebar}
                     />

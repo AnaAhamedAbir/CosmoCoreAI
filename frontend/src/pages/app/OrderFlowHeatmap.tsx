@@ -4,7 +4,10 @@ import { createChart, ISeriesApi, CandlestickData, CandlestickSeries, LineSeries
 import { WickSRRenderer } from '../../components/features/market/WickSRRenderer';
 import { LiquiditySweepAbsorptionRenderer } from '../../components/features/market/LiquiditySweepAbsorptionRenderer';
 import { useLiquiditySweepAbsorption } from '../../hooks/useLiquiditySweepAbsorption';
-import { useLevel2MarketData, subscribeLiveTradeTicks, subscribeLiveBbo, getLatestLiveBbo, getLatestLiveTick } from '@/hooks/useLevel2MarketData';
+import { useLevel2MarketData, subscribeLiveTradeTicks, subscribeLiveBbo, subscribeLiveMarkPrice, getLatestLiveBbo, getLatestLiveTick, getLatestMarkPrice } from '@/hooks/useLevel2MarketData';
+import { SpreadCorridorPrimitive } from '../../components/features/market/SpreadCorridorPrimitive';
+import { LiveFeedHealthBadge } from '../../components/features/market/LiveFeedHealthBadge';
+import { SweepMomentumTracker } from '../../utils/sweepMomentumTracker';
 import { useDeviceProfile } from '@/hooks/useDeviceProfile';
 import { useOrderFlowData } from '../../hooks/useOrderFlowData';
 import { useHeatmapData } from '../../hooks/useHeatmapData';
@@ -213,7 +216,7 @@ interface ChartDragBracketEntry {
 const chartDragBracketRegistry = new Map<string, ChartDragBracketEntry>();
 
 // Chart Component
-const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: string; interval: string; walls: { price: number, type: 'buy' | 'sell', size?: number }[]; currentPrice: number; showFootprint: boolean; showCVD: boolean; showVPVR: boolean; indicatorSettings: IndicatorSettings; tradeEvent: any; botStatus: any; openOrders: OpenLimitOrder[]; activePosition?: FastPositionResponse | null; advancedMetrics: AdvancedMetricsSettings; advancedMetricsData: any; selectedApiKeyId: string | null; predictionResult: PredictionResult | null; activeMLModelId: string | null; onAIPredictClick?: (price: number) => void; onChartBackgroundClick?: (price: number) => void; showCrosshairAIPredict?: boolean; bestBid?: number; bestAsk?: number; showBidAsk?: boolean; isActiveChart?: boolean; totalChartsCount?: number; chartSlotIndex?: number; onToggleUTBotAlerts?: () => void; onSyncUTBotToBot?: () => void }>(({ chartId = 'main', exchange, symbol, interval, walls, currentPrice, showFootprint, showCVD, showVPVR, indicatorSettings, tradeEvent, botStatus, openOrders, activePosition = null, advancedMetrics, advancedMetricsData, selectedApiKeyId, predictionResult, activeMLModelId, onAIPredictClick, onChartBackgroundClick, showCrosshairAIPredict = false, bestBid = 0, bestAsk = 0, showBidAsk = false, isActiveChart = true, totalChartsCount = 1, chartSlotIndex = 0, onToggleUTBotAlerts, onSyncUTBotToBot }) => {
+const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: string; interval: string; walls: { price: number, type: 'buy' | 'sell', size?: number }[]; currentPrice: number; showFootprint: boolean; showCVD: boolean; showVPVR: boolean; indicatorSettings: IndicatorSettings; tradeEvent: any; botStatus: any; openOrders: OpenLimitOrder[]; activePosition?: FastPositionResponse | null; advancedMetrics: AdvancedMetricsSettings; advancedMetricsData: any; selectedApiKeyId: string | null; predictionResult: PredictionResult | null; activeMLModelId: string | null; onAIPredictClick?: (price: number) => void; onChartBackgroundClick?: (price: number) => void; showCrosshairAIPredict?: boolean; bestBid?: number; bestAsk?: number; showBidAsk?: boolean; showMarkPrice?: boolean; isActiveChart?: boolean; totalChartsCount?: number; chartSlotIndex?: number; onToggleUTBotAlerts?: () => void; onSyncUTBotToBot?: () => void }>(({ chartId = 'main', exchange, symbol, interval, walls, currentPrice, showFootprint, showCVD, showVPVR, indicatorSettings, tradeEvent, botStatus, openOrders, activePosition = null, advancedMetrics, advancedMetricsData, selectedApiKeyId, predictionResult, activeMLModelId, onAIPredictClick, onChartBackgroundClick, showCrosshairAIPredict = false, bestBid = 0, bestAsk = 0, showBidAsk = false, showMarkPrice = true, isActiveChart = true, totalChartsCount = 1, chartSlotIndex = 0, onToggleUTBotAlerts, onSyncUTBotToBot }) => {
     const { theme } = useTheme();
     const isDark = theme === 'dark';
     const chartContainerRef = useRef<HTMLDivElement>(null);
@@ -250,14 +253,30 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
     const liquidationLineRef = useRef<any>(null);
     const bidLineRef = useRef<any>(null);
     const askLineRef = useRef<any>(null);
-    const lastPriceLineRenderedRef = useRef<{ price: number; side: 'buy' | 'sell' | null }>({ price: 0, side: null });
+    const markLineRef = useRef<any>(null);
+    const spreadCorridorPrimitiveRef = useRef<SpreadCorridorPrimitive | null>(null);
+    const lastPriceLineRenderedRef = useRef<{ price: number; side: 'buy' | 'sell' | null; title: string; lineWidth: number }>({
+        price: 0,
+        side: null,
+        title: '',
+        lineWidth: 1,
+    });
     const lastBidPriceRenderedRef = useRef<number>(0);
     const lastAskPriceRenderedRef = useRef<number>(0);
+    const lastMarkPriceRenderedRef = useRef<number>(0);
+    const lastBidLabelVisibleRef = useRef<boolean>(true);
+    const lastAskLabelVisibleRef = useRef<boolean>(true);
+    const lastMarkLabelVisibleRef = useRef<boolean>(true);
     const hasLiveBboRef = useRef<boolean>(false);
+    const showBidAskRef = useRef<boolean>(showBidAsk);
+    showBidAskRef.current = showBidAsk;
     const bestBidPropRef = useRef<number>(bestBid);
     const bestAskPropRef = useRef<number>(bestAsk);
     bestBidPropRef.current = bestBid;
     bestAskPropRef.current = bestAsk;
+    const sweepTrackerRef = useRef<SweepMomentumTracker>(new SweepMomentumTracker());
+    const sweepDecayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const reconcileAxisLabelCollisionsRef = useRef<() => void>(() => {});
     const mlEntryLineRef = useRef<any>(null);
     const mlSlLineRef = useRef<any>(null);
     const mlTpLineRef = useRef<any>(null);
@@ -593,6 +612,20 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         const utBotPrimitive = new UTBotPrimitive(indicatorSettingsRef.current.showUTBot);
         candlestickSeries.attachPrimitive(utBotPrimitive);
         utBotPrimitiveRef.current = utBotPrimitive;
+        const spreadCorridorPrimitive = new SpreadCorridorPrimitive(showBidAskRef.current);
+        candlestickSeries.attachPrimitive(spreadCorridorPrimitive);
+        spreadCorridorPrimitiveRef.current = spreadCorridorPrimitive;
+        const handleScaleCollisionCheck = () => {
+            reconcileAxisLabelCollisionsRef.current();
+        };
+        const handlePriceAxisGesture = () => {
+            requestAnimationFrame(() => reconcileAxisLabelCollisionsRef.current());
+        };
+        const containerEl = chartContainerRef.current;
+        chart.timeScale().subscribeVisibleLogicalRangeChange(handleScaleCollisionCheck);
+        chart.timeScale().subscribeSizeChange(handleScaleCollisionCheck);
+        containerEl?.addEventListener('wheel', handlePriceAxisGesture, { passive: true });
+        containerEl?.addEventListener('pointerup', handlePriceAxisGesture, { passive: true });
         emaSeriesRef.current = emaSeries;
         bbUpperSeriesRef.current = bbUpperSeries;
         bbMiddleSeriesRef.current = bbMiddleSeries;
@@ -1061,8 +1094,22 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                 chartDragBracketRegistry.delete(registryKey);
             }
             resizeObserver.disconnect();
+            containerEl?.removeEventListener('wheel', handlePriceAxisGesture);
+            containerEl?.removeEventListener('pointerup', handlePriceAxisGesture);
+            try {
+                chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleScaleCollisionCheck);
+                chart.timeScale().unsubscribeSizeChange(handleScaleCollisionCheck);
+            } catch {}
+            if (sweepDecayTimerRef.current) {
+                clearTimeout(sweepDecayTimerRef.current);
+                sweepDecayTimerRef.current = null;
+            }
+            sweepTrackerRef.current.reset();
             if (utBotPrimitiveRef.current && candlestickSeriesRef.current) {
                 try { candlestickSeriesRef.current.detachPrimitive(utBotPrimitiveRef.current); } catch {}
+            }
+            if (spreadCorridorPrimitiveRef.current && candlestickSeriesRef.current) {
+                try { candlestickSeriesRef.current.detachPrimitive(spreadCorridorPrimitiveRef.current); } catch {}
             }
             chart.remove();
 
@@ -1073,9 +1120,15 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             liquidationLineRef.current = null;
             bidLineRef.current = null;
             askLineRef.current = null;
-            lastPriceLineRenderedRef.current = { price: 0, side: null };
+            markLineRef.current = null;
+            spreadCorridorPrimitiveRef.current = null;
+            lastPriceLineRenderedRef.current = { price: 0, side: null, title: '', lineWidth: 1 };
             lastBidPriceRenderedRef.current = 0;
             lastAskPriceRenderedRef.current = 0;
+            lastMarkPriceRenderedRef.current = 0;
+            lastBidLabelVisibleRef.current = true;
+            lastAskLabelVisibleRef.current = true;
+            lastMarkLabelVisibleRef.current = true;
             hasLiveBboRef.current = false;
             mlEntryLineRef.current = null;
             mlSlLineRef.current = null;
@@ -2334,29 +2387,96 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
     const lastTradeSideRef = useRef<'buy' | 'sell'>('buy');
     const lastTickPriceRef = useRef<number>(0);
 
-    const syncCurrentPriceLineRef = useRef<(price: number, side: 'buy' | 'sell') => void>(() => {});
-    const syncCurrentPriceLine = useCallback((price: number, side: 'buy' | 'sell') => {
+    // Smart Y-axis collision avoidance: keeps BID/ASK/MARK lines & spread corridor crisp
+    // while automatically collapsing overlapping right-axis pills when zoomed out or on tight spreads.
+    const reconcileAxisLabelCollisions = useCallback(() => {
+        const series = candlestickSeriesRef.current;
+        if (!series) return;
+
+        const lastPrice = lastPriceLineRenderedRef.current.price;
+        const bidPrice = lastBidPriceRenderedRef.current;
+        const askPrice = lastAskPriceRenderedRef.current;
+        const markPrice = lastMarkPriceRenderedRef.current;
+
+        const yLast = lastPrice > 0 ? series.priceToCoordinate(lastPrice) : null;
+        const yBid = bidPrice > 0 && bidLineRef.current ? series.priceToCoordinate(bidPrice) : null;
+        const yAsk = askPrice > 0 && askLineRef.current ? series.priceToCoordinate(askPrice) : null;
+        const yMark = markPrice > 0 && markLineRef.current ? series.priceToCoordinate(markPrice) : null;
+
+        const MIN_LABEL_GAP_PX = 16;
+        const MIN_SPREAD_GAP_PX = 18;
+
+        const spreadTooTight = yBid !== null && yAsk !== null && Math.abs(yBid - yAsk) < MIN_SPREAD_GAP_PX;
+        const bidHitsLast = yBid !== null && yLast !== null && Math.abs(yBid - yLast) < MIN_LABEL_GAP_PX;
+        const askHitsLast = yAsk !== null && yLast !== null && Math.abs(yAsk - yLast) < MIN_LABEL_GAP_PX;
+
+        const nextBidLabelVisible = !(bidHitsLast || spreadTooTight);
+        const nextAskLabelVisible = !(askHitsLast || spreadTooTight);
+
+        if (bidLineRef.current && lastBidLabelVisibleRef.current !== nextBidLabelVisible) {
+            try {
+                bidLineRef.current.applyOptions({ axisLabelVisible: nextBidLabelVisible });
+                lastBidLabelVisibleRef.current = nextBidLabelVisible;
+            } catch {}
+        }
+
+        if (askLineRef.current && lastAskLabelVisibleRef.current !== nextAskLabelVisible) {
+            try {
+                askLineRef.current.applyOptions({ axisLabelVisible: nextAskLabelVisible });
+                lastAskLabelVisibleRef.current = nextAskLabelVisible;
+            } catch {}
+        }
+
+        if (markLineRef.current && yMark !== null) {
+            const markHitsLast = yLast !== null && Math.abs(yMark - yLast) < MIN_LABEL_GAP_PX;
+            const markHitsBid = nextBidLabelVisible && yBid !== null && Math.abs(yMark - yBid) < MIN_LABEL_GAP_PX;
+            const markHitsAsk = nextAskLabelVisible && yAsk !== null && Math.abs(yMark - yAsk) < MIN_LABEL_GAP_PX;
+            const nextMarkLabelVisible = !(markHitsLast || markHitsBid || markHitsAsk);
+            if (lastMarkLabelVisibleRef.current !== nextMarkLabelVisible) {
+                try {
+                    markLineRef.current.applyOptions({ axisLabelVisible: nextMarkLabelVisible });
+                    lastMarkLabelVisibleRef.current = nextMarkLabelVisible;
+                } catch {}
+            }
+        }
+    }, []);
+    reconcileAxisLabelCollisionsRef.current = reconcileAxisLabelCollisions;
+
+    const syncCurrentPriceLineRef = useRef<(price: number, side: 'buy' | 'sell', sweepLabel?: string, isSweep?: boolean) => void>(() => {});
+    const syncCurrentPriceLine = useCallback((
+        price: number,
+        side: 'buy' | 'sell',
+        sweepLabel?: string,
+        isSweep: boolean = false
+    ) => {
         const series = candlestickSeriesRef.current;
         if (!series || !Number.isFinite(price) || price <= 0) return;
 
-        const prev = lastPriceLineRenderedRef.current;
-        if (currentPriceLineRef.current && prev.price === price && prev.side === side) {
-            return;
-        }
-
         const isBuy = side === 'buy';
         const lineColor = isBuy ? '#16a34a' : '#dc2626';
-        const arrow = isBuy ? '▲' : '▼';
+        const title = isSweep && sweepLabel ? sweepLabel : (isBuy ? '▲' : '▼');
+        const lineWidth = isSweep ? 2 : 1;
+
+        const prev = lastPriceLineRenderedRef.current;
+        if (
+            currentPriceLineRef.current &&
+            prev.price === price &&
+            prev.side === side &&
+            prev.title === title &&
+            prev.lineWidth === lineWidth
+        ) {
+            return;
+        }
 
         try {
             if (!currentPriceLineRef.current) {
                 currentPriceLineRef.current = series.createPriceLine({
                     price,
                     color: lineColor,
-                    lineWidth: 1,
+                    lineWidth: lineWidth as any,
                     lineStyle: 1, // Dotted
                     axisLabelVisible: true,
-                    title: arrow,
+                    title,
                     axisLabelColor: lineColor,
                     axisLabelTextColor: '#ffffff',
                 });
@@ -2364,16 +2484,18 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                 currentPriceLineRef.current.applyOptions({
                     price,
                     color: lineColor,
+                    lineWidth: lineWidth as any,
                     axisLabelColor: lineColor,
-                    title: arrow,
+                    title,
                 });
             }
-            lastPriceLineRenderedRef.current = { price, side };
+            lastPriceLineRenderedRef.current = { price, side, title, lineWidth };
+            reconcileAxisLabelCollisions();
         } catch {
             currentPriceLineRef.current = null;
-            lastPriceLineRenderedRef.current = { price: 0, side: null };
+            lastPriceLineRenderedRef.current = { price: 0, side: null, title: '', lineWidth: 1 };
         }
-    }, []);
+    }, [reconcileAxisLabelCollisions]);
     syncCurrentPriceLineRef.current = syncCurrentPriceLine;
 
     // Light-Speed Realtime Candle & Price Line Update (Synchronous 0ms execution)
@@ -2391,9 +2513,33 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         }
         lastTickPriceRef.current = livePrice;
 
+        // Detect aggressive market sweep bursts on real trades and schedule smooth decay back to 1px line
+        const tradeVolRaw = trade?.volume || 0;
+        const activePulse = tradeVolRaw > 0
+            ? sweepTrackerRef.current.record(livePrice, tradeVolRaw, lastTradeSideRef.current)
+            : sweepTrackerRef.current.getActive();
+
+        const isSweepActive = Boolean(activePulse?.active);
+        const displaySide = isSweepActive && activePulse ? activePulse.side : lastTradeSideRef.current;
+        const sweepLabel = isSweepActive && activePulse ? activePulse.label : undefined;
+
+        if (isSweepActive && activePulse) {
+            if (sweepDecayTimerRef.current) {
+                clearTimeout(sweepDecayTimerRef.current);
+            }
+            const decayDelay = Math.max(120, activePulse.expiresAt - Date.now() + 25);
+            sweepDecayTimerRef.current = setTimeout(() => {
+                sweepDecayTimerRef.current = null;
+                const latestPx = lastCandleRef.current?.close || lastTickPriceRef.current;
+                if (latestPx > 0) {
+                    syncCurrentPriceLineRef.current(latestPx, lastTradeSideRef.current, undefined, false);
+                }
+            }, decayDelay);
+        }
+
         // Even while REST klines are still loading, keep the horizontal price line live and in lockstep with BBO
         if (!lastCandleRef.current) {
-            syncCurrentPriceLine(livePrice, lastTradeSideRef.current);
+            syncCurrentPriceLine(livePrice, displaySide, sweepLabel, isSweepActive);
             return;
         }
 
@@ -2405,7 +2551,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
 
         const tradeHigh = trade?.high !== undefined ? trade.high : livePrice;
         const tradeLow = trade?.low !== undefined ? trade.low : livePrice;
-        const tradeVol = trade?.volume || 0;
+        const tradeVol = tradeVolRaw;
         const rawTimestamp = (trade && trade.timestamp) ? trade.timestamp : Date.now();
         const eventTimestamp = rawTimestamp < 10000000000 ? rawTimestamp * 1000 : rawTimestamp;
 
@@ -2482,7 +2628,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             }
 
             // Sync (or create on-the-fly) horizontal live price line with exact candle close at zero lag
-            syncCurrentPriceLine(updatedCandle.close, lastTradeSideRef.current);
+            syncCurrentPriceLine(updatedCandle.close, displaySide, sweepLabel, isSweepActive);
         } catch {
             // Safe guard against unmount
         }
@@ -2497,6 +2643,11 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         lastDirectTickTimestampRef.current = 0;
         lastProcessedCandleKeyRef.current = '';
         lastSessionsKeyRef.current = '';
+        sweepTrackerRef.current.reset();
+        if (sweepDecayTimerRef.current) {
+            clearTimeout(sweepDecayTimerRef.current);
+            sweepDecayTimerRef.current = null;
+        }
     }, [symbol, interval, exchange]);
 
     // Direct canvas live trade tick subscription (synced frame cadence with BBO on mobile/tablet, 0ms on PC)
@@ -3884,25 +4035,40 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         }
     }, []);
 
-    // Best Bid / Best Ask lines — driven continuously by subscribeLiveBbo (same unified frame cadence as live trade ticks).
-    // Intentionally excludes bestBid/bestAsk/currentPrice from deps so throttled React flushes NEVER tear down
-    // the BBO subscription or overwrite live lines with stale 200ms-old React props.
+    // Best Bid / Best Ask lines + Spread Corridor Primitive — driven continuously by subscribeLiveBbo
+    // (same unified rAF frame cadence as live trade ticks). Intentionally excludes bestBid/bestAsk/currentPrice
+    // from deps so throttled React flushes NEVER tear down BBO or overwrite live lines with stale props.
     useEffect(() => {
         if (!candlestickSeriesRef.current) return;
 
         if (!showBidAsk) {
             hasLiveBboRef.current = false;
+            lastBidLabelVisibleRef.current = true;
+            lastAskLabelVisibleRef.current = true;
+            spreadCorridorPrimitiveRef.current?.setVisible(false);
+            spreadCorridorPrimitiveRef.current?.clear();
             syncBidAskLine(bidLineRef, lastBidPriceRenderedRef, 0, '#16a34a', 'BID', false);
             syncBidAskLine(askLineRef, lastAskPriceRenderedRef, 0, '#dc2626', 'ASK', false);
+            reconcileAxisLabelCollisions();
             return;
         }
 
+        spreadCorridorPrimitiveRef.current?.setVisible(true);
         hasLiveBboRef.current = false;
+        lastBidLabelVisibleRef.current = true;
+        lastAskLabelVisibleRef.current = true;
         const cachedBbo = getLatestLiveBbo(symbol, exchange);
         if (cachedBbo && cachedBbo.bestBid > 0 && cachedBbo.bestAsk > 0) {
             hasLiveBboRef.current = true;
             syncBidAskLine(bidLineRef, lastBidPriceRenderedRef, cachedBbo.bestBid, '#16a34a', 'BID', true);
             syncBidAskLine(askLineRef, lastAskPriceRenderedRef, cachedBbo.bestAsk, '#dc2626', 'ASK', true);
+            spreadCorridorPrimitiveRef.current?.updateSpread(
+                cachedBbo.bestBid,
+                cachedBbo.bestAsk,
+                cachedBbo.bidQty || 0,
+                cachedBbo.askQty || 0
+            );
+            reconcileAxisLabelCollisions();
         } else {
             if (bestBidPropRef.current > 0) {
                 syncBidAskLine(bidLineRef, lastBidPriceRenderedRef, bestBidPropRef.current, '#16a34a', 'BID', true);
@@ -3910,15 +4076,21 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             if (bestAskPropRef.current > 0) {
                 syncBidAskLine(askLineRef, lastAskPriceRenderedRef, bestAskPropRef.current, '#dc2626', 'ASK', true);
             }
+            if (bestBidPropRef.current > 0 && bestAskPropRef.current >= bestBidPropRef.current) {
+                spreadCorridorPrimitiveRef.current?.updateSpread(bestBidPropRef.current, bestAskPropRef.current, 0, 0);
+            }
+            reconcileAxisLabelCollisions();
         }
 
-        const unsubBbo = subscribeLiveBbo(symbol, exchange, ({ bestBid: liveB, bestAsk: liveA }) => {
+        const unsubBbo = subscribeLiveBbo(symbol, exchange, ({ bestBid: liveB, bestAsk: liveA, bidQty, askQty }) => {
             hasLiveBboRef.current = true;
             syncBidAskLine(bidLineRef, lastBidPriceRenderedRef, liveB, '#16a34a', 'BID', true);
             syncBidAskLine(askLineRef, lastAskPriceRenderedRef, liveA, '#dc2626', 'ASK', true);
+            spreadCorridorPrimitiveRef.current?.updateSpread(liveB, liveA, bidQty || 0, askQty || 0);
+            reconcileAxisLabelCollisions();
         });
         return () => unsubBbo();
-    }, [showBidAsk, symbol, exchange, interval, candlesReadyTick, syncBidAskLine]);
+    }, [showBidAsk, symbol, exchange, interval, candlesReadyTick, syncBidAskLine, reconcileAxisLabelCollisions]);
 
     // One-time initial seed from React bestBid/bestAsk props ONLY while waiting for the very first live WS BBO frame
     useEffect(() => {
@@ -3929,7 +4101,72 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         if (bestAsk > 0) {
             syncBidAskLine(askLineRef, lastAskPriceRenderedRef, bestAsk, '#dc2626', 'ASK', true);
         }
-    }, [showBidAsk, bestBid, bestAsk, syncBidAskLine]);
+        if (bestBid > 0 && bestAsk >= bestBid) {
+            spreadCorridorPrimitiveRef.current?.updateSpread(bestBid, bestAsk, 0, 0);
+        }
+        reconcileAxisLabelCollisions();
+    }, [showBidAsk, bestBid, bestAsk, syncBidAskLine, reconcileAxisLabelCollisions]);
+
+    // Futures Mark Price line (purple dashed, driven by @markPrice@1s in shared liveMarketHub)
+    useEffect(() => {
+        const series = candlestickSeriesRef.current;
+        if (!series) return;
+
+        const isFutures = symbol.includes(':');
+        const removeMarkLine = () => {
+            if (markLineRef.current) {
+                try { series.removePriceLine(markLineRef.current); } catch {}
+                markLineRef.current = null;
+            }
+            lastMarkPriceRenderedRef.current = 0;
+            lastMarkLabelVisibleRef.current = true;
+        };
+
+        if (!showMarkPrice || !isFutures) {
+            removeMarkLine();
+            return;
+        }
+
+        const applyMark = (markPrice: number) => {
+            if (!candlestickSeriesRef.current || !Number.isFinite(markPrice) || markPrice <= 0) return;
+            try {
+                if (!markLineRef.current) {
+                    markLineRef.current = candlestickSeriesRef.current.createPriceLine({
+                        price: markPrice,
+                        color: '#a855f7',
+                        lineWidth: 1,
+                        lineStyle: LineStyle.LargeDashed,
+                        axisLabelVisible: true,
+                        title: 'MARK',
+                        axisLabelColor: '#7e22ce',
+                        axisLabelTextColor: '#ffffff',
+                    });
+                    lastMarkPriceRenderedRef.current = markPrice;
+                    lastMarkLabelVisibleRef.current = true;
+                } else if (lastMarkPriceRenderedRef.current !== markPrice) {
+                    markLineRef.current.applyOptions({ price: markPrice });
+                    lastMarkPriceRenderedRef.current = markPrice;
+                }
+                reconcileAxisLabelCollisions();
+            } catch {
+                markLineRef.current = null;
+                lastMarkPriceRenderedRef.current = 0;
+            }
+        };
+
+        const cachedMark = getLatestMarkPrice(symbol, exchange);
+        if (cachedMark && cachedMark.markPrice > 0) {
+            applyMark(cachedMark.markPrice);
+        }
+
+        const unsubMark = subscribeLiveMarkPrice(symbol, exchange, ({ markPrice }) => {
+            applyMark(markPrice);
+        });
+
+        return () => {
+            unsubMark();
+        };
+    }, [showMarkPrice, symbol, exchange, interval, candlesReadyTick, reconcileAxisLabelCollisions]);
 
     // Update Trade & Absorption Markers
     useEffect(() => {
@@ -4500,6 +4737,14 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                             </span>
                         </div>
                     )}
+                    <LiveFeedHealthBadge
+                        symbol={symbol}
+                        exchange={exchange}
+                        showBidAsk={showBidAsk}
+                        showMarkPrice={showMarkPrice}
+                        compact={deviceProfile.isPhoneMobileUI}
+                        isThermalGuard={isThermalGuard}
+                    />
                     <CandleCountdown interval={interval} lastCandleRef={lastCandleRef} compact={deviceProfile.isPhoneMobileUI} />
                 </div>
             </div>
@@ -5260,6 +5505,7 @@ const OrderFlowChartPanel = React.memo<{
     parentPosition?: FastPositionResponse | null;
     showCrosshairAIPredict?: boolean;
     showBidAsk?: boolean;
+    showMarkPrice?: boolean;
     renderFloatingTools?: React.ReactNode;
     onFullscreenChange?: (isFullscreen: boolean) => void;
     onWallsChange?: (chartId: string, walls: OrderbookWall[]) => void;
@@ -5298,6 +5544,7 @@ const OrderFlowChartPanel = React.memo<{
     parentPosition,
     showCrosshairAIPredict = false,
     showBidAsk = false,
+    showMarkPrice = true,
     renderFloatingTools,
     onFullscreenChange,
     onWallsChange
@@ -5555,7 +5802,7 @@ const OrderFlowChartPanel = React.memo<{
                 ) : (
                     <OrderFlowChart 
                         chartId={config.id}
-                        exchange={config.exchange} symbol={config.symbol} interval={config.interval} walls={filteredWalls} currentPrice={currentPrice} showFootprint={showFootprint} showCVD={showCVD} showVPVR={showVPVR} indicatorSettings={indicatorSettings} tradeEvent={tradeEvent} botStatus={botStatus} openOrders={openOrders} activePosition={activePosition} advancedMetrics={advancedMetrics} advancedMetricsData={advancedMetricsData} selectedApiKeyId={selectedApiKeyId} predictionResult={predictionResult} activeMLModelId={activeMLModelId} showCrosshairAIPredict={showCrosshairAIPredict} bestBid={bestBid} bestAsk={bestAsk} showBidAsk={showBidAsk}
+                        exchange={config.exchange} symbol={config.symbol} interval={config.interval} walls={filteredWalls} currentPrice={currentPrice} showFootprint={showFootprint} showCVD={showCVD} showVPVR={showVPVR} indicatorSettings={indicatorSettings} tradeEvent={tradeEvent} botStatus={botStatus} openOrders={openOrders} activePosition={activePosition} advancedMetrics={advancedMetrics} advancedMetricsData={advancedMetricsData} selectedApiKeyId={selectedApiKeyId} predictionResult={predictionResult} activeMLModelId={activeMLModelId} showCrosshairAIPredict={showCrosshairAIPredict} bestBid={bestBid} bestAsk={bestAsk} showBidAsk={showBidAsk} showMarkPrice={showMarkPrice}
                         isActiveChart={isActive || allChartsCount === 1}
                         totalChartsCount={allChartsCount}
                         chartSlotIndex={chartSlotIndex}
@@ -5683,6 +5930,23 @@ const OrderFlowHeatmap: React.FC = () => {
         setShowBidAsk(prev => {
             const next = !prev;
             try { localStorage.setItem('orderflow_show_bid_ask', JSON.stringify(next)); } catch {}
+            return next;
+        });
+    };
+
+    const [showMarkPrice, setShowMarkPrice] = useState<boolean>(() => {
+        try {
+            const saved = localStorage.getItem('orderflow_show_mark_price');
+            return saved !== null ? JSON.parse(saved) : true;
+        } catch {
+            return true;
+        }
+    });
+
+    const handleToggleMarkPrice = () => {
+        setShowMarkPrice(prev => {
+            const next = !prev;
+            try { localStorage.setItem('orderflow_show_mark_price', JSON.stringify(next)); } catch {}
             return next;
         });
     };
@@ -6835,6 +7099,7 @@ const OrderFlowHeatmap: React.FC = () => {
                     showCVD={Boolean(activeChartSettings.showCVD)}
                     showVPVR={Boolean(activeChartSettings.showHeatmap)}
                     showBidAsk={showBidAsk}
+                    showMarkPrice={showMarkPrice}
                     onToggleFootprint={() =>
                         handleActiveChartSettingsChange({
                             ...activeChartSettings,
@@ -6854,6 +7119,7 @@ const OrderFlowHeatmap: React.FC = () => {
                         })
                     }
                     onToggleBidAsk={handleToggleBidAsk}
+                    onToggleMarkPrice={allCharts.some(c => c.symbol.includes(':')) ? handleToggleMarkPrice : undefined}
                 />
             </div>
 
@@ -6950,6 +7216,7 @@ const OrderFlowHeatmap: React.FC = () => {
                                 parentPosition={activePosition}
                                 showCrosshairAIPredict={showCrosshairAIPredict}
                                 showBidAsk={showBidAsk}
+                                showMarkPrice={showMarkPrice}
                                 renderFloatingTools={hasFullscreenChart ? floatingToolsNode : undefined}
                                 onFullscreenChange={setHasFullscreenChart}
                                 onWallsChange={handleChartWallsChange}

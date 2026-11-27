@@ -24,10 +24,12 @@ interface HeatmapSubNavProps {
     showCVD?: boolean;
     showVPVR?: boolean;
     showBidAsk?: boolean;
+    showMarkPrice?: boolean;
     onToggleFootprint?: () => void;
     onToggleCVD?: () => void;
     onToggleVPVR?: () => void;
     onToggleBidAsk?: () => void;
+    onToggleMarkPrice?: () => void;
 }
 
 export const HeatmapSubNav: React.FC<HeatmapSubNavProps> = ({
@@ -47,10 +49,12 @@ export const HeatmapSubNav: React.FC<HeatmapSubNavProps> = ({
     showCVD = false,
     showVPVR = false,
     showBidAsk = false,
+    showMarkPrice = false,
     onToggleFootprint,
     onToggleCVD,
     onToggleVPVR,
     onToggleBidAsk,
+    onToggleMarkPrice,
 }) => {
     return (
         <div className="flex flex-wrap items-center justify-between bg-slate-50/90 dark:bg-[#050811] border-b border-slate-200 dark:border-white/10 px-3 py-1.5 gap-2">
@@ -114,7 +118,7 @@ export const HeatmapSubNav: React.FC<HeatmapSubNavProps> = ({
                                     ? 'bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border border-indigo-500/40'
                                     : 'text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white'
                             }`}
-                            title="Toggle Live Best Bid / Best Ask Spread Lines"
+                            title="Toggle Live Best Bid / Best Ask Spread Lines & Corridor"
                         >
                             <span
                                 className={`w-1.5 h-1.5 rounded-full ${
@@ -122,6 +126,26 @@ export const HeatmapSubNav: React.FC<HeatmapSubNavProps> = ({
                                 }`}
                             />
                             <span>BBO Lines</span>
+                        </button>
+                    )}
+
+                    {onToggleMarkPrice && (
+                        <button
+                            type="button"
+                            onClick={onToggleMarkPrice}
+                            className={`px-2 py-1 rounded-lg text-[10.5px] font-mono font-bold flex items-center gap-1 transition-colors cursor-pointer ${
+                                showMarkPrice
+                                    ? 'bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-500/40'
+                                    : 'text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white'
+                            }`}
+                            title="Toggle Futures Mark Price Line & Last–Mark Basis"
+                        >
+                            <span
+                                className={`w-1.5 h-1.5 rounded-full ${
+                                    showMarkPrice ? 'bg-purple-400' : 'bg-slate-400'
+                                }`}
+                            />
+                            <span>Mark</span>
                         </button>
                     )}
                 </div>

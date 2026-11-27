@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useMemo } from 'react';
+import React, { useEffect, useRef, useMemo, useState, useCallback } from 'react';
 import {
     createChart,
     IChartApi,
@@ -7,8 +7,10 @@ import {
     HistogramSeries,
     LineStyle,
 } from 'lightweight-charts';
+import { Link2, Unlink2, Maximize2 } from 'lucide-react';
 import { useTheme } from '@/context/ThemeContext';
 import { formatCompactOrderflowNumber } from '../../../utils/orderflowMath';
+import { attachChartPaneSync, ChartPaneSyncController } from '../../../utils/chartPaneSync';
 
 export interface CVDDataPoint {
     time: number;
@@ -29,21 +31,30 @@ interface CVDChartProps {
     mainChart: IChartApi | null;
     data: CVDDataPoint[];
     meta?: CVDMeta | null;
+    loading?: boolean;
+    interval?: string;
 }
 
-export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data, meta }) => {
+export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data, meta, loading = false, interval = '1m' }) => {
     const { theme } = useTheme();
     const isDark = theme === 'dark';
+
+    const [isSyncLocked, setIsSyncLocked] = useState<boolean>(true);
+    const isSyncLockedRef = useRef<boolean>(true);
+    isSyncLockedRef.current = isSyncLocked;
 
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<IChartApi | null>(null);
     const cvdSeriesRef = useRef<ISeriesApi<'Baseline'> | null>(null);
     const deltaSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+    const syncControllerRef = useRef<ChartPaneSyncController | null>(null);
 
-    const isSyncingRef = useRef(false);
+    const isMutatingDataRef = useRef<boolean>(false);
+    const mutateRafRef = useRef<number | null>(null);
     const lastRenderedCountRef = useRef<number>(0);
     const lastRenderedFirstTimeRef = useRef<number>(0);
     const lastRenderedLastTimeRef = useRef<number>(0);
+    const anchorTimesRef = useRef<number[]>([]);
     const valueByTimeRef = useRef<Map<number, number>>(new Map());
 
     // Create chart once
@@ -64,11 +75,14 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data, meta }) => 
             timeScale: {
                 borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.12)',
                 visible: false,
+                timeVisible: true,
+                secondsVisible: false,
             },
             rightPriceScale: {
                 borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.12)',
                 autoScale: true,
-                scaleMargins: { top: 0.18, bottom: 0.12 },
+                minimumWidth: 74,
+                scaleMargins: { top: 0.22, bottom: 0.12 },
             },
             crosshair: {
                 mode: 1,
@@ -93,7 +107,7 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data, meta }) => 
             priceLineVisible: false,
         });
         chart.priceScale('delta_overlay').applyOptions({
-            scaleMargins: { top: 0.55, bottom: 0.02 },
+            scaleMargins: { top: 0.58, bottom: 0.02 },
             visible: false,
         });
 
@@ -134,12 +148,20 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data, meta }) => 
             if (width > 0 && height > 0) {
                 try {
                     chart.applyOptions({ width, height });
+                    syncControllerRef.current?.syncPriceScales();
+                    if (isSyncLockedRef.current) {
+                        syncControllerRef.current?.syncMainToSub();
+                    }
                 } catch {}
             }
         });
         resizeObserver.observe(container);
 
         return () => {
+            if (mutateRafRef.current !== null) {
+                cancelAnimationFrame(mutateRafRef.current);
+                mutateRafRef.current = null;
+            }
             resizeObserver.disconnect();
             chartRef.current = null;
             cvdSeriesRef.current = null;
@@ -150,7 +172,7 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data, meta }) => 
         };
     }, []);
 
-    // Dynamically sync Light/Dark Theme without recreating the chart
+    // Dynamically sync Light/Dark Theme & Time Axis Visibility without recreating the chart
     useEffect(() => {
         if (!chartRef.current) return;
         chartRef.current.applyOptions({
@@ -164,29 +186,65 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data, meta }) => 
             },
             timeScale: {
                 borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.12)',
+                visible: !isSyncLocked,
+                timeVisible: true,
+                secondsVisible: Boolean(interval && interval.endsWith('s')),
             },
             rightPriceScale: {
                 borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.12)',
             },
         });
-    }, [isDark]);
+    }, [isDark, isSyncLocked, interval]);
 
-    // Sync Data with Incremental `.update()` on Live Ticks (Zero Full-Chart Flicker!)
+    // Sync Data with Incremental `.update()` on Live Ticks (Zero Full-Chart Flicker & Zero Main-Chart Zoom Disturbance!)
     useEffect(() => {
         const cvdSeries = cvdSeriesRef.current;
         const deltaSeries = deltaSeriesRef.current;
         if (!cvdSeries || !deltaSeries) return;
 
+        const beginDataMutation = () => {
+            isMutatingDataRef.current = true;
+            if (mutateRafRef.current !== null) cancelAnimationFrame(mutateRafRef.current);
+        };
+
+        const endDataMutationNextFrame = () => {
+            mutateRafRef.current = requestAnimationFrame(() => {
+                isMutatingDataRef.current = false;
+                mutateRafRef.current = null;
+                if (isSyncLockedRef.current) {
+                    syncControllerRef.current?.syncMainToSub();
+                }
+            });
+        };
+
         if (!data || data.length === 0) {
+            beginDataMutation();
             try {
                 cvdSeries.setData([]);
                 deltaSeries.setData([]);
+                valueByTimeRef.current.clear();
                 lastRenderedCountRef.current = 0;
                 lastRenderedFirstTimeRef.current = 0;
                 lastRenderedLastTimeRef.current = 0;
+                anchorTimesRef.current = [];
             } catch {}
+            endDataMutationNextFrame();
             return;
         }
+
+        const buildAnchorTimes = (pts: CVDDataPoint[]): number[] => {
+            const n = pts.length;
+            if (n === 0) return [];
+            const idxs = [n - 1, n - 2, n - 3, Math.floor(n / 2), 0];
+            const out: number[] = [];
+            for (const i of idxs) {
+                if (i >= 0 && i < n) {
+                    const t = pts[i].time;
+                    if (Number.isFinite(t) && !out.includes(t)) out.push(t);
+                }
+            }
+            return out;
+        };
 
         const firstTime = data[0].time;
         const lastPt = data[data.length - 1];
@@ -217,6 +275,7 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data, meta }) => 
                 });
                 lastRenderedCountRef.current = data.length;
                 lastRenderedLastTimeRef.current = lastPt.time;
+                anchorTimesRef.current = buildAnchorTimes(data);
                 return;
             } catch {
                 // Fall through to full setData on any edge mismatch
@@ -250,63 +309,43 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data, meta }) => 
             };
         });
 
+        beginDataMutation();
         try {
             cvdSeries.setData(cvdPoints);
             deltaSeries.setData(deltaPoints);
             lastRenderedCountRef.current = sorted.length;
             lastRenderedFirstTimeRef.current = sorted[0].time;
             lastRenderedLastTimeRef.current = sorted[sorted.length - 1].time;
+            anchorTimesRef.current = buildAnchorTimes(sorted);
 
-            if (mainChart && chartRef.current) {
-                const timeRange = mainChart.timeScale().getVisibleRange();
-                if (timeRange) {
-                    isSyncingRef.current = true;
-                    try {
-                        chartRef.current.timeScale().setVisibleRange(timeRange);
-                    } catch {
-                        const logicalRange = mainChart.timeScale().getVisibleLogicalRange();
-                        if (logicalRange) chartRef.current.timeScale().setVisibleLogicalRange(logicalRange);
-                    }
-                    isSyncingRef.current = false;
-                }
+            // Immediately align CVD logical viewport to Main Chart WITHOUT ever touching Main Chart's zoom/pan
+            if (isSyncLockedRef.current) {
+                syncControllerRef.current?.syncMainToSub();
             }
         } catch (err) {
             console.error('Failed to set CVD Chart data:', err);
+        } finally {
+            endDataMutationNextFrame();
         }
     }, [data, mainChart]);
 
-    // 2-Way Timestamp-Based Time-Scale & Crosshair Sync (never drifts off-screen even if bar counts differ!)
+    // Timestamp-Calibrated Logical-Range & Crosshair Sync (Zero Auto-Zoom, Zero Whitespace Clamping, Zero Ping-Pong!)
     useEffect(() => {
-        if (!mainChart || !chartRef.current) return;
+        if (!mainChart || !chartRef.current || !chartContainerRef.current) return;
 
         const cvdChart = chartRef.current;
-        const mainTimeScale = mainChart.timeScale();
-        const cvdTimeScale = cvdChart.timeScale();
-
-        const syncMainToCVD = () => {
-            if (isSyncingRef.current) return;
-            const timeRange = mainTimeScale.getVisibleRange();
-            if (!timeRange) return;
-            isSyncingRef.current = true;
-            try {
-                cvdTimeScale.setVisibleRange(timeRange);
-            } catch {}
-            isSyncingRef.current = false;
-        };
-
-        const syncCVDToMain = () => {
-            if (isSyncingRef.current) return;
-            const timeRange = cvdTimeScale.getVisibleRange();
-            if (!timeRange) return;
-            isSyncingRef.current = true;
-            try {
-                mainTimeScale.setVisibleRange(timeRange);
-            } catch {}
-            isSyncingRef.current = false;
-        };
+        const controller = attachChartPaneSync({
+            mainChart,
+            subChart: cvdChart,
+            subContainer: chartContainerRef.current,
+            getSubAnchorTimes: () => anchorTimesRef.current,
+            isSubMutating: () => isMutatingDataRef.current,
+            initialLocked: isSyncLockedRef.current,
+        });
+        syncControllerRef.current = controller;
 
         const syncCrosshairMainToCVD = (param: any) => {
-            if (!param.point || !param.time || !cvdSeriesRef.current) {
+            if (!isSyncLockedRef.current || !param.point || !param.time || !cvdSeriesRef.current) {
                 try {
                     cvdChart.clearCrosshairPosition();
                 } catch {}
@@ -326,20 +365,30 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data, meta }) => 
             } catch {}
         };
 
-        mainTimeScale.subscribeVisibleTimeRangeChange(syncMainToCVD);
-        cvdTimeScale.subscribeVisibleTimeRangeChange(syncCVDToMain);
         mainChart.subscribeCrosshairMove(syncCrosshairMainToCVD);
 
-        syncMainToCVD();
-
         return () => {
+            syncControllerRef.current = null;
+            controller.destroy();
             try {
-                mainTimeScale.unsubscribeVisibleTimeRangeChange(syncMainToCVD);
-                cvdTimeScale.unsubscribeVisibleTimeRangeChange(syncCVDToMain);
                 mainChart.unsubscribeCrosshairMove(syncCrosshairMainToCVD);
             } catch {}
         };
     }, [mainChart]);
+
+    const handleToggleSyncLock = useCallback(() => {
+        setIsSyncLocked((prev) => {
+            const next = !prev;
+            syncControllerRef.current?.setLocked(next);
+            return next;
+        });
+    }, []);
+
+    const handleFitCvd = useCallback(() => {
+        try {
+            chartRef.current?.timeScale().fitContent();
+        } catch {}
+    }, []);
 
     // Live HUD Stats (recomputes buyPct/sellPct dynamically as live ticks arrive!)
     const hudStats = useMemo(() => {
@@ -376,47 +425,86 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data, meta }) => 
             <div ref={chartContainerRef} className="w-full h-full absolute inset-0" />
 
             {/* Institutional Live CVD HUD Overlay */}
-            <div className="absolute top-1.5 left-2 z-10 pointer-events-none flex flex-wrap items-center gap-2 px-2 py-0.5 rounded-lg bg-white/90 dark:bg-[#070b14]/85 border border-slate-200 dark:border-white/10 text-[10px] font-mono">
-                <span className="flex items-center gap-1 font-black tracking-wider text-slate-700 dark:text-slate-200">
-                    <span className={`w-1.5 h-1.5 rounded-full ${meta?.isTrueDelta ? 'bg-emerald-400' : 'bg-cyan-400'}`} />
-                    {meta?.isTrueDelta ? 'TRUE CVD' : 'CVD'}
-                </span>
+            <div className="absolute top-1.5 left-2 z-10 pointer-events-none flex flex-wrap items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-2 px-2 py-0.5 rounded-lg bg-white/90 dark:bg-[#070b14]/90 border border-slate-200 dark:border-white/10 text-[10px] font-mono shadow-sm">
+                    <span className="flex items-center gap-1 font-black tracking-wider text-slate-700 dark:text-slate-200">
+                        <span className={`w-1.5 h-1.5 rounded-full ${meta?.isTrueDelta ? 'bg-emerald-400' : 'bg-cyan-400'}`} />
+                        {meta?.isTrueDelta ? 'TRUE CVD' : 'CVD'}
+                    </span>
 
-                <span className={`font-black ${isPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                    {formatCompactOrderflowNumber(hudStats.sessionCvd, true)}
-                </span>
+                    {loading && data.length === 0 ? (
+                        <span className="text-slate-400 dark:text-slate-400 animate-pulse">Loading...</span>
+                    ) : (
+                        <>
+                            <span className={`font-black ${isPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                                {formatCompactOrderflowNumber(hudStats.sessionCvd, true)}
+                            </span>
 
-                <span className="text-slate-300 dark:text-white/15">|</span>
+                            <span className="text-slate-300 dark:text-white/15">|</span>
 
-                <span className="text-slate-500 dark:text-slate-400">
-                    Δ Bar:{' '}
-                    <strong className={isDeltaPos ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
-                        {formatCompactOrderflowNumber(hudStats.barDelta, true)}
-                    </strong>
-                </span>
+                            <span className="text-slate-500 dark:text-slate-400">
+                                Δ Bar:{' '}
+                                <strong className={isDeltaPos ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                                    {formatCompactOrderflowNumber(hudStats.barDelta, true)}
+                                </strong>
+                            </span>
 
-                {/* Buy vs Sell Tug-of-War Micro Bar */}
-                <div className="hidden sm:flex items-center gap-1.5">
-                    <span className="text-emerald-600 dark:text-emerald-400 font-bold">{hudStats.buyPct.toFixed(0)}%</span>
-                    <div className="w-14 h-1.5 rounded-full bg-rose-500/40 overflow-hidden">
-                        <div
-                            className="h-full bg-emerald-500 transition-all duration-300"
-                            style={{ width: `${Math.max(4, Math.min(96, hudStats.buyPct))}%` }}
-                        />
-                    </div>
-                    <span className="text-rose-600 dark:text-rose-400 font-bold">{hudStats.sellPct.toFixed(0)}%</span>
+                            {/* Buy vs Sell Tug-of-War Micro Bar */}
+                            <div className="hidden sm:flex items-center gap-1.5">
+                                <span className="text-emerald-600 dark:text-emerald-400 font-bold">{hudStats.buyPct.toFixed(0)}%</span>
+                                <div className="w-14 h-1.5 rounded-full bg-rose-500/40 overflow-hidden">
+                                    <div
+                                        className="h-full bg-emerald-500 transition-all duration-300"
+                                        style={{ width: `${Math.max(4, Math.min(96, hudStats.buyPct))}%` }}
+                                    />
+                                </div>
+                                <span className="text-rose-600 dark:text-rose-400 font-bold">{hudStats.sellPct.toFixed(0)}%</span>
+                            </div>
+
+                            {meta?.divergence && (
+                                <span
+                                    className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border ${
+                                        meta.divergence === 'BULLISH'
+                                            ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/35'
+                                            : 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/35'
+                                    }`}
+                                >
+                                    {meta.divergence === 'BULLISH' ? '▲ BULL DIV' : '▼ BEAR DIV'}
+                                </span>
+                            )}
+                        </>
+                    )}
                 </div>
 
-                {meta?.divergence && (
-                    <span
-                        className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border ${
-                            meta.divergence === 'BULLISH'
-                                ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/35'
-                                : 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/35'
-                        }`}
+                {/* Pro Time-Sync Lock / Independent Mode Controls */}
+                <button
+                    type="button"
+                    onClick={handleToggleSyncLock}
+                    title={
+                        isSyncLocked
+                            ? 'Time axis linked to Order Flow chart (click to unlock independent pan/zoom)'
+                            : 'Independent CVD pan/zoom mode (click to re-link with Order Flow chart)'
+                    }
+                    className={`pointer-events-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border text-[10px] font-bold transition-colors cursor-pointer ${
+                        isSyncLocked
+                            ? 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-500/30 hover:bg-cyan-500/25'
+                            : 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30 hover:bg-amber-500/25'
+                    }`}
+                >
+                    {isSyncLocked ? <Link2 className="w-3 h-3" /> : <Unlink2 className="w-3 h-3" />}
+                    <span>{isSyncLocked ? 'Synced' : 'Free'}</span>
+                </button>
+
+                {!isSyncLocked && (
+                    <button
+                        type="button"
+                        onClick={handleFitCvd}
+                        title="Fit all CVD bars in view"
+                        className="pointer-events-auto inline-flex items-center gap-1 px-1.5 py-0.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white/90 dark:bg-[#070b14]/90 text-slate-600 dark:text-slate-300 hover:text-cyan-500 text-[10px] font-bold transition-colors cursor-pointer"
                     >
-                        {meta.divergence === 'BULLISH' ? '▲ BULL DIV' : '▼ BEAR DIV'}
-                    </span>
+                        <Maximize2 className="w-2.5 h-2.5" />
+                        <span>Fit</span>
+                    </button>
                 )}
             </div>
         </div>

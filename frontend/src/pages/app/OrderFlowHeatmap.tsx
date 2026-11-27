@@ -315,7 +315,63 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
     const indicatorSettingsRef = useRef(indicatorSettings);
     indicatorSettingsRef.current = indicatorSettings;
     const isOrderFlowOverlayActive = Boolean(showVPVR || showCVD || showFootprint || indicatorSettings.showQuantumAI || (indicatorSettings.showUTBot && indicatorSettings.utBotOrderFlowConfirm));
-    const { vpvrData, cvdData, cvdMeta, footprintData } = useOrderFlowData(symbol, exchange, interval, isOrderFlowOverlayActive, showFootprint);
+    const { vpvrData, cvdData, cvdMeta, footprintData, loading: orderFlowLoading } = useOrderFlowData(symbol, exchange, interval, isOrderFlowOverlayActive, showFootprint);
+    const chartSplitContainerRef = useRef<HTMLDivElement>(null);
+    const [cvdPaneHeightPct, setCvdPaneHeightPct] = useState<number>(() => {
+        try {
+            const raw = localStorage.getItem('cosmo_cvd_pane_height_pct');
+            const parsed = raw ? Number(raw) : NaN;
+            if (Number.isFinite(parsed) && parsed >= 14 && parsed <= 48) return parsed;
+        } catch {}
+        return 24;
+    });
+    const [isResizingCvdPane, setIsResizingCvdPane] = useState<boolean>(false);
+    const cvdSplitterCleanupRef = useRef<(() => void) | null>(null);
+    useEffect(() => {
+        return () => {
+            cvdSplitterCleanupRef.current?.();
+        };
+    }, []);
+    const handleCvdSplitterPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const container = chartSplitContainerRef.current;
+        if (!container) return;
+        cvdSplitterCleanupRef.current?.();
+        setIsResizingCvdPane(true);
+        let latestPct = cvdPaneHeightPct;
+
+        const onMove = (moveEvent: PointerEvent) => {
+            const rect = container.getBoundingClientRect();
+            if (rect.height <= 0) return;
+            const rawPct = ((rect.bottom - moveEvent.clientY) / rect.height) * 100;
+            latestPct = Math.max(14, Math.min(48, Math.round(rawPct * 10) / 10));
+            setCvdPaneHeightPct(latestPct);
+        };
+        const cleanup = () => {
+            setIsResizingCvdPane(false);
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
+            window.removeEventListener('pointercancel', onUp);
+            cvdSplitterCleanupRef.current = null;
+        };
+        const onUp = () => {
+            cleanup();
+            try {
+                localStorage.setItem('cosmo_cvd_pane_height_pct', String(latestPct));
+            } catch {}
+        };
+        cvdSplitterCleanupRef.current = cleanup;
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+        window.addEventListener('pointercancel', onUp);
+    }, [cvdPaneHeightPct]);
+    const handleCvdSplitterDoubleClick = useCallback(() => {
+        setCvdPaneHeightPct(24);
+        try {
+            localStorage.setItem('cosmo_cvd_pane_height_pct', '24');
+        } catch {}
+    }, []);
     const wallsRef = useRef(walls);
     wallsRef.current = walls;
     const footprintDataRef = useRef(footprintData);
@@ -4308,8 +4364,8 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
     }, [botStatus]);
 
     return (
-        <div className="w-full h-full flex flex-col absolute inset-0 bg-white dark:bg-[#000000]">
-            <div className="flex-1 relative bg-white dark:bg-[#000000]">
+        <div ref={chartSplitContainerRef} className="w-full h-full flex flex-col absolute inset-0 bg-white dark:bg-[#000000]">
+            <div className="flex-1 min-h-0 relative bg-white dark:bg-[#000000]">
                 <div ref={chartContainerRef} className="w-full h-full absolute inset-0 z-0 touch-none select-none bg-white dark:bg-[#000000]" />
                 <CandlestickTooltip candle={tooltipData} position={tooltipPos} chartContainerRef={chartContainerRef} />
                 {showCrosshairAIPredict && (
@@ -4832,9 +4888,41 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                 </div>
             </div>
             {showCVD && (
-                <div className="h-[25%] border-t border-gray-200 dark:border-white/5 relative z-0">
-                    <CVDChart mainChart={chartRef.current} data={cvdData} meta={cvdMeta} />
-                </div>
+                <>
+                    {/* Draggable Institutional Pane Splitter (double-click to reset height) */}
+                    <div
+                        role="separator"
+                        aria-orientation="horizontal"
+                        onPointerDown={handleCvdSplitterPointerDown}
+                        onDoubleClick={handleCvdSplitterDoubleClick}
+                        title="Drag to resize CVD pane (double-click to reset)"
+                        className={`group relative h-2 shrink-0 cursor-row-resize select-none touch-none flex items-center justify-center border-t border-b transition-colors z-20 ${
+                            isResizingCvdPane
+                                ? 'bg-cyan-500/20 border-cyan-500/50'
+                                : 'bg-slate-100/80 dark:bg-[#0a0f1c] border-slate-200 dark:border-white/10 hover:bg-cyan-500/15 hover:border-cyan-500/40'
+                        }`}
+                    >
+                        <span
+                            className={`w-10 h-0.5 rounded-full transition-colors ${
+                                isResizingCvdPane
+                                    ? 'bg-cyan-400'
+                                    : 'bg-slate-400/60 dark:bg-white/25 group-hover:bg-cyan-400'
+                            }`}
+                        />
+                    </div>
+                    <div
+                        style={{ height: `${cvdPaneHeightPct}%` }}
+                        className="shrink-0 relative z-0 bg-white dark:bg-[#000000]"
+                    >
+                        <CVDChart
+                            mainChart={chartRef.current}
+                            data={cvdData}
+                            meta={cvdMeta}
+                            loading={orderFlowLoading}
+                            interval={interval}
+                        />
+                    </div>
+                </>
             )}
             {/* ── DRAG & DROP ORDER CONFIRMATION MODAL ── */}
             <AnimatePresence>

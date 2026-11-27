@@ -47,8 +47,78 @@ export const useOrderFlowData = (
         }
 
         let isMounted = true;
+        let cvdHistoryResolved = false;
         let activeFootprints: FootprintCandleData[] = [];
         let activeTickStep = 0;
+
+        // Real-time incremental buffers (declared before async fetch to eliminate any TDZ risk)
+        let pendingCvdDelta = 0;
+        let pendingBuyVol = 0;
+        let pendingSellVol = 0;
+        let pendingCandleTime: number | null = null;
+        let hasPendingFootprint = false;
+        let orderFlowThrottleTimer: ReturnType<typeof setTimeout> | null = null;
+
+        const flushOrderFlow = () => {
+            if (!isMounted) {
+                orderFlowThrottleTimer = null;
+                return;
+            }
+            if (isThermalGuardActive() && typeof document !== 'undefined' && document.hidden) {
+                orderFlowThrottleTimer = null;
+                return;
+            }
+            if (pendingCvdDelta !== 0 && pendingCandleTime !== null && cvdHistoryResolved) {
+                const delta = pendingCvdDelta;
+                const addBuy = pendingBuyVol;
+                const addSell = pendingSellVol;
+                const cTime = pendingCandleTime;
+                pendingCvdDelta = 0;
+                pendingBuyVol = 0;
+                pendingSellVol = 0;
+
+                setCvdData((prev) => {
+                    if (prev.length === 0) {
+                        return [{ time: cTime, value: delta, delta, buyVolume: addBuy, sellVolume: addSell }];
+                    }
+                    const lastPoint = prev[prev.length - 1];
+                    if (cTime < lastPoint.time) return prev;
+                    if (lastPoint.time === cTime) {
+                        const updated = [...prev];
+                        updated[updated.length - 1] = {
+                            ...lastPoint,
+                            value: lastPoint.value + delta,
+                            delta: (lastPoint.delta ?? 0) + delta,
+                            buyVolume: (lastPoint.buyVolume ?? 0) + addBuy,
+                            sellVolume: (lastPoint.sellVolume ?? 0) + addSell,
+                        };
+                        return updated;
+                    }
+                    return [
+                        ...prev.slice(-1000),
+                        {
+                            time: cTime,
+                            value: lastPoint.value + delta,
+                            delta,
+                            buyVolume: addBuy,
+                            sellVolume: addSell,
+                        },
+                    ];
+                });
+            }
+            if (hasPendingFootprint) {
+                hasPendingFootprint = false;
+                setFootprintData([...activeFootprints.slice(-200)]);
+            }
+            orderFlowThrottleTimer = null;
+        };
+
+        const scheduleOrderFlowFlush = () => {
+            if (!orderFlowThrottleTimer) {
+                const flushDelayMs = isThermalGuardActive() ? 900 : 220;
+                orderFlowThrottleTimer = setTimeout(flushOrderFlow, flushDelayMs);
+            }
+        };
 
         const fetchOrderFlowData = async () => {
             if (!symbol || !exchange || !interval || !enabled) return;
@@ -89,9 +159,18 @@ export const useOrderFlowData = (
                         sellPct: Number(cvdRes.summary?.sell_pct ?? 50),
                         divergence: cvdRes.summary?.divergence || null,
                     });
+                    // Clear pre-history buffered ticks to avoid double-counting trades already in REST snapshot
+                    pendingCvdDelta = 0;
+                    pendingBuyVol = 0;
+                    pendingSellVol = 0;
+                    cvdHistoryResolved = true;
                 } else {
                     setCvdData([]);
                     setCvdMeta(null);
+                    cvdHistoryResolved = true;
+                    if (pendingCvdDelta !== 0 && pendingCandleTime !== null) {
+                        scheduleOrderFlowFlush();
+                    }
                 }
 
                 // ── 2. VPVR from real OHLCV (using true buy/sell ratio when available) ──
@@ -277,80 +356,12 @@ export const useOrderFlowData = (
                 console.error('Failed to fetch order flow data:', err);
                 if (isMounted) setError('Failed to load order flow data.');
             } finally {
+                cvdHistoryResolved = true;
                 if (isMounted) setLoading(false);
             }
         };
 
         fetchOrderFlowData();
-
-        // Real-time incremental updates via shared liveMarketHub (all exchanges, all timeframes)
-        let pendingCvdDelta = 0;
-        let pendingBuyVol = 0;
-        let pendingSellVol = 0;
-        let pendingCandleTime: number | null = null;
-        let hasPendingFootprint = false;
-        let orderFlowThrottleTimer: ReturnType<typeof setTimeout> | null = null;
-
-        const flushOrderFlow = () => {
-            if (!isMounted) {
-                orderFlowThrottleTimer = null;
-                return;
-            }
-            if (isThermalGuardActive() && typeof document !== 'undefined' && document.hidden) {
-                orderFlowThrottleTimer = null;
-                return;
-            }
-            if (pendingCvdDelta !== 0 && pendingCandleTime !== null) {
-                const delta = pendingCvdDelta;
-                const addBuy = pendingBuyVol;
-                const addSell = pendingSellVol;
-                const cTime = pendingCandleTime;
-                pendingCvdDelta = 0;
-                pendingBuyVol = 0;
-                pendingSellVol = 0;
-
-                setCvdData((prev) => {
-                    if (prev.length === 0) {
-                        return [{ time: cTime, value: delta, delta, buyVolume: addBuy, sellVolume: addSell }];
-                    }
-                    const lastPoint = prev[prev.length - 1];
-                    if (cTime < lastPoint.time) return prev;
-                    if (lastPoint.time === cTime) {
-                        const updated = [...prev];
-                        updated[updated.length - 1] = {
-                            ...lastPoint,
-                            value: lastPoint.value + delta,
-                            delta: (lastPoint.delta ?? 0) + delta,
-                            buyVolume: (lastPoint.buyVolume ?? 0) + addBuy,
-                            sellVolume: (lastPoint.sellVolume ?? 0) + addSell,
-                        };
-                        return updated;
-                    }
-                    return [
-                        ...prev.slice(-1000),
-                        {
-                            time: cTime,
-                            value: lastPoint.value + delta,
-                            delta,
-                            buyVolume: addBuy,
-                            sellVolume: addSell,
-                        },
-                    ];
-                });
-            }
-            if (hasPendingFootprint) {
-                hasPendingFootprint = false;
-                setFootprintData([...activeFootprints.slice(-200)]);
-            }
-            orderFlowThrottleTimer = null;
-        };
-
-        const scheduleOrderFlowFlush = () => {
-            if (!orderFlowThrottleTimer) {
-                const flushDelayMs = isThermalGuardActive() ? 900 : 220;
-                orderFlowThrottleTimer = setTimeout(flushOrderFlow, flushDelayMs);
-            }
-        };
 
         const handleVisibilityChange = () => {
             if (

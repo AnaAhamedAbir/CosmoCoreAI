@@ -20,6 +20,8 @@ interface LiquidationRendererProps {
     intensityScale: number; // 10-100
     useTrailingLiquidity: boolean;
     showTrueCVD: boolean;
+    showBiasTag?: boolean;
+    showDeltaStrip?: boolean;
     showSpoofing?: boolean;
     showGEX?: boolean;
     showBookmap?: boolean;
@@ -181,6 +183,8 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
             intensityScale,
             useTrailingLiquidity,
             showTrueCVD,
+            showBiasTag,
+            showDeltaStrip,
             showSpoofing,
             showGEX,
             showBookmap,
@@ -1081,6 +1085,170 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
             });
         }
 
+        // 2.65 Draw Bottom Mini 1M Bar Delta Histogram Strip (Aggregated cleanly per snapped candle across any TF)
+        if (showTrueCVD && showDeltaStrip && data.bar_deltas && data.bar_deltas.length > 0 && H > 140) {
+            const bars = data.bar_deltas;
+            const groupedByCandle = new Map<
+                number,
+                { x: number; delta_usd: number; absorption: string | null; divergence: string | null }
+            >();
+
+            for (let i = 0; i < bars.length; i++) {
+                const b = bars[i];
+                const snappedSec = snapToNearestCandleTime(b.time, effectiveCandleTimes);
+                if (snappedSec === null) continue;
+                let x: number | null = null;
+                try {
+                    x = timeScale.timeToCoordinate(snappedSec as any);
+                } catch {
+                    x = null;
+                }
+                if (x === null || x < -16 || x > W + 16) continue;
+                const existing = groupedByCandle.get(snappedSec);
+                if (existing) {
+                    existing.delta_usd += b.delta_usd || 0;
+                    if (b.absorption) existing.absorption = b.absorption;
+                    if (b.divergence) existing.divergence = b.divergence;
+                } else {
+                    groupedByCandle.set(snappedSec, {
+                        x,
+                        delta_usd: b.delta_usd || 0,
+                        absorption: b.absorption || null,
+                        divergence: b.divergence || null,
+                    });
+                }
+            }
+
+            const visibleBars = Array.from(groupedByCandle.values());
+            let maxAbsDelta = 0;
+            for (let i = 0; i < visibleBars.length; i++) {
+                const absD = Math.abs(visibleBars[i].delta_usd);
+                if (absD > maxAbsDelta) maxAbsDelta = absD;
+            }
+
+            if (visibleBars.length > 0 && maxAbsDelta > 0) {
+                const barSpacingPx = Math.max(3, Math.min(28, Number((timeScale.options() as any)?.barSpacing) || 8));
+                const barW = Math.max(3, Math.min(10, barSpacingPx * 0.58));
+                const maxBarH = Math.max(20, Math.min(40, H * 0.085));
+                const baseY = H - 6;
+
+                ctx.save();
+                // Subtle baseline across bottom
+                ctx.beginPath();
+                ctx.strokeStyle = isDark ? 'rgba(148, 163, 184, 0.16)' : 'rgba(100, 116, 139, 0.18)';
+                ctx.lineWidth = 1;
+                ctx.moveTo(0, baseY);
+                ctx.lineTo(W, baseY);
+                ctx.stroke();
+
+                for (let i = 0; i < visibleBars.length; i++) {
+                    const bar = visibleBars[i];
+                    const x = bar.x;
+                    const d = bar.delta_usd || 0;
+                    const ratio = Math.min(1, Math.abs(d) / maxAbsDelta);
+                    const h = Math.max(3, ratio * maxBarH);
+                    const isPos = d >= 0;
+
+                    ctx.fillStyle = isPos
+                        ? isDark
+                            ? 'rgba(16, 185, 129, 0.52)'
+                            : 'rgba(5, 150, 105, 0.50)'
+                        : isDark
+                        ? 'rgba(244, 63, 94, 0.52)'
+                        : 'rgba(225, 29, 72, 0.50)';
+                    ctx.fillRect(x - barW / 2, baseY - h, barW, h);
+
+                    // Crisp top cap highlight
+                    ctx.fillStyle = isPos ? 'rgba(52, 211, 153, 0.9)' : 'rgba(251, 113, 133, 0.9)';
+                    ctx.fillRect(x - barW / 2, baseY - h, barW, 1.5);
+
+                    // Gold/Purple dot above bar when Intra-Bar Divergence or Iceberg Absorption occurred
+                    if (bar.absorption || bar.divergence) {
+                        const dotColor = bar.absorption
+                            ? '#c084fc' // Purple for confirmed Iceberg Absorption
+                            : '#f59e0b'; // Amber for Delta Divergence
+                        ctx.beginPath();
+                        ctx.fillStyle = dotColor;
+                        ctx.arc(x, baseY - h - 5, 2.4, 0, 2 * Math.PI);
+                        ctx.fill();
+                    }
+                }
+
+                // Micro watermark on bottom-left
+                ctx.font = 'bold 8.5px monospace';
+                ctx.fillStyle = isDark ? 'rgba(148, 163, 184, 0.55)' : 'rgba(71, 85, 105, 0.6)';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'bottom';
+                ctx.fillText('1M Δ', 6, baseY - 2);
+                ctx.restore();
+            }
+        }
+
+        // 2.66 Draw Live 1M Candle Close-Bias Micro-Tag (Empty Right Space Beside Active Candle)
+        if (
+            showTrueCVD &&
+            showBiasTag &&
+            data.candle_orderflow &&
+            data.candle_orderflow.close_bias !== 'NEUTRAL' &&
+            data.candle_orderflow.confidence >= 62 &&
+            currentPrice > 0
+        ) {
+            const cof = data.candle_orderflow;
+            const liveY = toY(currentPrice);
+            const lastCandleSec =
+                effectiveCandleTimes.length > 0 ? effectiveCandleTimes[effectiveCandleTimes.length - 1] : null;
+            const lastX = lastCandleSec !== null ? toSnappedX(lastCandleSec) : null;
+
+            if (liveY !== null && lastX !== null && liveY >= 16 && liveY <= H - 16) {
+                const isBull = cof.close_bias === 'BULLISH';
+                const isClosingPush = cof.phase === 'CLOSING_PUSH';
+                const accentRgb = isBull ? '16, 185, 129' : '244, 63, 94';
+                const textHex = isBull
+                    ? isDark
+                        ? '#34d399'
+                        : '#047857'
+                    : isDark
+                    ? '#fb7185'
+                    : '#be123c';
+                const tagText = `${isBull ? '▲' : '▼'} ${cof.confidence}% · ${String(cof.seconds_left).padStart(2, '0')}s`;
+
+                ctx.save();
+                ctx.font = 'bold 9.5px monospace';
+                const textW = ctx.measureText(tagText).width;
+                const pillW = Math.ceil(textW + 12);
+                const pillH = 18;
+                const barSpacingPx = Math.max(4, Math.min(28, Number((timeScale.options() as any)?.barSpacing) || 8));
+                const rawX = lastX + Math.max(12, barSpacingPx * 0.75);
+                const pillX = Math.max(8, Math.min(W - pillW - 8, rawX));
+                const pillY = Math.max(6, Math.min(H - pillH - 6, liveY - pillH / 2));
+
+                const r = 5;
+                ctx.beginPath();
+                ctx.moveTo(pillX + r, pillY);
+                ctx.lineTo(pillX + pillW - r, pillY);
+                ctx.quadraticCurveTo(pillX + pillW, pillY, pillX + pillW, pillY + r);
+                ctx.lineTo(pillX + pillW, pillY + pillH - r);
+                ctx.quadraticCurveTo(pillX + pillW, pillY + pillH, pillX + pillW - r, pillY + pillH);
+                ctx.lineTo(pillX + r, pillY + pillH);
+                ctx.quadraticCurveTo(pillX, pillY + pillH, pillX, pillY + pillH - r);
+                ctx.lineTo(pillX, pillY + r);
+                ctx.quadraticCurveTo(pillX, pillY, pillX + r, pillY);
+                ctx.closePath();
+
+                ctx.fillStyle = isDark ? 'rgba(15, 23, 42, 0.90)' : 'rgba(255, 255, 255, 0.94)';
+                ctx.fill();
+                ctx.strokeStyle = `rgba(${accentRgb}, ${isClosingPush ? 0.95 : 0.65})`;
+                ctx.lineWidth = isClosingPush ? 1.5 : 1;
+                ctx.stroke();
+
+                ctx.fillStyle = textHex;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(tagText, pillX + pillW / 2, pillY + pillH / 2 + 0.5);
+                ctx.restore();
+            }
+        }
+
         // 2.7 Draw Spoofed Zones (Ghost Orders)
         if (showSpoofing && data.spoofed_zones && data.spoofed_zones.length > 0) {
             data.spoofed_zones.forEach((zone) => {
@@ -1343,6 +1511,8 @@ class LiquidationPrimitive implements ISeriesPrimitive<any> {
     public intensityScale = 75;
     public useTrailingLiquidity = true;
     public showTrueCVD = false;
+    public showBiasTag = true;
+    public showDeltaStrip = true;
     public showSpoofing = true;
     public showGEX = true;
     public showBookmap = true;
@@ -1458,6 +1628,8 @@ class LiquidationPrimitive implements ISeriesPrimitive<any> {
         intensityScale: number;
         useTrailingLiquidity: boolean;
         showTrueCVD: boolean;
+        showBiasTag: boolean;
+        showDeltaStrip: boolean;
         showSpoofing: boolean;
         showGEX: boolean;
         showBookmap: boolean;
@@ -1482,6 +1654,8 @@ class LiquidationPrimitive implements ISeriesPrimitive<any> {
         this.intensityScale = params.intensityScale;
         this.useTrailingLiquidity = params.useTrailingLiquidity;
         this.showTrueCVD = params.showTrueCVD;
+        this.showBiasTag = params.showBiasTag;
+        this.showDeltaStrip = params.showDeltaStrip;
         this.showSpoofing = params.showSpoofing;
         this.showGEX = params.showGEX;
         this.showBookmap = params.showBookmap;
@@ -1522,6 +1696,8 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
     intensityScale,
     useTrailingLiquidity,
     showTrueCVD,
+    showBiasTag = true,
+    showDeltaStrip = true,
     showSpoofing = true,
     showGEX = true,
     showBookmap = true,
@@ -1603,6 +1779,8 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
             intensityScale,
             useTrailingLiquidity,
             showTrueCVD,
+            showBiasTag,
+            showDeltaStrip,
             showSpoofing,
             showGEX,
             showBookmap,
@@ -1936,6 +2114,8 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
             intensityScale,
             useTrailingLiquidity,
             showTrueCVD,
+            showBiasTag,
+            showDeltaStrip,
             showSpoofing,
             showGEX,
             showBookmap,
@@ -1962,6 +2142,8 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
         intensityScale,
         useTrailingLiquidity,
         showTrueCVD,
+        showBiasTag,
+        showDeltaStrip,
         showSpoofing,
         showGEX,
         showBookmap,
@@ -2015,6 +2197,7 @@ export const TrueCVDDraggableHUD: React.FC<TrueCVDDraggableHUDProps> = ({
     });
 
     const [isDragging, setIsDragging] = useState(false);
+    const [isCollapsed, setIsCollapsed] = useState(false);
     const dragRef = useRef<{ startX: number; startY: number; initX: number; initY: number } | null>(null);
 
     const onPointerDown = (e: React.PointerEvent) => {
@@ -2066,24 +2249,58 @@ export const TrueCVDDraggableHUD: React.FC<TrueCVDDraggableHUDProps> = ({
         } catch {}
     };
 
+    const fmtSignedUsd = (v: number) => {
+        const sign = v > 0 ? '+' : v < 0 ? '-' : '';
+        const abs = Math.abs(v);
+        if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(2)}M`;
+        if (abs >= 1_000) return `${sign}$${Math.round(abs / 1_000)}k`;
+        return `${sign}$${Math.round(abs)}`;
+    };
+
     const cvd = data.true_cvd ?? 0;
-    const cvdColor = cvd > 0 ? 'text-emerald-500 dark:text-emerald-400' : cvd < 0 ? 'text-rose-500 dark:text-rose-400' : 'text-slate-700 dark:text-slate-200';
-    const cvdVal =
-        Math.abs(cvd) >= 1000000
-            ? (cvd / 1000000).toFixed(2) + 'M'
-            : (cvd / 1000).toFixed(0) + 'k';
+    const cvdColor =
+        cvd > 0
+            ? 'text-emerald-500 dark:text-emerald-400'
+            : cvd < 0
+            ? 'text-rose-500 dark:text-rose-400'
+            : 'text-slate-700 dark:text-slate-200';
     const activeWalls = icebergsCount || data.iceberg_events?.length || 0;
+
+    const cof = data.candle_orderflow;
+    const bias = cof?.close_bias || 'NEUTRAL';
+    const conf = cof?.confidence ?? 50;
+    const secLeft = cof?.seconds_left ?? 0;
+    const isClosingPush = cof?.phase === 'CLOSING_PUSH';
+    const buyPct = Math.max(0, Math.min(100, cof?.buy_pct ?? 50));
+    const barDelta = cof?.bar_delta_usd ?? 0;
+    const whaleDelta = cof?.whale_delta_usd ?? 0;
+    const retailDelta = cof?.retail_delta_usd ?? 0;
+    const vel10 = cof?.velocity_10s_usd ?? 0;
+
+    const biasBadge =
+        bias === 'BULLISH'
+            ? { text: `BULL ${conf}% ▲`, cls: 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/40' }
+            : bias === 'BEARISH'
+            ? { text: `BEAR ${conf}% ▼`, cls: 'bg-rose-500/20 text-rose-600 dark:text-rose-400 border-rose-500/40' }
+            : { text: `CHOP ${conf}%`, cls: 'bg-slate-200/80 dark:bg-white/10 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-white/15' };
+
+    const borderGlow =
+        bias === 'BULLISH'
+            ? 'border-emerald-500/45 hover:border-emerald-400/80'
+            : bias === 'BEARISH'
+            ? 'border-rose-500/45 hover:border-rose-400/80'
+            : 'border-purple-500/40 hover:border-purple-400/80';
 
     return (
         <div
             className={`absolute z-[25] pointer-events-auto select-none ${isThermalGuard ? '' : 'transition-all'} ${
                 isDragging
-                    ? 'cursor-grabbing scale-105 shadow-[0_0_25px_rgba(168,85,247,0.5)]'
-                    : 'cursor-grab hover:shadow-[0_0_15px_rgba(168,85,247,0.25)]'
+                    ? 'cursor-grabbing scale-[1.03] shadow-[0_0_25px_rgba(168,85,247,0.45)]'
+                    : 'cursor-grab hover:shadow-[0_0_15px_rgba(168,85,247,0.22)]'
             }`}
             style={{
                 left: '16px',
-                bottom: '20px',
+                bottom: '46px',
                 transform: `translate(${position.x}px, ${position.y}px)`,
                 touchAction: 'none',
             }}
@@ -2092,45 +2309,159 @@ export const TrueCVDDraggableHUD: React.FC<TrueCVDDraggableHUDProps> = ({
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerUp}
             onDoubleClick={resetPosition}
-            title="Drag with mouse to reposition anywhere • Double-click to reset to bottom-left"
+            title="Drag to reposition • Double-click to reset position"
         >
-            <div className={`flex items-center gap-2.5 ${isThermalGuard ? 'bg-white/95 dark:bg-slate-950/95' : 'bg-white/90 dark:bg-slate-950/90 backdrop-blur-md'} border border-purple-500/40 hover:border-purple-400/80 rounded-lg px-3 py-2 shadow-xl dark:shadow-2xl transition-colors`}>
-                <div className="flex flex-col gap-0.5 opacity-40 hover:opacity-80 transition-opacity">
-                    <div className="flex gap-0.5">
-                        <span className="w-1 h-1 bg-purple-400 rounded-full" />
-                        <span className="w-1 h-1 bg-purple-400 rounded-full" />
-                    </div>
-                    <div className="flex gap-0.5">
-                        <span className="w-1 h-1 bg-purple-400 rounded-full" />
-                        <span className="w-1 h-1 bg-purple-400 rounded-full" />
-                    </div>
-                    <div className="flex gap-0.5">
-                        <span className="w-1 h-1 bg-purple-400 rounded-full" />
-                        <span className="w-1 h-1 bg-purple-400 rounded-full" />
-                    </div>
-                </div>
-
-                <div className="flex flex-col">
-                    <div className="flex items-center gap-1.5">
+            <div
+                className={`${isCollapsed ? 'w-auto' : 'w-[258px]'} ${
+                    isThermalGuard ? 'bg-white/95 dark:bg-slate-950/95' : 'bg-white/90 dark:bg-slate-950/90 backdrop-blur-md'
+                } border ${borderGlow} rounded-xl px-2.5 py-2 shadow-xl dark:shadow-2xl transition-colors font-mono`}
+            >
+                {/* Header Row: Title + Live 1m Countdown + Close-Bias Badge + Collapse */}
+                <div className="flex items-center justify-between gap-1.5">
+                    <div className="flex items-center gap-1.5 min-w-0">
                         <span className="text-xs leading-none">🛡️</span>
-                        <span className="text-[10px] font-bold tracking-wider text-purple-700 dark:text-purple-300 uppercase font-mono leading-none">
-                            TRUE CVD (60s)
+                        <span className="text-[9.5px] font-bold tracking-wider text-purple-700 dark:text-purple-300 uppercase leading-none truncate">
+                            {isCollapsed ? '1M' : '1M ORDERFLOW'}
                         </span>
+                        {cof && (
+                            <span
+                                className={`text-[9px] font-bold px-1 py-[1px] rounded leading-none ${
+                                    isClosingPush
+                                        ? 'bg-amber-500/20 text-amber-600 dark:text-amber-300 border border-amber-500/40'
+                                        : 'bg-slate-200/70 dark:bg-white/10 text-slate-600 dark:text-slate-300'
+                                }`}
+                            >
+                                ⏱{String(secLeft).padStart(2, '0')}s
+                            </span>
+                        )}
                     </div>
-                    <div className="flex items-baseline gap-2 mt-1">
-                        <span className={`text-sm font-black font-mono tracking-tight leading-none ${cvdColor}`}>
-                            {cvd > 0 ? '+' : ''}
-                            {cvdVal}
-                        </span>
+                    <div className="flex items-center gap-1 shrink-0">
+                        {cof && (
+                            <span className={`text-[9px] font-black px-1.5 py-[2px] rounded border leading-none ${biasBadge.cls}`}>
+                                {biasBadge.text}
+                            </span>
+                        )}
+                        <button
+                            type="button"
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onDoubleClick={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setIsCollapsed((prev) => !prev);
+                            }}
+                            className="text-[9px] text-slate-400 hover:text-slate-700 dark:hover:text-white px-1 py-0.5 rounded hover:bg-slate-200/60 dark:hover:bg-white/10 leading-none"
+                            aria-label={isCollapsed ? 'Expand 1M Orderflow Cockpit' : 'Minimize 1M Orderflow Cockpit'}
+                        >
+                            {isCollapsed ? '▲' : '▼'}
+                        </button>
                     </div>
                 </div>
 
-                {activeWalls > 0 && (
-                    <div className={`flex items-center gap-1 bg-purple-500/20 border border-purple-500/40 rounded px-1.5 py-0.5 ml-1 ${isThermalGuard ? '' : 'animate-pulse'}`}>
-                        <span className="text-[10px] leading-none">🧊</span>
-                        <span className="text-[9px] font-bold text-purple-700 dark:text-purple-300 font-mono whitespace-nowrap leading-none">
-                            {activeWalls} Wall
-                        </span>
+                {!isCollapsed && (
+                    <div className="mt-2 space-y-1.5">
+                        {/* Aggressive Buy vs Sell Pressure Split Bar */}
+                        {cof && (
+                            <div>
+                                <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden flex">
+                                    <div
+                                        className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-[width] duration-300"
+                                        style={{ width: `${buyPct}%` }}
+                                    />
+                                    <div className="h-full bg-gradient-to-r from-rose-500 to-pink-500 flex-1" />
+                                </div>
+                                <div className="flex justify-between mt-1 text-[9px] font-bold">
+                                    <span className="text-emerald-600 dark:text-emerald-400">BUY {buyPct.toFixed(0)}%</span>
+                                    <span className="text-rose-600 dark:text-rose-400">SELL {(100 - buyPct).toFixed(0)}%</span>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 1M Bar Delta + 60s True CVD Row */}
+                        <div className="flex items-center justify-between text-[10px] pt-1 border-t border-slate-200/70 dark:border-white/5">
+                            <div className="flex items-center gap-1">
+                                <span className="text-[9px] text-slate-500 dark:text-slate-400">1mΔ</span>
+                                <span
+                                    className={`font-black ${
+                                        barDelta > 0
+                                            ? 'text-emerald-600 dark:text-emerald-400'
+                                            : barDelta < 0
+                                            ? 'text-rose-600 dark:text-rose-400'
+                                            : 'text-slate-600 dark:text-slate-300'
+                                    }`}
+                                >
+                                    {fmtSignedUsd(barDelta)}
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <span className="text-[9px] text-slate-500 dark:text-slate-400">60s</span>
+                                <span className={`font-black ${cvdColor}`}>{fmtSignedUsd(cvd)}</span>
+                            </div>
+                        </div>
+
+                        {/* Whale vs Retail Trade Segmentation Row */}
+                        {cof && (
+                            <div className="flex items-center justify-between text-[9.5px] pt-1 border-t border-slate-200/70 dark:border-white/5">
+                                <span className="flex items-center gap-1">
+                                    <span>🐋</span>
+                                    <span
+                                        className={`font-bold ${
+                                            whaleDelta > 0
+                                                ? 'text-emerald-600 dark:text-emerald-400'
+                                                : whaleDelta < 0
+                                                ? 'text-rose-600 dark:text-rose-400'
+                                                : 'text-slate-500 dark:text-slate-400'
+                                        }`}
+                                    >
+                                        {fmtSignedUsd(whaleDelta)}
+                                    </span>
+                                </span>
+                                <span className="flex items-center gap-1">
+                                    <span>🐟</span>
+                                    <span
+                                        className={`font-bold ${
+                                            retailDelta > 0
+                                                ? 'text-emerald-600 dark:text-emerald-400'
+                                                : retailDelta < 0
+                                                ? 'text-rose-600 dark:text-rose-400'
+                                                : 'text-slate-500 dark:text-slate-400'
+                                        }`}
+                                    >
+                                        {fmtSignedUsd(retailDelta)}
+                                    </span>
+                                </span>
+                                <span className="flex items-center gap-0.5 text-[8.5px] text-slate-500 dark:text-slate-400" title="Last 10s Closing Tape Velocity">
+                                    <span>10s</span>
+                                    <span
+                                        className={`font-bold ${
+                                            vel10 > 0
+                                                ? 'text-emerald-500'
+                                                : vel10 < 0
+                                                ? 'text-rose-500'
+                                                : 'text-slate-400'
+                                        }`}
+                                    >
+                                        {fmtSignedUsd(vel10)}
+                                    </span>
+                                </span>
+                            </div>
+                        )}
+
+                        {/* Live Microstructure Reason + Active Iceberg Badge */}
+                        <div className="flex items-center justify-between gap-1.5 pt-1 border-t border-slate-200/70 dark:border-white/5">
+                            <span className="text-[8.5px] font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300 truncate">
+                                ⚡ {cof?.reason || 'LIVE TAPE'}
+                                {cof?.divergence ? ` · ${cof.divergence === 'BULL_DIV' ? 'DIV ↑' : 'DIV ↓'}` : ''}
+                            </span>
+                            {activeWalls > 0 && (
+                                <span
+                                    className={`flex items-center gap-0.5 bg-purple-500/20 border border-purple-500/40 rounded px-1.5 py-[1px] text-[8.5px] font-bold text-purple-700 dark:text-purple-300 shrink-0 ${
+                                        isThermalGuard ? '' : 'animate-pulse'
+                                    }`}
+                                >
+                                    🧊 {activeWalls}
+                                </span>
+                            )}
+                        </div>
                     </div>
                 )}
             </div>

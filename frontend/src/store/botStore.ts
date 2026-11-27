@@ -320,6 +320,8 @@ export const DEFAULT_INDICATOR_SETTINGS: IndicatorSettings = {
         liquidationShowSmartMoneyHUD: true,
         liquidationShowTrailingCloud: true,
         liquidationShowTrueCVD: false,
+        liquidationShowBiasTag: true,
+        liquidationShowDeltaStrip: true,
         liquidationShowSpoofing: true,
         liquidationShowGEX: true,
         liquidationShowBookmap: true,

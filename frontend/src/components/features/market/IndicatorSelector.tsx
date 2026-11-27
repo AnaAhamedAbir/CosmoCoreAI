@@ -31,6 +31,8 @@ export interface IndicatorSettings {
     quantumVolThreshold: number;
     showLiquidationHeatmap: boolean;
     liquidationShowTrueCVD: boolean;
+    liquidationShowBiasTag?: boolean;
+    liquidationShowDeltaStrip?: boolean;
     liquidationSmartMoneyBias?: boolean;
     liquidationShowSmartMoneyHUD?: boolean;
     emaPeriod: number;
@@ -2232,6 +2234,28 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
                                             <span className="text-purple-600 dark:text-purple-400 font-semibold group-hover:text-purple-700 dark:group-hover:text-purple-300">Show True CVD & Iceberg 🛡️</span>
                                             <input type="checkbox" checked={settings.liquidationShowTrueCVD as boolean} onChange={() => onSettingsChange({ ...settings, liquidationShowTrueCVD: !settings.liquidationShowTrueCVD })} className="w-3 h-3 rounded text-purple-500 focus:ring-purple-500" />
                                         </label>
+                                        {settings.liquidationShowTrueCVD && (
+                                            <div className="flex flex-col gap-1.5 mt-1 ml-2 p-2 bg-gray-50 dark:bg-white/5 rounded-lg border border-purple-500/20">
+                                                <label className="flex items-center justify-between cursor-pointer">
+                                                    <span className="text-[10px] text-gray-600 dark:text-gray-300 font-semibold">Live 1M Close-Bias Tag</span>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={settings.liquidationShowBiasTag ?? true}
+                                                        onChange={() => onSettingsChange({ ...settings, liquidationShowBiasTag: !(settings.liquidationShowBiasTag ?? true) })}
+                                                        className="w-3 h-3 rounded text-purple-500 focus:ring-purple-500"
+                                                    />
+                                                </label>
+                                                <label className="flex items-center justify-between cursor-pointer">
+                                                    <span className="text-[10px] text-gray-600 dark:text-gray-300 font-semibold">1M Bar Delta Strip (Bottom)</span>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={settings.liquidationShowDeltaStrip ?? true}
+                                                        onChange={() => onSettingsChange({ ...settings, liquidationShowDeltaStrip: !(settings.liquidationShowDeltaStrip ?? true) })}
+                                                        className="w-3 h-3 rounded text-purple-500 focus:ring-purple-500"
+                                                    />
+                                                </label>
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="flex flex-col gap-1.5 mt-2">
                                         <label className="flex items-center justify-between cursor-pointer group">

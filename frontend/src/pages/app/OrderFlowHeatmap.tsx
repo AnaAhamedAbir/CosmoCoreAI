@@ -3968,6 +3968,8 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                             intensityScale={indicatorSettings.liquidationHeatmapIntensity}
                             useTrailingLiquidity={indicatorSettings.liquidationShowTrailingCloud}
                             showTrueCVD={indicatorSettings.liquidationShowTrueCVD}
+                            showBiasTag={indicatorSettings.liquidationShowBiasTag !== false}
+                            showDeltaStrip={indicatorSettings.liquidationShowDeltaStrip !== false}
                             showSpoofing={indicatorSettings.liquidationShowSpoofing}
                             showGEX={indicatorSettings.liquidationShowGEX}
                             showBookmap={indicatorSettings.liquidationShowBookmap}

@@ -108,6 +108,8 @@ class GodModeRunner:
             "smart_trajectory": {"target_price": 0, "strength": 0, "direction": "NEUTRAL"},
             "current_price": 0,
             "true_cvd": 0,
+            "candle_orderflow": None,
+            "bar_deltas": [],
             "iceberg_events": [],
             "arbitrage": [],
             "gex_data": None,
@@ -219,6 +221,10 @@ class GodModeRunner:
 
     async def _handle_true_cvd_event(self, payload: Dict[str, Any]):
         self.state["true_cvd"] = payload.get("true_cvd", 0)
+        if "candle_orderflow" in payload:
+            self.state["candle_orderflow"] = payload.get("candle_orderflow")
+        if "bar_deltas" in payload:
+            self.state["bar_deltas"] = payload.get("bar_deltas") or []
         iceberg_event = payload.get("iceberg_event")
         if iceberg_event:
             ev_type = iceberg_event.get("type")
@@ -332,7 +338,7 @@ class GodModeRunner:
                 new_thresholds = self._compute_adaptive_thresholds(self._quote_volume_24h)
                 self._thresholds = new_thresholds
                 self.state["adaptive_thresholds"] = dict(new_thresholds)
-                self.true_cvd_service.absorption_threshold_usd = new_thresholds["absorption_usd"]
+                self.true_cvd_service.update_thresholds(new_thresholds["absorption_usd"])
 
                 await self._update_liquidation_pools(force=True)
             except Exception as e:
@@ -591,6 +597,13 @@ class GodModeRunner:
 
                     ask_weight = sum(z["volume"] for z in magnet_zones if z["price"] > cp)
                     bid_weight = sum(z["volume"] for z in magnet_zones if z["price"] < cp)
+
+                    # Feed live top-10-level L2 micro-imbalance into TrueCVD 1M Close-Bias Engine
+                    top10_bid_usd = sum(float(b[0]) * float(b[1]) for b in bids[:10])
+                    top10_ask_usd = sum(float(a[0]) * float(a[1]) for a in asks[:10])
+                    top10_tot = top10_bid_usd + top10_ask_usd
+                    if top10_tot > 0:
+                        self.true_cvd_service.set_l2_imbalance((top10_bid_usd - top10_ask_usd) / top10_tot)
 
                     trajectory = {"target_price": cp, "strength": 0, "direction": "NEUTRAL"}
                     if ask_weight > bid_weight * 1.1:

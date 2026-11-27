@@ -63,6 +63,44 @@ export interface DeepL2Summary {
     } | null;
 }
 
+export interface CandleOrderflowState {
+    bar_time: number;
+    seconds_left: number;
+    phase: 'EARLY' | 'MID' | 'CLOSING_PUSH';
+    bar_open: number;
+    bar_close: number;
+    bar_buy_usd: number;
+    bar_sell_usd: number;
+    bar_delta_usd: number;
+    max_delta_usd: number;
+    min_delta_usd: number;
+    buy_pct: number;
+    whale_delta_usd: number;
+    retail_delta_usd: number;
+    velocity_10s_usd: number;
+    bull_prob: number;
+    close_bias: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+    confidence: number;
+    reason: string;
+    divergence?: 'BULL_DIV' | 'BEAR_DIV' | null;
+    active_absorption?: 'BULLISH_ABSORPTION' | 'BEARISH_ABSORPTION' | null;
+}
+
+export interface BarDeltaPoint {
+    time: number; // unix seconds (1m bar start)
+    open: number;
+    close: number;
+    buy_usd: number;
+    sell_usd: number;
+    delta_usd: number;
+    max_delta_usd: number;
+    min_delta_usd: number;
+    whale_delta_usd: number;
+    retail_delta_usd: number;
+    divergence?: 'BULL_DIV' | 'BEAR_DIV' | null;
+    absorption?: 'BULLISH_ABSORPTION' | 'BEARISH_ABSORPTION' | null;
+}
+
 export interface GodModeState {
     symbol: string;
     exchange?: string;
@@ -74,6 +112,8 @@ export interface GodModeState {
     dumb_money: number;
     cvd_spoof?: string;
     true_cvd?: number;
+    candle_orderflow?: CandleOrderflowState | null;
+    bar_deltas?: BarDeltaPoint[];
     funding_rate?: number;
     open_interest_usd?: number;
     quote_volume_24h?: number;

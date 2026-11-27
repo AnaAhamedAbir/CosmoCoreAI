@@ -78,6 +78,7 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
 }) => {
   const entryLineRef = useRef<any>(null);
   const entryLineSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const containerElRef = useRef<HTMLDivElement | null>(null);
   const livePriceRef = useRef<number>(currentPrice);
   const badgeElementsRef = useRef<Map<string, HTMLDivElement>>(new Map());
   const entryBadgeElRef = useRef<HTMLDivElement | null>(null);
@@ -95,7 +96,8 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
     [activePosition, openOrders, symbol]
   );
 
-  // Manage the horizontal Entry Price line cleanly on the active candlestick series
+  // Manage the horizontal Entry Price line cleanly on the active candlestick series.
+  // Keep native title empty so TradePositionOverlay owns the single Entry + P/L pill without colliding with BID/ASK.
   useEffect(() => {
     if (!series) return;
 
@@ -116,11 +118,6 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
       return;
     }
 
-    const sideTag = entryContext.side === 'long' ? 'LONG' : 'SHORT';
-    const title = entryContext.source === 'spot_bracket'
-      ? `ENTRY (${formatPrice(entryContext.entryPrice)})`
-      : `${sideTag} ENTRY`;
-
     if (entryLineSeriesRef.current !== series) {
       removeEntryLine();
     }
@@ -132,7 +129,7 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
         lineWidth: 1,
         lineStyle: LineStyle.Solid,
         axisLabelVisible: true,
-        title,
+        title: '',
         axisLabelColor: '#0284c7',
         axisLabelTextColor: '#ffffff',
       });
@@ -144,7 +141,7 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
         lineWidth: 1,
         lineStyle: LineStyle.Solid,
         axisLabelVisible: true,
-        title,
+        title: '',
         axisLabelColor: '#0284c7',
         axisLabelTextColor: '#ffffff',
       });
@@ -153,7 +150,7 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
     return () => {
       // Only dispose on unmount or series switch; updates reuse applyOptions above
     };
-  }, [series, entryContext, candlesReadyTick, formatPrice]);
+  }, [series, entryContext, candlesReadyTick]);
 
   // Ensure entry price line is removed cleanly when component unmounts or series changes
   useEffect(() => {
@@ -169,6 +166,33 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
       entryLineSeriesRef.current = null;
     };
   }, [series]);
+
+  const formatBracketLabel = (
+    order: OpenLimitOrder,
+    pnlUsd: number,
+    pnlPct: number,
+    rrText: string = ''
+  ): string => {
+    const isSL = Boolean(order.isSoftwareSL);
+    const rawQty = Number(order.remaining > 0 ? order.remaining : order.amount) || 0;
+    const qtyStr = rawQty > 0 ? ` ${rawQty >= 1 ? rawQty.toFixed(2) : rawQty.toFixed(4)}` : '';
+    if (isSL) {
+      const modeUpper = String(order.mode || '').toUpperCase();
+      const typeUpper = String(order.type || '').toUpperCase();
+      const modeTag =
+        modeUpper === 'TRAILING_CHASE' || typeUpper === 'TRAILING_CHASE'
+          ? 'TRAIL CHASE'
+          : modeUpper === 'SMART_CHASE'
+            ? 'SMART CHASE'
+            : modeUpper === 'TRAILING'
+              ? 'TRAIL'
+              : 'SL';
+      const icon = pnlUsd >= 0 ? '🛡️' : '🛑';
+      const prefix = modeTag === 'SL' ? `${icon} SL` : `${icon} ${modeTag}`;
+      return `${prefix}${qtyStr} · ${formatCompactPnl(pnlUsd, pnlPct)}`;
+    }
+    return `🎯 TP${qtyStr} · ${formatCompactPnl(pnlUsd, pnlPct)}${rrText}`;
+  };
 
   // Build static + pending-confirm SL/TP pill rows (drag override is applied imperatively at 60fps)
   const bracketSpecs = useMemo(() => {
@@ -224,10 +248,6 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
             ? ` · ${(pnl.pnlUsd / slRiskAbs).toFixed(1)}R`
             : '';
 
-        const prefix = isSL
-          ? (pnl.pnlUsd >= 0 ? '🛡️ SL' : '🛑 SL')
-          : '🎯 TP';
-
         return {
           id: `order-${order.id}`,
           order,
@@ -236,16 +256,92 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
           price: effectivePx,
           isPending,
           isProfit: pnl.pnlUsd >= 0,
-          text: `${prefix} ${formatCompactPnl(pnl.pnlUsd, pnl.pnlPct)}${rrText}`,
+          text: formatBracketLabel(order, pnl.pnlUsd, pnl.pnlPct, rrText),
         };
       })
       .filter((x): x is NonNullable<typeof x> => x !== null);
   }, [openOrders, entryContext, pendingModification]);
 
+  const applyPillVisualStyle = (
+    el: HTMLDivElement,
+    opts: {
+      kind: 'entry' | 'sl' | 'tp';
+      isProfit: boolean;
+      isDarkMode: boolean;
+      isBeingDragged?: boolean;
+      isPending?: boolean;
+      rightPx: number;
+    }
+  ) => {
+    const { kind, isProfit, isDarkMode, isBeingDragged, isPending, rightPx } = opts;
+
+    // Explicit solid high-contrast inline colors so Tailwind JIT / opacity steps never turn cards transparent
+    let bg: string;
+    let border: string;
+    let textColor: string;
+    let shadow: string;
+
+    if (isDarkMode) {
+      if (isProfit) {
+        bg = kind === 'entry' ? '#042f24' : '#052e20';
+        border = kind === 'entry' ? '#34d399' : '#22c55e';
+        textColor = '#ecfdf5';
+      } else {
+        bg = kind === 'entry' ? '#420a18' : '#3a0915';
+        border = kind === 'entry' ? '#fb7185' : '#ef4444';
+        textColor = '#ffe4e6';
+      }
+      shadow = '0 2px 10px rgba(0, 0, 0, 0.88)';
+    } else {
+      if (isProfit) {
+        bg = '#ecfdf5';
+        border = '#10b981';
+        textColor = '#064e3b';
+      } else {
+        bg = '#fff1f2';
+        border = '#f43f5e';
+        textColor = '#881337';
+      }
+      shadow = '0 2px 6px rgba(15, 23, 42, 0.16)';
+    }
+
+    if (isBeingDragged) {
+      shadow = isDarkMode
+        ? '0 0 0 2px #f59e0b, 0 4px 14px rgba(0, 0, 0, 0.92)'
+        : '0 0 0 2px #f59e0b, 0 4px 10px rgba(15, 23, 42, 0.22)';
+    } else if (isPending) {
+      shadow = isDarkMode
+        ? '0 0 0 1.5px #fbbf24, 0 2px 10px rgba(0, 0, 0, 0.85)'
+        : '0 0 0 1.5px #f59e0b, 0 2px 6px rgba(15, 23, 42, 0.16)';
+    }
+
+    el.style.right = `${rightPx}px`;
+    el.style.maxWidth = `calc(100% - ${rightPx + 8}px)`;
+    el.style.backgroundColor = bg;
+    el.style.borderColor = border;
+    el.style.borderLeftColor = kind === 'entry' ? (isDarkMode ? '#38bdf8' : '#0284c7') : border;
+    el.style.borderLeftWidth = kind === 'entry' ? '3px' : '1px';
+    el.style.color = textColor;
+    el.style.boxShadow = shadow;
+  };
+
   // Imperative 60fps sync for Entry live P/L pill + SL/TP pills + Live Drag P/L preview
   const syncPositionsAndLivePnl = useMemo(() => {
     return () => {
       if (!series || !entryContext) return;
+
+      // Dynamically measure the exact width of the right price scale so pills align cleanly
+      // just left of the BID / ASK / ▲ lane (~54px) and NEVER intrude on Y-axis numbers or price bars.
+      let priceScaleWidth = 68;
+      try {
+        const measured = chart?.priceScale('right')?.width();
+        if (measured && Number.isFinite(measured) && measured > 24) {
+          priceScaleWidth = measured;
+        }
+      } catch {
+        // ignore if chart is tearing down
+      }
+      const rightLaneOffsetPx = Math.round(priceScaleWidth) + 54;
 
       const rows: {
         key: string;
@@ -271,20 +367,17 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
         if (livePnl && yCoord !== null && yCoord !== undefined && Number.isFinite(Number(yCoord))) {
           const isProfit = livePnl.pnlUsd >= 0;
           const sideText = entryContext.source === 'spot_bracket'
-            ? 'SPOT'
+            ? 'SPOT ENTRY'
             : (entryContext.side === 'long' ? 'LONG' : 'SHORT');
           const levText = entryContext.leverage ? ` ${entryContext.leverage}x` : '';
           entryTxtEl.textContent = `${sideText}${levText} · ${formatCompactPnl(livePnl.pnlUsd, livePnl.pnlPct)}`;
           entryEl.dataset.profit = isProfit ? 'true' : 'false';
-          entryEl.className = `absolute right-1.5 flex items-center gap-1 px-2 h-[20px] rounded-md font-mono text-[10px] font-bold tracking-tight border shadow-sm transition-colors duration-75 whitespace-nowrap ${
-            isProfit
-              ? isDark
-                ? 'bg-emerald-950/90 border-emerald-400/60 text-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.25)]'
-                : 'bg-emerald-50/95 border-emerald-500/60 text-emerald-800'
-              : isDark
-                ? 'bg-rose-950/90 border-rose-400/60 text-rose-300 shadow-[0_0_10px_rgba(244,63,94,0.25)]'
-                : 'bg-rose-50/95 border-rose-500/60 text-rose-800'
-          }`;
+          applyPillVisualStyle(entryEl, {
+            kind: 'entry',
+            isProfit,
+            isDarkMode: isDark,
+            rightPx: rightLaneOffsetPx,
+          });
           entryEl.style.opacity = '1';
           rows.push({ key: '__entry__', el: entryEl, y: Number(yCoord) });
         } else {
@@ -322,8 +415,7 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
           });
           if (dragPnl) {
             isProfit = dragPnl.pnlUsd >= 0;
-            const prefix = spec.kind === 'sl' ? (isProfit ? '🛡️ SL' : '🛑 SL') : '🎯 TP';
-            displayText = `${prefix} ${formatCompactPnl(dragPnl.pnlUsd, dragPnl.pnlPct)}`;
+            displayText = formatBracketLabel(spec.order, dragPnl.pnlUsd, dragPnl.pnlPct);
           }
         }
 
@@ -332,40 +424,65 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
           span.textContent = displayText;
         }
 
-        const borderHighlight = isBeingDragged
-          ? 'ring-1 ring-amber-400/90 shadow-md'
-          : spec.isPending
-            ? 'ring-1 ring-amber-400/70'
-            : '';
-
-        el.className = `absolute right-1.5 flex items-center gap-1 px-1.5 h-[19px] rounded font-mono text-[10px] font-bold tracking-tight border whitespace-nowrap ${borderHighlight} ${
-          isProfit
-            ? isDark
-              ? 'bg-emerald-950/88 border-emerald-500/50 text-emerald-300'
-              : 'bg-emerald-50/95 border-emerald-500/50 text-emerald-800'
-            : isDark
-              ? 'bg-rose-950/88 border-rose-500/50 text-rose-300'
-              : 'bg-rose-50/95 border-rose-500/50 text-rose-800'
-        }`;
+        applyPillVisualStyle(el, {
+          kind: spec.kind,
+          isProfit,
+          isDarkMode: isDark,
+          isBeingDragged,
+          isPending: spec.isPending,
+          rightPx: rightLaneOffsetPx,
+        });
         el.style.opacity = '1';
         rows.push({ key: spec.id, el, y: Number(yCoord) });
       }
 
-      // 3. Anti-collision vertical nudging so adjacent pills never overlap unreadably
+      // 3. Anti-collision vertical nudging (cards stay apart AND clear any Liquidation label & viewport edges)
+      const paneHeight = containerElRef.current?.clientHeight || 600;
+      const minY = 12;
+      const maxY = Math.max(minY + 24, paneHeight - 14);
+      const minGapPx = 24;
+
+      const liqPrice = Number(activePosition?.liquidation_price || 0);
+      let liqY: number | null = null;
+      if (Number.isFinite(liqPrice) && liqPrice > 0) {
+        const rawLiqY = series.priceToCoordinate(liqPrice as any);
+        if (rawLiqY !== null && rawLiqY !== undefined && Number.isFinite(Number(rawLiqY))) {
+          liqY = Number(rawLiqY);
+        }
+      }
+
       rows.sort((a, b) => a.y - b.y);
-      const minGapPx = 21;
+      if (liqY !== null) {
+        for (const row of rows) {
+          if (Math.abs(row.y - liqY) < minGapPx) {
+            row.y = row.y >= liqY ? liqY + minGapPx : liqY - minGapPx;
+          }
+        }
+        rows.sort((a, b) => a.y - b.y);
+      }
+
       for (let i = 1; i < rows.length; i++) {
         if (rows[i].y - rows[i - 1].y < minGapPx) {
           rows[i].y = rows[i - 1].y + minGapPx;
         }
       }
 
+      // Clamp bottom and push earlier rows gently up if bottom overflows
+      if (rows.length > 0 && rows[rows.length - 1].y > maxY) {
+        rows[rows.length - 1].y = maxY;
+        for (let i = rows.length - 2; i >= 0; i--) {
+          if (rows[i + 1].y - rows[i].y < minGapPx) {
+            rows[i].y = rows[i + 1].y - minGapPx;
+          }
+        }
+      }
+
       for (const row of rows) {
-        const clampedY = Math.max(12, row.y);
-        row.el.style.transform = `translate3d(0, ${Math.round(clampedY - 10)}px, 0)`;
+        const clampedY = Math.max(minY, Math.min(maxY, row.y));
+        row.el.style.transform = `translate3d(0, ${Math.round(clampedY - 10.5)}px, 0)`;
       }
     };
-  }, [series, entryContext, bracketSpecs, isDark, dragPreviewRef]);
+  }, [chart, series, entryContext, activePosition, bracketSpecs, isDark, dragPreviewRef]);
 
   // Schedule rAF coordinate & P/L sync
   const scheduleSync = useMemo(() => {
@@ -388,7 +505,7 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
     };
   }, [registerDragSyncRef, scheduleSync]);
 
-  // Subscribe to live trade ticks, pan/zoom range changes, and resizes
+  // Subscribe to live trade ticks, pan/zoom range changes, Y-axis wheel/drag, and resizes
   useEffect(() => {
     if (!entryContext || !series || !chart) return;
 
@@ -406,11 +523,21 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
     timeScale.subscribeVisibleLogicalRangeChange(handleRangeChange);
     chart.subscribeCrosshairMove(handleRangeChange);
 
+    const overlayHost = containerElRef.current?.parentElement;
+    const interactionHost = overlayHost?.parentElement || overlayHost;
+    const handleWheel = () => scheduleSync();
+    const handlePointerMove = (e: PointerEvent) => {
+      if (e.buttons !== 0) scheduleSync();
+    };
+    if (interactionHost) {
+      interactionHost.addEventListener('wheel', handleWheel, { passive: true });
+      interactionHost.addEventListener('pointermove', handlePointerMove, { passive: true });
+    }
+
     let ro: ResizeObserver | null = null;
-    const parentEl = entryBadgeElRef.current?.parentElement;
-    if (parentEl && typeof ResizeObserver !== 'undefined') {
+    if (overlayHost && typeof ResizeObserver !== 'undefined') {
       ro = new ResizeObserver(() => scheduleSync());
-      ro.observe(parentEl);
+      ro.observe(overlayHost);
     }
 
     return () => {
@@ -421,6 +548,10 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
       } catch {
         // chart may already be disposed
       }
+      if (interactionHost) {
+        interactionHost.removeEventListener('wheel', handleWheel);
+        interactionHost.removeEventListener('pointermove', handlePointerMove);
+      }
       ro?.disconnect();
       if (rafRef.current !== null) {
         cancelAnimationFrame(rafRef.current);
@@ -429,22 +560,22 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
     };
   }, [chart, series, symbol, exchange, entryContext, bracketSpecs, candlesReadyTick, scheduleSync]);
 
-  // Also sync whenever currentPrice or entryContext changes
+  // Also sync whenever currentPrice, entryContext, or theme changes
   useEffect(() => {
     if (entryContext) {
       scheduleSync();
     }
-  }, [currentPrice, entryContext, bracketSpecs, scheduleSync]);
+  }, [currentPrice, entryContext, bracketSpecs, isDark, scheduleSync]);
 
   if (!entryContext) return null;
 
   return (
-    <div className="absolute inset-0 pointer-events-none overflow-hidden z-20">
+    <div ref={containerElRef} className="absolute inset-0 pointer-events-none overflow-hidden z-20">
       {/* Entry Line Right-Edge Live P/L Badge */}
       <div
         ref={entryBadgeElRef}
         style={{ top: 0, opacity: 0, willChange: 'transform' }}
-        className="absolute right-1.5 flex items-center gap-1 px-2 h-[20px] rounded-md font-mono text-[10px] font-bold tracking-tight border whitespace-nowrap"
+        className="absolute flex items-center gap-1 px-2 h-[21px] rounded font-mono text-[10.5px] font-bold tracking-tight border whitespace-nowrap truncate"
       >
         <span ref={entryBadgeTextRef} />
       </div>
@@ -461,7 +592,7 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
             }
           }}
           style={{ top: 0, opacity: 0, willChange: 'transform' }}
-          className="absolute right-1.5 flex items-center gap-1 px-1.5 h-[19px] rounded font-mono text-[10px] font-bold tracking-tight border whitespace-nowrap"
+          className="absolute flex items-center gap-1 px-2 h-[21px] rounded font-mono text-[10.5px] font-bold tracking-tight border whitespace-nowrap truncate"
         >
           <span>{spec.text}</span>
         </div>

@@ -3014,6 +3014,8 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
 
         const orderKeys = new Set<string>();
 
+        const effectiveEntryCtx = resolveEffectiveEntryContext(activePosition, openOrders, symbol);
+
         openOrders.forEach(order => {
             if (!order.price || order.price <= 0) return;
             const key = `order-${order.id}`;
@@ -3043,7 +3045,13 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                 width = 1;
             }
 
-            const label = formatOrderLabel(order, order.price);
+            // Omit redundant canvas title when TradePositionOverlay renders the combined P/L pill for this SL/TP
+            const hasOverlayCard = Boolean(
+                (order.isSoftwareSL || order.mode === 'TP')
+                && effectiveEntryCtx
+                && resolveOrderEntryContext(order, effectiveEntryCtx)
+            );
+            const label = hasOverlayCard ? '' : formatOrderLabel(order, order.price);
 
             if (!wallLinesRef.current.has(key)) {
                 const line = candlestickSeriesRef.current?.createPriceLine({
@@ -3081,7 +3089,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                 }
             }
         }
-    }, [openOrders, orderLineSyncTick, candlesReadyTick]);
+    }, [openOrders, activePosition, symbol, orderLineSyncTick, candlesReadyTick]);
 
     const getOrderLineVisualStyle = (order: OpenLimitOrder, price: number) => {
         const isBuy = order.side === 'buy';
@@ -3093,9 +3101,15 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         } else if (order.isIceberg) {
             color = isBuy ? '#06b6d4' : '#f43f5e';
         }
+        const effectiveEntryCtx = resolveEffectiveEntryContext(activePositionRef.current, openOrdersRef.current, symbol);
+        const hasOverlayCard = Boolean(
+            (order.isSoftwareSL || order.mode === 'TP')
+            && effectiveEntryCtx
+            && resolveOrderEntryContext(order, effectiveEntryCtx)
+        );
         return {
             color,
-            label: formatOrderLabel(order, price),
+            label: hasOverlayCard ? '' : formatOrderLabel(order, price),
         };
     };
 
@@ -3331,6 +3345,8 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                 const color = isSL ? '#ef4444' : (isTP ? '#22c55e' : (isBuy ? 'rgba(34, 197, 94, 0.85)' : 'rgba(239, 68, 68, 0.85)'));
                 const modeName = clickedOrder.mode ? clickedOrder.mode.toUpperCase() : 'SL';
                 const labelPrefix = isSL ? `DRAG TO EDIT ${modeName} SL` : (isTP ? `DRAG TO EDIT TP` : `DRAG TO EDIT ${clickedOrder.side.toUpperCase()}`);
+                const effEntryCtx = resolveEffectiveEntryContext(activePositionRef.current, openOrdersRef.current, symbol);
+                const dragUsesOverlay = Boolean((isSL || isTP) && effEntryCtx && resolveOrderEntryContext(clickedOrder, effEntryCtx));
                 const pnlSuffix = computeDragPnlSuffix(clickedOrder, clickedOrder.price);
 
                 ghostLineRef.current = candlestickSeriesRef.current.createPriceLine({
@@ -3339,7 +3355,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                     lineWidth: 1,
                     lineStyle: LineStyle.Solid,
                     axisLabelVisible: true,
-                    title: `${labelPrefix} (${clickedOrder.price < 1 ? clickedOrder.price.toFixed(6) : clickedOrder.price.toFixed(4)})${pnlSuffix}`,
+                    title: dragUsesOverlay ? '' : `${labelPrefix} (${clickedOrder.price < 1 ? clickedOrder.price.toFixed(6) : clickedOrder.price.toFixed(4)})${pnlSuffix}`,
                 });
 
                 if (isSL || isTP) {
@@ -3374,11 +3390,13 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                 const isTP = targetOrder?.mode === 'TP';
                 const modeName = targetOrder?.mode ? targetOrder.mode.toUpperCase() : 'SL';
                 const labelPrefix = isSL ? `DRAG TO EDIT ${modeName} SL` : (isTP ? `DRAG TO EDIT TP` : `DRAG TO EDIT ${targetOrder?.side?.toUpperCase()}`);
+                const effEntryCtx = resolveEffectiveEntryContext(activePositionRef.current, openOrdersRef.current, symbol);
+                const dragUsesOverlay = Boolean(targetOrder && (isSL || isTP) && effEntryCtx && resolveOrderEntryContext(targetOrder, effEntryCtx));
                 const pnlSuffix = computeDragPnlSuffix(targetOrder, Number(pointerPrice));
 
                 ghostLineRef.current.applyOptions({
                     price: pointerPrice,
-                    title: `${labelPrefix} (${pointerPrice < 1 ? pointerPrice.toFixed(6) : pointerPrice.toFixed(4)})${pnlSuffix}`
+                    title: dragUsesOverlay ? '' : `${labelPrefix} (${pointerPrice < 1 ? pointerPrice.toFixed(6) : pointerPrice.toFixed(4)})${pnlSuffix}`
                 });
                 if (targetOrder && (isSL || isTP)) {
                     dragPreviewRef.current = {
@@ -3667,10 +3685,9 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             return;
         }
 
-        const formattedLiq = formatDisplayPrice(liqPrice);
         const sideLabel = posSide === 'long' ? 'LONG' : 'SHORT';
         const levLabel = activePosition?.leverage ? ` ${activePosition.leverage}x` : '';
-        const title = `💀 LIQ ${sideLabel}${levLabel} (${formattedLiq})`;
+        const title = `💀 LIQ ${sideLabel}${levLabel}`;
 
         if (!liquidationLineRef.current) {
             liquidationLineRef.current = series.createPriceLine({
@@ -3871,7 +3888,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                         <span className="text-[10px] font-bold tracking-wider uppercase whitespace-nowrap">AI Predict</span>
                     </button>
                 )}
-                <div className="absolute inset-0 z-10 pointer-events-none overflow-hidden" style={{ right: 60, bottom: 26 }}>
+                <div className="absolute inset-0 z-20 pointer-events-none overflow-hidden" style={{ bottom: 26 }}>
                     <TradePositionOverlay
                         chart={chartRef.current}
                         series={candlestickSeriesRef.current}
@@ -3887,6 +3904,8 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                         registerDragSyncRef={dragOverlaySyncRef}
                         formatPrice={formatDisplayPrice}
                     />
+                </div>
+                <div className="absolute inset-0 z-10 pointer-events-none overflow-hidden" style={{ right: 60, bottom: 26 }}>
                     <GodModeHUD data={godModeData} visible={Boolean(indicatorSettings.showLiquidationHeatmap && isActiveChart)} />
                     {indicatorSettings.showDualEngine && <DualEngineDashboard settings={indicatorSettings} candles={allCandlesRef.current} currentPrice={currentPrice} />}
                     {indicatorSettings.showWatchlistScanner && <WatchlistScanner settings={indicatorSettings} exchange={exchange} interval={interval} />}

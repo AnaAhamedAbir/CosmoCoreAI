@@ -12,6 +12,7 @@ from app.services.true_cvd_service import TrueCVDService
 from app.services.gex_options_service import GEXOptionsService
 from app.services.bookmap_heatmap_service import bookmap_heatmap_service
 from app.services.bookmap_history_store import BookmapHistoryStore
+from app.services.deep_l2_aggregator_service import DeepL2Aggregator
 from app.services.derivatives_service import derivatives_service
 from app.services.smart_money_trajectory_service import SmartMoneyTrajectoryService
 from app.services.liquidation_pool_engine import LiquidationPoolEngine, normalize_pool_horizon
@@ -50,6 +51,7 @@ class GodModeRunner:
         self.gex_options_service = GEXOptionsService()
         self.smart_trajectory_service = SmartMoneyTrajectoryService()
         self.pool_engine = LiquidationPoolEngine(self.symbol)
+        self.deep_l2_aggregator = DeepL2Aggregator(self.symbol)
         self.pool_horizon = "24h"
         self._active_horizons: set = {"24h"}
 
@@ -91,6 +93,8 @@ class GodModeRunner:
             "liquidation_pools": [],
             "liquidation_pool_summary": LiquidationPoolEngine._empty_summary("24h"),
             "pool_horizon": "24h",
+            "deep_l2_walls": [],
+            "deep_l2_summary": DeepL2Aggregator.empty_summary(),
             "spoofed_zones": [],
             "cascade_probs": [],
             "orderbook_depth": [],
@@ -322,6 +326,23 @@ class GodModeRunner:
                 self.state["liquidation_pool_summary"] = summary
                 self.state["pool_horizon"] = h
 
+    async def _deep_l2_poll_loop(self):
+        """
+        Periodically aggregates deep ±10% L2 orderbooks across Binance, Bybit, OKX, and Bitget
+        to surface global multi-exchange Confluence Whale Walls and enrich Bookmap outer depth.
+        """
+        while self._running:
+            try:
+                cp = float(self.state.get("current_price") or 0.0)
+                walls, summary = await self.deep_l2_aggregator.refresh(current_price=cp)
+                self.state["deep_l2_walls"] = walls
+                self.state["deep_l2_summary"] = summary
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.debug(f"GodMode deep L2 poll err ({self.symbol}): {e}")
+            await asyncio.sleep(8)
+
     async def _watch_liquidations(self, ex_id: str):
         exchange = await self._init_exchange(ex_id)
         ex_symbol = await self._resolve_exchange_symbol(exchange, self.symbol)
@@ -552,8 +573,22 @@ class GodModeRunner:
                         if target:
                             trajectory["target_price"] = target["price"]
 
+                    enriched_bids, enriched_asks = self.deep_l2_aggregator.combine_with_live_inner_book(
+                        bids, asks, cp
+                    )
+                    has_deep_outer = enriched_bids is not bids or enriched_asks is not asks
+                    smart_bids = (
+                        [b for b in enriched_bids if float(b[0]) >= cp * 0.90]
+                        if has_deep_outer
+                        else bids_within_range
+                    )
+                    smart_asks = (
+                        [a for a in enriched_asks if float(a[0]) <= cp * 1.10]
+                        if has_deep_outer
+                        else asks_within_range
+                    )
                     smart_trajectory = self.smart_trajectory_service.calculate_smart_trajectory(
-                        bids_within_range, asks_within_range, cp, self._funding_rate
+                        smart_bids, smart_asks, cp, self._funding_rate
                     )
 
                     # --- Dynamic Trailing Liquidity Cloud (DTLC) ---
@@ -625,7 +660,16 @@ class GodModeRunner:
                         z for z in self.state["spoofed_zones"] if now_ts - z["timestamp"] < 120
                     ]
 
-                    orderbook_depth = bookmap_heatmap_service.process_orderbook(bids, asks, cp)
+                    if has_deep_outer:
+                        bm_bids, bm_asks = self.deep_l2_aggregator.combine_with_live_inner_book(
+                            bids, asks, cp, normalize_for_single_exchange=True
+                        )
+                        # bucket_count=50 over ±10% -> 0.2% bucket width, matching DeepL2Aggregator.BIN_PCT (zero striping)
+                        orderbook_depth = bookmap_heatmap_service.process_orderbook(
+                            bm_bids, bm_asks, cp, bucket_count=50, spread_percentage=0.10
+                        )
+                    else:
+                        orderbook_depth = bookmap_heatmap_service.process_orderbook(bids, asks, cp)
                     if orderbook_depth:
                         self.bookmap_store.record_snapshot(orderbook_depth, now_ts)
 
@@ -717,6 +761,7 @@ class GodModeRunner:
             self._active_tasks.append(asyncio.create_task(self._calculate_heuristics_loop()))
             self._active_tasks.append(asyncio.create_task(self._scan_global_vulnerabilities()))
             self._active_tasks.append(asyncio.create_task(self._fetch_derivatives_and_pools_loop()))
+            self._active_tasks.append(asyncio.create_task(self._deep_l2_poll_loop()))
 
             for ex_id in ("binance", "bybit", "okx", "bitget"):
                 self._active_tasks.append(asyncio.create_task(self._watch_liquidations(ex_id)))
@@ -774,6 +819,7 @@ class GodModeRunner:
 
             self.smart_trajectory_service.reset()
             self.pool_engine.reset()
+            self.deep_l2_aggregator.reset()
             self._active_horizons = {self.pool_horizon}
             self._liq_history_1m = []
             self._smoothed_zones_dict = {}

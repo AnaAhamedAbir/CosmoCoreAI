@@ -3976,6 +3976,8 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                             spoofingThreshold={indicatorSettings.liquidationSpoofingThreshold}
                             smartMoneyBias={indicatorSettings.liquidationSmartMoneyBias}
                             showMagnetZones={indicatorSettings.liquidationShowMagnetZones !== false}
+                            showDeepWalls={indicatorSettings.liquidationShowDeepWalls !== false}
+                            deepRangePct={indicatorSettings.liquidationDeepRangePct || 10}
                             showLeveragePools={indicatorSettings.liquidationShowLeveragePools !== false}
                             showTrajectory={indicatorSettings.liquidationShowTrajectory !== false}
                             isDark={isDark}
@@ -3991,6 +3993,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                             currentPrice={godModeData.current_price}
                             icebergEvents={godModeData.iceberg_events}
                             magnetZones={godModeData.magnet_zones}
+                            deepRangePct={indicatorSettings.liquidationDeepRangePct || 10}
                             visible={true}
                         />
                     )}

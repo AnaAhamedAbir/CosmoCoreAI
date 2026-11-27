@@ -26,6 +26,7 @@ interface SmartMoneyHUDProps {
     magnetZones?: any[];
     visible: boolean;
     symbol?: string;
+    deepRangePct?: 5 | 10;
 }
 
 const HUD_POS_STORAGE_KEY = 'cosmo_smart_money_hud_pos_v2';
@@ -38,7 +39,8 @@ export const SmartMoneyHUD: React.FC<SmartMoneyHUDProps> = React.memo(({
     icebergEvents,
     magnetZones,
     visible,
-    symbol
+    symbol,
+    deepRangePct = 10,
 }) => {
     const [isMinimized, setIsMinimized] = useState(false);
     const [mounted, setMounted] = useState(false);
@@ -404,6 +406,163 @@ export const SmartMoneyHUD: React.FC<SmartMoneyHUDProps> = React.memo(({
                                         <span className="text-[9px] font-mono text-red-600 dark:text-red-400 font-bold">Dumb ({(100 - smartRatio).toFixed(1)}%)</span>
                                     </div>
                                 </div>
+
+                                {/* Untapped Liquidation Pools Imbalance (OI-Delta + Swept-Filtered) */}
+                                {godModeData?.liquidation_pool_summary &&
+                                    (godModeData.liquidation_pool_summary.total_short_liq_usd > 0 ||
+                                        godModeData.liquidation_pool_summary.total_long_liq_usd > 0) && (() => {
+                                        const s = godModeData.liquidation_pool_summary!;
+                                        const fmtUsd = (v: number) =>
+                                            v >= 1_000_000_000
+                                                ? `$${(v / 1_000_000_000).toFixed(2)}B`
+                                                : v >= 1_000_000
+                                                ? `$${(v / 1_000_000).toFixed(1)}M`
+                                                : v >= 1_000
+                                                ? `$${(v / 1_000).toFixed(0)}k`
+                                                : `$${v}`;
+                                        const abovePct = Math.round((s.imbalance_ratio ?? 0.5) * 100);
+                                        const domBadge =
+                                            s.dominant_side === 'ABOVE'
+                                                ? { text: 'MAGNET ↑', cls: 'bg-amber-500/20 text-amber-600 dark:text-amber-400' }
+                                                : s.dominant_side === 'BELOW'
+                                                ? { text: 'MAGNET ↓', cls: 'bg-cyan-500/20 text-cyan-600 dark:text-cyan-400' }
+                                                : { text: 'BALANCED', cls: 'bg-gray-200 dark:bg-white/10 text-gray-600 dark:text-gray-300' };
+                                        return (
+                                            <div className="pt-2 border-t border-slate-200/80 dark:border-white/5">
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <span className="text-[10px] font-bold uppercase text-slate-600 dark:text-gray-400 flex items-center gap-1">
+                                                        ⚡ Pools ({String(s.horizon || '24h').toUpperCase()})
+                                                        {s.oi_weighted && (
+                                                            <span className="px-1 py-[1px] rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-[8.5px] font-mono">
+                                                                OI-Δ
+                                                            </span>
+                                                        )}
+                                                    </span>
+                                                    <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded ${domBadge.cls}`}>
+                                                        {domBadge.text}
+                                                    </span>
+                                                </div>
+                                                <div className="w-full bg-slate-200 dark:bg-gray-800 rounded-full h-1.5 overflow-hidden flex">
+                                                    <div
+                                                        className="h-full bg-gradient-to-r from-amber-500 to-rose-500 transition-[width] duration-500"
+                                                        style={{ width: `${abovePct}%` }}
+                                                    />
+                                                    <div
+                                                        className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 flex-1"
+                                                    />
+                                                </div>
+                                                <div className="flex justify-between mt-1 text-[9.5px] font-mono">
+                                                    <span className="text-amber-600 dark:text-amber-400 font-bold">
+                                                        ↑ {fmtUsd(s.total_short_liq_usd)}
+                                                    </span>
+                                                    <span className="text-cyan-600 dark:text-cyan-400 font-bold">
+                                                        ↓ {fmtUsd(s.total_long_liq_usd)}
+                                                    </span>
+                                                </div>
+                                                {(s.nearest_short_pool || s.nearest_long_pool) && (
+                                                    <div className="mt-0.5 flex justify-between text-[9px] font-mono text-slate-500 dark:text-gray-400">
+                                                        <span>
+                                                            {s.nearest_short_pool
+                                                                ? `Near ↑ ${s.nearest_short_pool.leverage} +${s.nearest_short_pool.dist_pct}%`
+                                                                : 'Near ↑ --'}
+                                                        </span>
+                                                        <span>
+                                                            {s.nearest_long_pool
+                                                                ? `Near ↓ ${s.nearest_long_pool.leverage} -${s.nearest_long_pool.dist_pct}%`
+                                                                : 'Near ↓ --'}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
+
+                                {/* Global Multi-Exchange Deep L2 Depth (±5% / ±10%) */}
+                                {godModeData?.deep_l2_summary &&
+                                    godModeData.deep_l2_summary.exchange_count > 0 &&
+                                    (godModeData.deep_l2_summary.total_bids_10pct_usd > 0 ||
+                                        godModeData.deep_l2_summary.total_asks_10pct_usd > 0) && (() => {
+                                        const d = godModeData.deep_l2_summary!;
+                                        const activeRange = deepRangePct === 5 ? 5 : 10;
+                                        const bidsUsd = activeRange === 5 ? d.total_bids_5pct_usd : d.total_bids_10pct_usd;
+                                        const asksUsd = activeRange === 5 ? d.total_asks_5pct_usd : d.total_asks_10pct_usd;
+                                        const totalUsd = bidsUsd + asksUsd;
+                                        const bidRatio = totalUsd > 0 ? bidsUsd / totalUsd : 0.5;
+                                        const bidPct = Math.round(bidRatio * 100);
+                                        const bookBias =
+                                            bidRatio >= 0.56 ? 'BID_HEAVY' : bidRatio <= 0.44 ? 'ASK_HEAVY' : 'BALANCED';
+                                        const biasBadge =
+                                            bookBias === 'BID_HEAVY'
+                                                ? { text: 'BID HEAVY', cls: 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400' }
+                                                : bookBias === 'ASK_HEAVY'
+                                                ? { text: 'ASK HEAVY', cls: 'bg-fuchsia-500/20 text-fuchsia-600 dark:text-fuchsia-400' }
+                                                : { text: 'BALANCED', cls: 'bg-gray-200 dark:bg-white/10 text-gray-600 dark:text-gray-300' };
+                                        const wallsInRange = (godModeData.deep_l2_walls || []).filter(
+                                            (w) => Number(w.dist_pct ?? 99) <= activeRange
+                                        );
+                                        const supWall =
+                                            activeRange === 5
+                                                ? wallsInRange.filter((w) => w.side === 'bid').sort((a, b) => b.total_usd - a.total_usd)[0] || null
+                                                : d.strongest_bid_wall;
+                                        const resWall =
+                                            activeRange === 5
+                                                ? wallsInRange.filter((w) => w.side === 'ask').sort((a, b) => b.total_usd - a.total_usd)[0] || null
+                                                : d.strongest_ask_wall;
+                                        const fmtUsd = (v: number) =>
+                                            v >= 1_000_000_000
+                                                ? `$${(v / 1_000_000_000).toFixed(2)}B`
+                                                : v >= 1_000_000
+                                                ? `$${(v / 1_000_000).toFixed(1)}M`
+                                                : v >= 1_000
+                                                ? `$${(v / 1_000).toFixed(0)}k`
+                                                : `$${v}`;
+                                        return (
+                                            <div className="pt-2 border-t border-slate-200/80 dark:border-white/5">
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <span className="text-[10px] font-bold uppercase text-slate-600 dark:text-gray-400 flex items-center gap-1">
+                                                        🌐 Deep L2 (±{activeRange}%)
+                                                        <span className="px-1 py-[1px] rounded bg-sky-500/15 text-sky-600 dark:text-sky-400 text-[8.5px] font-mono">
+                                                            {d.exchange_count} EX
+                                                        </span>
+                                                    </span>
+                                                    <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded ${biasBadge.cls}`}>
+                                                        {biasBadge.text}
+                                                    </span>
+                                                </div>
+                                                <div className="w-full bg-slate-200 dark:bg-gray-800 rounded-full h-1.5 overflow-hidden flex">
+                                                    <div
+                                                        className="h-full bg-gradient-to-r from-sky-500 to-emerald-400 transition-[width] duration-500"
+                                                        style={{ width: `${bidPct}%` }}
+                                                    />
+                                                    <div
+                                                        className="h-full bg-gradient-to-r from-fuchsia-500 to-rose-500 flex-1"
+                                                    />
+                                                </div>
+                                                <div className="flex justify-between mt-1 text-[9.5px] font-mono">
+                                                    <span className="text-sky-600 dark:text-sky-400 font-bold">
+                                                        BID {fmtUsd(bidsUsd)}
+                                                    </span>
+                                                    <span className="text-fuchsia-600 dark:text-fuchsia-400 font-bold">
+                                                        ASK {fmtUsd(asksUsd)}
+                                                    </span>
+                                                </div>
+                                                {(supWall || resWall) && (
+                                                    <div className="mt-0.5 flex justify-between text-[9px] font-mono text-slate-500 dark:text-gray-400">
+                                                        <span>
+                                                            {supWall
+                                                                ? `SUP ${fmtUsd(supWall.total_usd)} -${supWall.dist_pct}%`
+                                                                : 'SUP --'}
+                                                        </span>
+                                                        <span>
+                                                            {resWall
+                                                                ? `RES ${fmtUsd(resWall.total_usd)} +${resWall.dist_pct}%`
+                                                                : 'RES --'}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
 
                                 {/* Open Interest & Adaptive Whale Threshold */}
                                 {(Boolean(godModeData?.open_interest_usd) || Boolean(godModeData?.adaptive_thresholds?.whale_usd)) && (

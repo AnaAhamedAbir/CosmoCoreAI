@@ -122,6 +122,8 @@ export const sanitizeIndicatorSettings = (settings: IndicatorSettings): Indicato
         liquidationPoolHorizon: (['24h', '3d', '7d'].includes(String(settings.liquidationPoolHorizon))
             ? settings.liquidationPoolHorizon
             : '24h') as '24h' | '3d' | '7d',
+        liquidationShowDeepWalls: settings.liquidationShowDeepWalls !== false,
+        liquidationDeepRangePct: (Number(settings.liquidationDeepRangePct) === 5 ? 5 : 10) as 5 | 10,
     };
 };
 
@@ -325,6 +327,8 @@ export const DEFAULT_INDICATOR_SETTINGS: IndicatorSettings = {
         liquidationBookmapHistoryMin: 120,
         liquidationSpoofingThreshold: 500000,
         liquidationShowMagnetZones: true,
+        liquidationShowDeepWalls: true,
+        liquidationDeepRangePct: 10,
         liquidationShowLeveragePools: true,
         liquidationPoolHorizon: '24h',
         liquidationShowTrajectory: true,

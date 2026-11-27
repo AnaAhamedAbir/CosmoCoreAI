@@ -28,6 +28,8 @@ interface LiquidationRendererProps {
     spoofingThreshold?: number;
     smartMoneyBias?: boolean;
     showMagnetZones?: boolean;
+    showDeepWalls?: boolean;
+    deepRangePct?: number;
     showLeveragePools?: boolean;
     showTrajectory?: boolean;
     isDark?: boolean;
@@ -61,8 +63,12 @@ interface MergedZone {
     depletedUsd?: number;
     isSweeping?: boolean;
     estimatedUsd?: number;
-    kind: 'magnet' | 'pool';
-    side?: 'SHORT_LIQ' | 'LONG_LIQ';
+    exchanges?: string[];
+    exchangeCount?: number;
+    isConfluence?: boolean;
+    exchangeBreakdown?: Record<string, number>;
+    kind: 'magnet' | 'pool' | 'deep_wall';
+    side?: 'SHORT_LIQ' | 'LONG_LIQ' | 'bid' | 'ask';
 }
 
 function snapToNearestCandleTime(targetSec: number, candleTimes: number[]): number | null {
@@ -183,6 +189,8 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
             spoofingThreshold,
             smartMoneyBias,
             showMagnetZones,
+            showDeepWalls,
+            deepRangePct,
             showLeveragePools,
             showTrajectory,
             isDark,
@@ -421,6 +429,91 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
             });
         }
 
+        // 1.35 Draw Global Multi-Exchange Deep L2 Walls (±5% / ±10% Confluence Whale Walls)
+        if (showDeepWalls && data.deep_l2_walls && data.deep_l2_walls.length > 0) {
+            const maxDistPct = Math.max(5, Math.min(10, Number(deepRangePct) || 10));
+            data.deep_l2_walls.forEach((wall) => {
+                const p = Number(wall.price);
+                const intensity = Number(wall.intensity);
+                if (!Number.isFinite(p) || p <= 0 || !Number.isFinite(intensity)) return;
+                // Skip stale crossed walls between 8s deep REST polls so a crossed bid never renders as an ask
+                if (currentPrice > 0 && ((wall.side === 'bid' && p >= currentPrice) || (wall.side === 'ask' && p <= currentPrice))) {
+                    return;
+                }
+                const distPct =
+                    currentPrice > 0
+                        ? (Math.abs(p - currentPrice) / currentPrice) * 100
+                        : Number(wall.dist_pct ?? 0);
+                if (distPct > maxDistPct) return;
+
+                allInteractiveZones.push({
+                    price: p,
+                    intensity,
+                    volume: wall.total_usd,
+                    distPct,
+                    exchanges: wall.exchanges,
+                    exchangeCount: wall.exchange_count,
+                    isConfluence: wall.is_confluence,
+                    exchangeBreakdown: wall.exchange_breakdown,
+                    kind: 'deep_wall',
+                    side: wall.side,
+                });
+
+                const yCenter = toY(p);
+                if (yCenter === null || yCenter < -30 || yCenter > H + 30) return;
+
+                const isAskWall = wall.side === 'ask';
+                const barHeight = Math.max(4, Math.min(14, (intensity / 100) * 14));
+                const alpha = Math.min(0.75, (intensity / 100) * (effectiveIntensityScale / 100) * 0.62);
+                // Distinct institutional palette: Fuchsia for Global Ask Walls, Sky-Teal for Global Bid Walls
+                const rgb = isAskWall ? '217, 70, 239' : '14, 165, 233';
+
+                const grad = ctx.createLinearGradient(0, 0, W, 0);
+                grad.addColorStop(0, `rgba(${rgb}, ${alpha * 0.08})`);
+                grad.addColorStop(0.55, `rgba(${rgb}, ${alpha * 0.28})`);
+                grad.addColorStop(1, `rgba(${rgb}, ${alpha * 0.72})`);
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, yCenter - barHeight / 2, W, barHeight);
+
+                // Solid bright core line for multi-exchange confluence walls (2+ exchanges stacked at same level)
+                if (wall.is_confluence) {
+                    ctx.beginPath();
+                    ctx.strokeStyle = `rgba(${rgb}, ${Math.min(0.95, alpha + 0.25)})`;
+                    ctx.lineWidth = 1.5;
+                    ctx.moveTo(0, yCenter);
+                    ctx.lineTo(W, yCenter);
+                    ctx.stroke();
+                }
+
+                let textY = yCenter;
+                for (let i = 0; i < 10; i++) {
+                    if (drawnTextY.some((dy) => Math.abs(dy - textY) < 15)) {
+                        textY -= 15;
+                    } else {
+                        break;
+                    }
+                }
+                if (textY >= 10 && textY <= H - 10) {
+                    drawnTextY.push(textY);
+                    ctx.fillStyle = isDark
+                        ? `rgba(${rgb}, 0.98)`
+                        : isAskWall
+                        ? 'rgba(162, 28, 175, 0.95)'
+                        : 'rgba(3, 105, 161, 0.95)';
+                    ctx.font = 'bold 10px Inter, sans-serif';
+                    ctx.textAlign = 'right';
+                    ctx.textBaseline = 'middle';
+                    const exTag = wall.exchange_count >= 2 ? ` [${wall.exchange_count}x EX]` : '';
+                    const sideLbl = isAskWall ? 'ASK WALL' : 'BID WALL';
+                    ctx.fillText(
+                        `🌐 ${sideLbl} ${formatCompactUsd(wall.total_usd)}${exTag} @ ${formatPriceLabel(p)}`,
+                        W - 8,
+                        textY
+                    );
+                }
+            });
+        }
+
         // 1.5 Draw Trailing Liquidity Clouds (DTLC)
         if (useTrailingLiquidity && data.trailing_liquidity && currentPrice > 0) {
             const tl = data.trailing_liquidity;
@@ -583,13 +676,20 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
                 }
                 if (maxVol <= 0) maxVol = 1;
 
-                // Match BookmapHeatmapService bucket size (0.05 / 50 = 0.1% of price) so levels blend smoothly
+                // Match BookmapHeatmapService bucket size (0.2% when ±10% deep L2 active, 0.1% for ±5% inner book)
                 const refPrice = currentPrice > 0 ? currentPrice : 1;
+                const latestSnapDepth = snapshots[snapshots.length - 1]?.depth || [];
+                const hasWideDepth =
+                    Boolean(data.deep_l2_summary && data.deep_l2_summary.exchange_count > 0) ||
+                    latestSnapDepth.some((lvl) => Math.abs(lvl.price - refPrice) / refPrice > 0.055);
+                const bucketStepPct = hasWideDepth ? 0.002 : 0.001;
                 const yRef1 = toY(refPrice);
-                const yRef2 = toY(refPrice * 1.001);
+                const yRef2 = toY(refPrice * (1 + bucketStepPct));
                 const bandHeight =
                     yRef1 !== null && yRef2 !== null
-                        ? Math.max(2, Math.min(9, Math.abs(yRef2 - yRef1) * 0.95))
+                        ? Math.max(2.5, Math.min(14, Math.abs(yRef2 - yRef1) * 0.96))
+                        : hasWideDepth
+                        ? 5
                         : 3.5;
 
                 const intensityMultiplier = (bookmapIntensity || 50) / 50;
@@ -865,11 +965,19 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
             });
         }
 
-        // 3. Draw Interactive Tooltip for hovered zone (clamped inside pane)
+        // 3. Draw Interactive Tooltip for closest hovered zone (clamped inside pane)
         if (crosshairRef.current.visible && currentPrice > 0) {
-            const hoveredZone = allInteractiveZones.find(
-                (z) => Math.abs(z.price - crosshairRef.current.price) < currentPrice * 0.0035
-            );
+            const hoverTolerance = currentPrice * 0.0035;
+            let hoveredZone: MergedZone | undefined;
+            let bestHoverDiff = hoverTolerance;
+            for (let i = 0; i < allInteractiveZones.length; i++) {
+                const z = allInteractiveZones[i];
+                const diff = Math.abs(z.price - crosshairRef.current.price);
+                if (diff < bestHoverDiff) {
+                    bestHoverDiff = diff;
+                    hoveredZone = z;
+                }
+            }
             if (hoveredZone) {
                 const isShortZone = hoveredZone.price > currentPrice;
 
@@ -877,32 +985,58 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
                     hoveredZone.depletedUsd && hoveredZone.depletedUsd > 0
                         ? ` (-${formatCompactUsd(hoveredZone.depletedUsd)})`
                         : '';
-                const volText = hoveredZone.estimatedUsd
-                    ? `Untapped: ${formatCompactUsd(hoveredZone.estimatedUsd)}${depTag}`
-                    : hoveredZone.volume
-                    ? `Vol: ${formatCompactUsd(hoveredZone.volume)}`
-                    : `Int: ${Math.round(hoveredZone.intensity)}%`;
-                const oiTag = hoveredZone.kind === 'pool' && hoveredZone.oiWeighted ? ' [OI-Δ]' : '';
-                const typeText =
-                    hoveredZone.kind === 'pool'
-                        ? isShortZone
-                            ? `Short Lev. Pool${oiTag}`
-                            : `Long Lev. Pool${oiTag}`
-                        : isShortZone
-                        ? 'Short Liq. Zone'
-                        : 'Long Liq. Zone';
-
                 const distancePct = Math.abs(currentPrice - hoveredZone.price) / currentPrice;
                 const distLabel = `${(distancePct * 100).toFixed(2)}%`;
-                let levText = hoveredZone.leverage
-                    ? `Tier: ${hoveredZone.tierBreakdown || hoveredZone.leverage} · ${distLabel}`
-                    : 'Est. Lev: ';
-                if (!hoveredZone.leverage) {
-                    if (distancePct <= 0.015) levText += '100x';
-                    else if (distancePct <= 0.03) levText += '50x';
-                    else if (distancePct <= 0.055) levText += '20x-25x';
-                    else if (distancePct <= 0.11) levText += '10x';
-                    else levText += '<10x';
+
+                let typeText: string;
+                let volText: string;
+                let levText: string;
+
+                if (hoveredZone.kind === 'deep_wall') {
+                    const exCountTag =
+                        hoveredZone.exchangeCount && hoveredZone.exchangeCount >= 2
+                            ? ` [${hoveredZone.exchangeCount}x EX]`
+                            : '';
+                    typeText = isShortZone ? `Global Ask Wall${exCountTag}` : `Global Bid Wall${exCountTag}`;
+                    volText = `Total: ${formatCompactUsd(hoveredZone.volume || 0)} · ${distLabel}`;
+                    const exShort: Record<string, string> = {
+                        binance: 'BN',
+                        bybit: 'BB',
+                        okx: 'OKX',
+                        bitget: 'BG',
+                    };
+                    const bd = hoveredZone.exchangeBreakdown || {};
+                    const parts = Object.entries(bd)
+                        .sort((a, b) => b[1] - a[1])
+                        .slice(0, 3)
+                        .map(([k, v]) => `${exShort[k] || k.toUpperCase()} ${formatCompactUsd(v)}`);
+                    levText = parts.length > 0 ? parts.join(' · ') : `Exchanges: ${(hoveredZone.exchanges || []).join(', ')}`;
+                } else {
+                    volText = hoveredZone.estimatedUsd
+                        ? `Untapped: ${formatCompactUsd(hoveredZone.estimatedUsd)}${depTag}`
+                        : hoveredZone.volume
+                        ? `Vol: ${formatCompactUsd(hoveredZone.volume)}`
+                        : `Int: ${Math.round(hoveredZone.intensity)}%`;
+                    const oiTag = hoveredZone.kind === 'pool' && hoveredZone.oiWeighted ? ' [OI-Δ]' : '';
+                    typeText =
+                        hoveredZone.kind === 'pool'
+                            ? isShortZone
+                                ? `Short Lev. Pool${oiTag}`
+                                : `Long Lev. Pool${oiTag}`
+                            : isShortZone
+                            ? 'Short Liq. Zone'
+                            : 'Long Liq. Zone';
+
+                    levText = hoveredZone.leverage
+                        ? `Tier: ${hoveredZone.tierBreakdown || hoveredZone.leverage} · ${distLabel}`
+                        : 'Est. Lev: ';
+                    if (!hoveredZone.leverage) {
+                        if (distancePct <= 0.015) levText += '100x';
+                        else if (distancePct <= 0.03) levText += '50x';
+                        else if (distancePct <= 0.055) levText += '20x-25x';
+                        else if (distancePct <= 0.11) levText += '10x';
+                        else levText += '<10x';
+                    }
                 }
 
                 // Measure rendered text so tooltip box never clips long USD/depletion strings
@@ -919,7 +1053,11 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
 
                 ctx.fillStyle = isDark ? 'rgba(15, 23, 42, 0.92)' : 'rgba(255, 255, 255, 0.96)';
                 ctx.strokeStyle =
-                    hoveredZone.kind === 'pool'
+                    hoveredZone.kind === 'deep_wall'
+                        ? isShortZone
+                            ? 'rgba(217, 70, 239, 0.75)'
+                            : 'rgba(14, 165, 233, 0.75)'
+                        : hoveredZone.kind === 'pool'
                         ? isShortZone
                             ? 'rgba(245, 158, 11, 0.7)'
                             : 'rgba(6, 182, 212, 0.7)'
@@ -1061,6 +1199,8 @@ class LiquidationPrimitive implements ISeriesPrimitive<any> {
     public spoofingThreshold = 500000;
     public smartMoneyBias = false;
     public showMagnetZones = true;
+    public showDeepWalls = true;
+    public deepRangePct = 10;
     public showLeveragePools = true;
     public showTrajectory = true;
     public isDark = true;
@@ -1174,6 +1314,8 @@ class LiquidationPrimitive implements ISeriesPrimitive<any> {
         spoofingThreshold: number;
         smartMoneyBias: boolean;
         showMagnetZones: boolean;
+        showDeepWalls: boolean;
+        deepRangePct: number;
         showLeveragePools: boolean;
         showTrajectory: boolean;
         isDark: boolean;
@@ -1196,6 +1338,8 @@ class LiquidationPrimitive implements ISeriesPrimitive<any> {
         this.spoofingThreshold = params.spoofingThreshold;
         this.smartMoneyBias = params.smartMoneyBias;
         this.showMagnetZones = params.showMagnetZones;
+        this.showDeepWalls = params.showDeepWalls;
+        this.deepRangePct = params.deepRangePct;
         this.showLeveragePools = params.showLeveragePools;
         this.showTrajectory = params.showTrajectory;
         this.isDark = params.isDark;
@@ -1234,6 +1378,8 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
     spoofingThreshold = 500000,
     smartMoneyBias = false,
     showMagnetZones = true,
+    showDeepWalls = true,
+    deepRangePct = 10,
     showLeveragePools = true,
     showTrajectory = true,
     isDark = true,
@@ -1268,6 +1414,10 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
     onZoneClickRef.current = onZoneClick;
     const showMagnetZonesRef = useRef(showMagnetZones);
     showMagnetZonesRef.current = showMagnetZones;
+    const showDeepWallsRef = useRef(showDeepWalls);
+    showDeepWallsRef.current = showDeepWalls;
+    const deepRangePctRef = useRef(deepRangePct);
+    deepRangePctRef.current = deepRangePct;
     const showLeveragePoolsRef = useRef(showLeveragePools);
     showLeveragePoolsRef.current = showLeveragePools;
     const showGEXRef = useRef(showGEX);
@@ -1309,6 +1459,8 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
             spoofingThreshold,
             smartMoneyBias,
             showMagnetZones,
+            showDeepWalls,
+            deepRangePct,
             showLeveragePools,
             showTrajectory,
             isDark,
@@ -1398,6 +1550,16 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
             }
             if (showLeveragePoolsRef.current && curData.liquidation_pools) {
                 curData.liquidation_pools.forEach((p) => candidates.push(Number(p.price)));
+            }
+            if (showDeepWallsRef.current && curData.deep_l2_walls) {
+                const maxDist = Math.max(5, Math.min(10, Number(deepRangePctRef.current) || 10));
+                curData.deep_l2_walls.forEach((w) => {
+                    const p = Number(w.price);
+                    if (!Number.isFinite(p) || p <= 0) return;
+                    if ((w.side === 'bid' && p >= cp) || (w.side === 'ask' && p <= cp)) return;
+                    const dist = (Math.abs(p - cp) / cp) * 100;
+                    if (dist <= maxDist) candidates.push(p);
+                });
             }
             if (showGEXRef.current && curData.gex_data) {
                 if (curData.gex_data.call_wall) candidates.push(Number(curData.gex_data.call_wall));
@@ -1617,6 +1779,8 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
             spoofingThreshold,
             smartMoneyBias,
             showMagnetZones,
+            showDeepWalls,
+            deepRangePct,
             showLeveragePools,
             showTrajectory,
             isDark,
@@ -1641,6 +1805,8 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
         spoofingThreshold,
         smartMoneyBias,
         showMagnetZones,
+        showDeepWalls,
+        deepRangePct,
         showLeveragePools,
         showTrajectory,
         isDark,

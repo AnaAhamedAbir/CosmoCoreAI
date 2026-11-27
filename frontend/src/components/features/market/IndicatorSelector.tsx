@@ -220,6 +220,8 @@ export interface IndicatorSettings {
     liquidationBookmapHistoryMin?: 15 | 60 | 120;
     liquidationSpoofingThreshold: number;
     liquidationShowMagnetZones?: boolean;
+    liquidationShowDeepWalls?: boolean;
+    liquidationDeepRangePct?: 5 | 10;
     liquidationShowLeveragePools?: boolean;
     liquidationPoolHorizon?: '24h' | '3d' | '7d';
     liquidationShowTrajectory?: boolean;
@@ -2130,6 +2132,38 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
                                             <span className="text-gray-700 dark:text-gray-300 font-semibold group-hover:text-gray-900 dark:group-hover:text-white transition-colors">L2 Magnet Zones 🧲</span>
                                             <input type="checkbox" checked={settings.liquidationShowMagnetZones !== false} onChange={() => onSettingsChange({ ...settings, liquidationShowMagnetZones: settings.liquidationShowMagnetZones === false ? true : false })} className="w-3 h-3 rounded" />
                                         </label>
+                                    </div>
+                                    <div className="flex flex-col gap-1.5 mt-2">
+                                        <label className="flex items-center justify-between cursor-pointer group">
+                                            <span className="text-sky-600 dark:text-sky-400 font-semibold group-hover:text-sky-700 dark:group-hover:text-sky-300 transition-colors">Global Deep Walls (4-Ex) 🌐</span>
+                                            <input type="checkbox" checked={settings.liquidationShowDeepWalls !== false} onChange={() => onSettingsChange({ ...settings, liquidationShowDeepWalls: settings.liquidationShowDeepWalls === false ? true : false })} className="w-3 h-3 rounded text-sky-500 focus:ring-sky-500" />
+                                        </label>
+                                        {settings.liquidationShowDeepWalls !== false && (
+                                            <div className="flex items-center justify-between gap-2 mt-1 ml-2 px-2 py-1.5 bg-gray-50 dark:bg-white/5 rounded-lg border border-sky-500/20">
+                                                <span className="text-[9.5px] text-gray-600 dark:text-gray-400 font-semibold uppercase tracking-wide">
+                                                    Depth Range
+                                                </span>
+                                                <div className="flex rounded overflow-hidden border border-gray-200 dark:border-white/10 text-[9px]">
+                                                    {([5, 10] as const).map((pct) => {
+                                                        const active = (settings.liquidationDeepRangePct || 10) === pct;
+                                                        return (
+                                                            <button
+                                                                key={pct}
+                                                                type="button"
+                                                                onClick={() => onSettingsChange({ ...settings, liquidationDeepRangePct: pct })}
+                                                                className={`px-2 py-0.5 font-mono font-bold transition-all ${
+                                                                    active
+                                                                        ? 'bg-sky-500 text-white shadow-sm'
+                                                                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white bg-gray-100 dark:bg-white/5'
+                                                                }`}
+                                                            >
+                                                                ±{pct}%
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="flex flex-col gap-1.5 mt-2">
                                         <label className="flex items-center justify-between cursor-pointer group">

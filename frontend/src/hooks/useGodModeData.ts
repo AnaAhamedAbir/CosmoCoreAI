@@ -25,6 +25,44 @@ export interface LiquidationPoolSummary {
     swept_count_filtered: number;
 }
 
+export interface DeepL2Wall {
+    price: number;
+    side: 'bid' | 'ask';
+    total_usd: number;
+    intensity: number;
+    dist_pct: number;
+    exchanges: string[];
+    exchange_count: number;
+    is_confluence: boolean;
+    exchange_breakdown?: Record<string, number>;
+}
+
+export interface DeepL2Summary {
+    range_pct: number;
+    exchanges_active: string[];
+    exchange_count: number;
+    total_bids_10pct_usd: number;
+    total_asks_10pct_usd: number;
+    total_bids_5pct_usd: number;
+    total_asks_5pct_usd: number;
+    global_bid_ratio: number;
+    book_bias: 'BID_HEAVY' | 'ASK_HEAVY' | 'BALANCED';
+    strongest_bid_wall?: {
+        price: number;
+        total_usd: number;
+        dist_pct: number;
+        exchange_count: number;
+        exchanges: string[];
+    } | null;
+    strongest_ask_wall?: {
+        price: number;
+        total_usd: number;
+        dist_pct: number;
+        exchange_count: number;
+        exchanges: string[];
+    } | null;
+}
+
 export interface GodModeState {
     symbol: string;
     exchange?: string;
@@ -73,6 +111,8 @@ export interface GodModeState {
         source?: string;
     }[];
     liquidation_pool_summary?: LiquidationPoolSummary;
+    deep_l2_walls?: DeepL2Wall[];
+    deep_l2_summary?: DeepL2Summary;
     orderbook_depth?: { price: number, volume: number, type: 'bid' | 'ask' }[];
     spoofed_zones?: { price: number, volume: number, timestamp: number, type: string }[];
     cascade_probs: { price: number, prob: number, volume?: number }[];

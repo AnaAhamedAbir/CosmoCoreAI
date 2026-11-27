@@ -1,4 +1,4 @@
-﻿@tailwind base;
+@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
@@ -806,6 +806,26 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 .body-no-scroll { overflow: hidden; }
 
 .cv-auto { content-visibility: auto; contain-intrinsic-size: auto 480px; }
+
+/* Ultra-lightweight GPU-composited animations (safe for 120Hz mobile/tablet screens) */
+@keyframes cosmo-live-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.28; }
+}
+
+.cosmo-live-dot {
+  animation: cosmo-live-dot 1.8s ease-in-out infinite;
+}
+
+@keyframes cosmo-spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.cosmo-spin-slow {
+  animation: cosmo-spin-slow 22s linear infinite;
+  will-change: transform;
+}
 
 /* Custom DatePicker Styles */
 .react-datepicker-wrapper {

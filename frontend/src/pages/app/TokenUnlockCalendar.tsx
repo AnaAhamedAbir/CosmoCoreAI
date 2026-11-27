@@ -1,4 +1,4 @@
-
+﻿
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { ResponsiveContainer, AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts';
 import { useQuery } from '@tanstack/react-query';
@@ -99,7 +99,7 @@ const VestingSparkline: React.FC<{ data: any[], color: string; eventId: string }
     const gradientId = `grad-${color.replace('#', '')}-${eventId}`;
     return (
         <div className="h-12 w-24 opacity-70">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer debounce={220} width="100%" height="100%">
                 <AreaChart data={data}>
                     <defs>
                         <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
@@ -146,16 +146,16 @@ const UnlockCountdown: React.FC<{ targetDate: string }> = ({ targetDate }) => {
 type IntelTab = 'overview' | 'dna' | 'deposits' | 'funding' | 'allocators' | 'hedge' | 'arbitrage' | 'options' | 'trap' | 'market';
 
 const INTEL_TABS: { id: IntelTab; label: string; icon: string }[] = [
-    { id: 'overview',   label: 'Overview',     icon: '📊' },
-    { id: 'dna',        label: 'DNA Print',    icon: '🧬' },
-    { id: 'deposits',   label: 'CEX Radar',    icon: '📡' },
-    { id: 'funding',    label: 'Funding',      icon: '⚡' },
-    { id: 'allocators', label: 'Allocators',   icon: '🏦' },
-    { id: 'trap',       label: 'Trap Detect',  icon: '⚠️' },
-    { id: 'hedge',      label: 'Hedge Calc',   icon: '🛡️' },
-    { id: 'arbitrage',  label: 'Arb Screen',   icon: '🎰' },
-    { id: 'options',    label: 'Options IV',   icon: '📈' },
-    { id: 'market',     label: 'Market Intel', icon: '🌐' },
+    { id: 'overview',   label: 'Overview',     icon: 'ðŸ“Š' },
+    { id: 'dna',        label: 'DNA Print',    icon: 'ðŸ§¬' },
+    { id: 'deposits',   label: 'CEX Radar',    icon: 'ðŸ“¡' },
+    { id: 'funding',    label: 'Funding',      icon: 'âš¡' },
+    { id: 'allocators', label: 'Allocators',   icon: 'ðŸ¦' },
+    { id: 'trap',       label: 'Trap Detect',  icon: 'âš ï¸' },
+    { id: 'hedge',      label: 'Hedge Calc',   icon: 'ðŸ›¡ï¸' },
+    { id: 'arbitrage',  label: 'Arb Screen',   icon: 'ðŸŽ°' },
+    { id: 'options',    label: 'Options IV',   icon: 'ðŸ“ˆ' },
+    { id: 'market',     label: 'Market Intel', icon: 'ðŸŒ' },
 ];
 
 const EventDetailModal: React.FC<{ event: TokenUnlockEvent; onClose: () => void; }> = ({ event, onClose }) => {
@@ -240,7 +240,7 @@ const EventDetailModal: React.FC<{ event: TokenUnlockEvent; onClose: () => void;
                                     Emission Schedule
                                 </h3>
                                 <div className="h-64">
-                                    <ResponsiveContainer width="100%" height="100%">
+                                    <ResponsiveContainer debounce={220} width="100%" height="100%">
                                         <AreaChart data={event.vestingSchedule.map(d => ({ ...d, date: new Date(d.date).getTime() }))}>
                                             <defs>
                                                 <linearGradient id="vestingGradientModal" x1="0" y1="0" x2="0" y2="1">
@@ -265,7 +265,7 @@ const EventDetailModal: React.FC<{ event: TokenUnlockEvent; onClose: () => void;
                                     Token Distribution
                                 </h3>
                                 <div className="h-64">
-                                    <ResponsiveContainer width="100%" height="100%">
+                                    <ResponsiveContainer debounce={220} width="100%" height="100%">
                                         {allocationData.length > 0 ? (
                                             <PieChart>
                                                 <Pie data={allocationData as any} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5}>
@@ -325,11 +325,11 @@ const EventDetailModal: React.FC<{ event: TokenUnlockEvent; onClose: () => void;
                 return (
                     <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
                         <div>
-                            <h3 className="text-base font-bold text-white mb-4 flex items-center gap-2">🌐 Contagion Map</h3>
+                            <h3 className="text-base font-bold text-white mb-4 flex items-center gap-2">ðŸŒ Contagion Map</h3>
                             <ContagionMapWidget />
                         </div>
                         <div>
-                            <h3 className="text-base font-bold text-white mb-4 flex items-center gap-2">🔄 Sector Rotation</h3>
+                            <h3 className="text-base font-bold text-white mb-4 flex items-center gap-2">ðŸ”„ Sector Rotation</h3>
                             <SectorRotationIntel />
                         </div>
                     </div>
@@ -401,9 +401,9 @@ const EventDetailModal: React.FC<{ event: TokenUnlockEvent; onClose: () => void;
     );
 };
 
-// ─────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Main Page Component
-// ─────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 type PageTab = 'radar' | 'market';
 
@@ -490,13 +490,13 @@ const TokenUnlockCalendar: React.FC = () => {
                                 onClick={() => setPageTab('radar')}
                                 className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-all ${pageTab === 'radar' ? 'bg-white dark:bg-brand-primary text-slate-900 dark:text-white shadow' : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
                             >
-                                📡 Radar
+                                ðŸ“¡ Radar
                             </button>
                             <button
                                 onClick={() => setPageTab('market')}
                                 className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-all ${pageTab === 'market' ? 'bg-white dark:bg-brand-primary text-slate-900 dark:text-white shadow' : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
                             >
-                                🌐 Market Intel
+                                ðŸŒ Market Intel
                             </button>
                         </div>
 
@@ -525,20 +525,20 @@ const TokenUnlockCalendar: React.FC = () => {
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 animate-fade-in-up">
                     <div className="bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1A1A1A] rounded-2xl p-6 shadow-lg">
                         <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-                            🌐 Sector Contagion Map
+                            ðŸŒ Sector Contagion Map
                         </h2>
                         <ContagionMapWidget />
                     </div>
                     <div className="bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1A1A1A] rounded-2xl p-6 shadow-lg">
                         <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-                            🔄 Rotation Intelligence
+                            ðŸ”„ Rotation Intelligence
                         </h2>
                         <SectorRotationIntel />
                     </div>
                 </div>
             )}
 
-            {/* Radar Tab — Event Cards */}
+            {/* Radar Tab â€” Event Cards */}
             {pageTab === 'radar' && (
                 <div className="space-y-12">
                     {Object.entries(groupedEvents).map(([groupName, events], groupIndex) => (
@@ -606,7 +606,7 @@ const TokenUnlockCalendar: React.FC = () => {
                                                     <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between">
                                                         <span className="text-[10px] text-gray-400">Click for 10-feature Intel Suite</span>
                                                         <span className="text-[10px] bg-brand-primary/10 text-brand-primary px-2 py-0.5 rounded font-bold">
-                                                            🧬 DNA • 📡 RADAR • 🛡️ HEDGE
+                                                            ðŸ§¬ DNA â€¢ ðŸ“¡ RADAR â€¢ ðŸ›¡ï¸ HEDGE
                                                         </span>
                                                     </div>
                                                 </div>

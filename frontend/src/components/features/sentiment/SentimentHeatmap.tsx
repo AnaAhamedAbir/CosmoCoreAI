@@ -149,7 +149,7 @@ export const SentimentHeatmap: React.FC<SentimentHeatmapProps> = React.memo(({ h
                         <p className="text-xs font-mono text-brand-primary mt-4">INITIALIZING NEURAL GRID...</p>
                     </div>
                 ) : (
-                    <ResponsiveContainer width="100%" height="100%" debounce={150}>
+                    <ResponsiveContainer width="100%" height="100%" debounce={220}>
                         <Treemap
                             data={heatmapData}
                             dataKey="marketCap"

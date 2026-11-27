@@ -1,4 +1,4 @@
-
+﻿
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ResponsiveContainer, AreaChart, Area, BarChart, Bar, Cell, XAxis, YAxis } from 'recharts';
 import Card from '@/components/common/Card';
@@ -200,7 +200,7 @@ const RealTimeData: React.FC = () => {
             <div className="relative rounded-2xl bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1A1A1A] overflow-hidden shadow-lg flex-shrink-0">
                  {/* Background Sparkline Area */}
                  <div className="absolute inset-0 opacity-10 pointer-events-none">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer debounce={220} width="100%" height="100%">
                         <AreaChart data={sparkData}>
                             <defs>
                                 <linearGradient id="pulseGradient" x1="0" y1="0" x2="0" y2="1">
@@ -244,7 +244,7 @@ const RealTimeData: React.FC = () => {
                             <AnimatedNumber value={stockData.price} currency />
                         </div>
                         <div className={`flex items-center gap-2 text-lg font-bold ${isPositive ? 'text-emerald-500' : 'text-rose-500'}`}>
-                             <span>{isPositive ? '▲' : '▼'} <AnimatedNumber value={Math.abs(stockData.change)} currency /></span>
+                             <span>{isPositive ? 'â–²' : 'â–¼'} <AnimatedNumber value={Math.abs(stockData.change)} currency /></span>
                              <span className="bg-current opacity-20 w-px h-4"></span>
                              <span><AnimatedNumber value={Math.abs(stockData.percent)} percentage /></span>
                         </div>

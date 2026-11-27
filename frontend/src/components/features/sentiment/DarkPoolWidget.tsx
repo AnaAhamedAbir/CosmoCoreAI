@@ -92,7 +92,7 @@ export const DarkPoolWidget: React.FC<DarkPoolWidgetProps> = React.memo(({ symbo
                 <div className="flex flex-col items-end">
                     <span className="flex items-center gap-1.5">
                         <span className="relative flex h-2 w-2">
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500 cosmo-live-dot"></span>
                         </span>
                         <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 tracking-wider">LIVE</span>
                     </span>
@@ -128,7 +128,7 @@ export const DarkPoolWidget: React.FC<DarkPoolWidgetProps> = React.memo(({ symbo
                             <span>Flow Delta</span>
                             <Activity className="h-3 w-3 opacity-50" />
                         </div>
-                        <ResponsiveContainer width="100%" height="80%" debounce={150}>
+                        <ResponsiveContainer width="100%" height="80%" debounce={220}>
                             <BarChart data={mockChartData}>
                                 <Tooltip
                                     cursor={{ fill: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(15,23,42,0.05)' }}

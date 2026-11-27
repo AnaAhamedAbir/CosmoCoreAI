@@ -322,8 +322,8 @@ const Sidebar: React.FC<{
     const sidebarAside = (
         <aside className={`${
             isPhoneMobileUI
-                ? `${isMobileOpen ? 'fixed top-0 left-0 h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)] w-[272px] max-w-[84vw] z-[90] translate-x-0 pointer-events-auto' : 'hidden'}`
-                : `${effectiveCollapsed ? 'w-20' : 'w-72'} h-full max-h-full flex-shrink-0 z-30 relative`
+                ? `fixed top-0 left-0 h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)] w-[272px] max-w-[84vw] z-[90] transition-transform duration-200 ease-out ${isMobileOpen ? 'translate-x-0 pointer-events-auto' : '-translate-x-full pointer-events-none'}`
+                : `${effectiveCollapsed ? 'w-20' : 'w-72'} h-full max-h-full flex-shrink-0 transition-[width] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] z-30 relative`
         } bg-[#F8FAFC] dark:bg-[#070B14] border-r border-slate-200 dark:border-slate-800/80 flex flex-col shadow-[4px_0_24px_rgba(0,0,0,0.06)] dark:shadow-[4px_0_28px_rgba(0,0,0,0.45)] group`}>
 
             {/* Subtle Top Accent Hairline */}
@@ -1056,7 +1056,7 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
                                 </div>
                             )}
                         </header>
-                        <main className={`flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden relative z-0 ${isPhoneMobileUI ? 'p-3' : 'p-8 laptop:p-3 laptop-h:p-2.5'}`}>
+                        <main className={`flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden touch-pan-y overscroll-y-contain relative z-0 ${isPhoneMobileUI ? 'p-3' : 'p-8 laptop:p-3 laptop-h:p-2.5'}`}>
                             <Suspense fallback={<div className="flex items-center justify-center h-full min-h-[240px] text-slate-400 text-xs">Loading module...</div>}>
                                 <DashboardContentRouter
                                     viewToRender={viewToRender}

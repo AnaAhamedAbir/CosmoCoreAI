@@ -26,7 +26,7 @@ const SocialDominanceChart: React.FC<SocialDominanceChartProps> = React.memo(({ 
         <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-md dark:shadow-lg border border-slate-200 dark:border-gray-700">
             <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-4">Social Volume Dominance</h3>
             <div className="h-72 w-full">
-                <ResponsiveContainer width="100%" height="100%" debounce={150}>
+                <ResponsiveContainer width="100%" height="100%" debounce={220}>
                     <AreaChart
                         data={data}
                         margin={{

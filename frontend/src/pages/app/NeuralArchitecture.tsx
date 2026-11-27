@@ -1,4 +1,4 @@
-// frontend/screens/app/NeuralArchitecture.tsx
+﻿// frontend/screens/app/NeuralArchitecture.tsx
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -84,7 +84,7 @@ const SystemMonitor = () => {
                 {/* Area Chart */}
                 <div className="lg:col-span-2 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1F1F1F] rounded-xl p-6 h-[400px] shadow-sm">
                     <h3 className="text-lg font-semibold text-slate-800 dark:text-white mb-4">Cumulative Performance</h3>
-                    <ResponsiveContainer width="100%" height="100%" className="!h-[320px]">
+                    <ResponsiveContainer debounce={220} width="100%" height="100%" className="!h-[320px]">
                         <AreaChart data={pnlData}>
                             <defs>
                                 <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
@@ -123,7 +123,7 @@ const SystemMonitor = () => {
             {/* Bar Chart */}
             <div className="bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1F1F1F] rounded-xl p-6 h-[350px] shadow-sm">
                 <h3 className="text-lg font-semibold text-slate-800 dark:text-white mb-4">Daily Profit & Loss Analysis</h3>
-                <ResponsiveContainer width="100%" height="100%" className="!h-[270px]">
+                <ResponsiveContainer debounce={220} width="100%" height="100%" className="!h-[270px]">
                     <BarChart data={dailyPerformance}>
                         <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} vertical={false} />
                         <XAxis dataKey="day" stroke="#94a3b8" fontSize={12} />

@@ -1,4 +1,4 @@
-
+﻿
 import React, { useState, useEffect, useMemo } from 'react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import Card from '@/components/common/Card';
@@ -85,7 +85,7 @@ const HoldingDetailModal: React.FC<{ holding: FundHolding; onClose: () => void }
                     <div className="bg-white dark:bg-[#0A0A0A] rounded-xl border border-brand-border-light dark:border-[#1A1A1A] p-4">
                         <h3 className="text-sm font-bold mb-4 text-slate-900 dark:text-white uppercase tracking-wider">Historical Position Size</h3>
                         <div className="h-64 w-full">
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer debounce={220} width="100%" height="100%">
                                 <BarChart data={historyData}>
                                     <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
                                     <XAxis dataKey="quarter" stroke={axisColor} fontSize={10} tickLine={false} axisLine={false} dy={10} />
@@ -337,7 +337,7 @@ const InstitutionalHoldingsTracker: React.FC = () => {
                             <h3 className="font-bold text-slate-900 dark:text-white">Sector Allocation (Est.)</h3>
                         </div>
                         <div className="flex-1 p-4 relative">
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer debounce={220} width="100%" height="100%">
                                 <PieChart>
                                     <Pie
                                         data={sectorData}

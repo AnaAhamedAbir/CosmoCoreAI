@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, FormEvent } from 'react';
+﻿import React, { useState, useEffect, useRef, useCallback, FormEvent } from 'react';
 import { ResponsiveContainer, AreaChart, Area, Tooltip } from 'recharts';
 import { ReferenceLine } from 'recharts';
 import Card from '@/components/common/Card';
@@ -540,7 +540,7 @@ const StandardLiquidationView: React.FC = () => {
                                     
                                     <div className="flex-1 relative min-h-0">
                                         <div className="absolute inset-0 bg-slate-50 dark:bg-black/20 rounded-xl border border-slate-200 dark:border-white/5 p-2">
-                                            <ResponsiveContainer width="100%" height="100%">
+                                            <ResponsiveContainer debounce={220} width="100%" height="100%">
                                                 <AreaChart data={cldData}>
                                                     <defs>
                                                         <linearGradient id="cldGradient" x1="0" y1="0" x2="0" y2="1">

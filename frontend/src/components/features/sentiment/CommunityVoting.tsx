@@ -106,7 +106,7 @@ interface CommunityVotingProps {
 
 export const CommunityVoting: React.FC<CommunityVotingProps> = React.memo(({ votes, onVote, influencers }) => {
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-[340px]">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:h-[340px]">
             <InfluencerWatchlist influencers={influencers} />
             <CommunityPoll stats={votes} onVote={onVote} />
         </div>

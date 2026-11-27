@@ -1,4 +1,4 @@
-
+﻿
 import React, { useState, useMemo, FormEvent, useEffect } from 'react';
 import Card from '@/components/common/Card';
 import Button from '@/components/common/Button';
@@ -151,7 +151,7 @@ const TaskItem: React.FC<{ task: Task; onToggle: (id: number) => void; onDelete:
                     <span className={`text-xs font-bold uppercase tracking-wider ${task.completed ? 'text-gray-400' : 'text-brand-primary'}`}>
                         {task.category}
                     </span>
-                    <span className="text-[10px] text-gray-400">• {task.timestamp}</span>
+                    <span className="text-[10px] text-gray-400">â€¢ {task.timestamp}</span>
                 </div>
                 <p className={`text-sm font-medium truncate transition-all duration-300 ${task.completed ? 'text-gray-400 line-through decoration-gray-400' : 'text-slate-900 dark:text-white'}`}>
                     {task.text}
@@ -190,7 +190,7 @@ const ProductivityHUD: React.FC<{ pending: number; completed: number }> = ({ pen
                     <h3 className="text-3xl font-extrabold mt-1">{percentage}% <span className="text-sm font-normal opacity-80">Complete</span></h3>
                 </div>
                 <div className="w-16 h-16 relative">
-                     <ResponsiveContainer width="100%" height="100%">
+                     <ResponsiveContainer debounce={220} width="100%" height="100%">
                         <PieChart>
                             <Pie data={data} innerRadius={22} outerRadius={32} dataKey="value" startAngle={90} endAngle={-270} stroke="none">
                                 {data.map((entry, index) => (

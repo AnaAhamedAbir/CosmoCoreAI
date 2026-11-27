@@ -1,4 +1,4 @@
-
+﻿
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import Card from '@/components/common/Card';
 import Button from '@/components/common/Button';
@@ -20,7 +20,7 @@ const AssetSparkline: React.FC<{ data: { value: number }[]; isPositive: boolean;
 
     return (
         <div className="h-16 w-full absolute bottom-0 left-0 right-0 opacity-30 pointer-events-none">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer debounce={220} width="100%" height="100%">
                 <AreaChart data={data}>
                     <defs>
                         <linearGradient id={`gradient-${id}`} x1="0" y1="0" x2="0" y2="1">

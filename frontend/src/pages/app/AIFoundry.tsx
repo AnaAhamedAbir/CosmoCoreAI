@@ -1,4 +1,4 @@
-
+﻿
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import Card from '@/components/common/Card';
@@ -567,7 +567,7 @@ RULES:
                             )}
 
                             <div className="h-80 bg-white dark:bg-[#000000]/30 rounded-xl border border-gray-200 dark:border-white/5 p-4">
-                                <ResponsiveContainer width="100%" height="100%">
+                                <ResponsiveContainer debounce={220} width="100%" height="100%">
                                    <LineChart data={EQUITY_CURVE_DATA}>
                                        <defs>
                                             <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">

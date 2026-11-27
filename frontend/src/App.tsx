@@ -80,16 +80,11 @@ function App() {
     };
     window.addEventListener('focusout', handleFocusOut);
 
-    // Prevent multi-finger pinch from zooming the entire browser page/UI on tablets
-    const preventPagePinchZoom = (e: TouchEvent) => {
-      if (e.touches.length > 1 && e.cancelable) {
-        e.preventDefault();
-      }
-    };
+    // Multi-touch pinch zoom is already disabled natively via CSS `touch-action: pan-x pan-y`
+    // and viewport meta without registering a scroll-blocking non-passive touchmove listener on document.
     const preventGestureZoom = (e: Event) => {
       if (e.cancelable) e.preventDefault();
     };
-    document.addEventListener('touchmove', preventPagePinchZoom, { passive: false });
     document.addEventListener('gesturestart', preventGestureZoom, { passive: false } as AddEventListenerOptions);
     document.addEventListener('gesturechange', preventGestureZoom, { passive: false } as AddEventListenerOptions);
 
@@ -97,7 +92,6 @@ function App() {
       window.removeEventListener('resize', updateAppHeight);
       window.removeEventListener('orientationchange', updateAppHeight);
       window.removeEventListener('focusout', handleFocusOut);
-      document.removeEventListener('touchmove', preventPagePinchZoom);
       document.removeEventListener('gesturestart', preventGestureZoom);
       document.removeEventListener('gesturechange', preventGestureZoom);
     };

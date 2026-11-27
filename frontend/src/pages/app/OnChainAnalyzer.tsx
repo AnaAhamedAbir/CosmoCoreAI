@@ -1,4 +1,4 @@
-
+﻿
 import React, { useState, useMemo } from 'react';
 import {
     ResponsiveContainer,
@@ -157,7 +157,7 @@ const OnChainAnalyzer: React.FC = () => {
                                 >
                                     {cryptoAssets.map(p => <option key={p.id} value={p.id}>{p.symbol}</option>)}
                                 </select>
-                                <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">▼</div>
+                                <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">â–¼</div>
                             </div>
                         </div>
 
@@ -206,7 +206,7 @@ const OnChainAnalyzer: React.FC = () => {
                     </div>
 
                     <div className="flex-1 w-full min-h-[250px]">
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer debounce={220} width="100%" height="100%">
                             <ComposedChart data={onChainData.exchangeFlow}>
                                 <defs>
                                     <linearGradient id="netflowGradPositive" x1="0" y1="0" x2="0" y2="1">
@@ -254,7 +254,7 @@ const OnChainAnalyzer: React.FC = () => {
                             </div>
 
                             <div className="flex-1 min-h-[150px]">
-                                <ResponsiveContainer width="100%" height="100%">
+                                <ResponsiveContainer debounce={220} width="100%" height="100%">
                                     <AreaChart data={onChainData.whaleTransactions}>
                                         <defs>
                                             <linearGradient id="whaleGrad" x1="0" y1="0" x2="0" y2="1">
@@ -285,7 +285,7 @@ const OnChainAnalyzer: React.FC = () => {
                             </div>
                         </div>
                         <div className="h-[100px] w-full">
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer debounce={220} width="100%" height="100%">
                                 <AreaChart data={onChainData.hashRate}>
                                     <defs>
                                         <linearGradient id="hashGrad" x1="0" y1="0" x2="0" y2="1">

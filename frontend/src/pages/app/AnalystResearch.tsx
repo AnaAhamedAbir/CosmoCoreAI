@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import Card from '@/components/common/Card';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { useTheme } from '@/context/ThemeContext';
@@ -10,7 +10,7 @@ const ConsensusRing: React.FC<{ data: any[], dominantRating: string }> = ({ data
     const { theme } = useTheme();
     return (
         <div className="relative h-64 w-full flex items-center justify-center">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer debounce={220} width="100%" height="100%">
                 <PieChart>
                     <Pie
                         data={data}

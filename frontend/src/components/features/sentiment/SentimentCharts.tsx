@@ -31,7 +31,7 @@ export const SentimentPriceChart: React.FC<SentimentChartsProps> = React.memo(({
     const { theme } = useTheme();
 
     return (
-        <Card className="flex flex-col h-[500px]">
+        <Card className="flex flex-col h-[350px] sm:h-[500px]">
             <div className="flex justify-between items-center mb-6">
                 <div>
                     <h3 className="text-lg font-bold text-slate-900 dark:text-white">Sentiment vs Price Correlation</h3>
@@ -54,9 +54,9 @@ export const SentimentPriceChart: React.FC<SentimentChartsProps> = React.memo(({
                     </div>
                 </div>
             </div>
-            <div className="flex-grow w-full h-full min-h-[300px] flex items-center justify-center relative">
+            <div className="flex-grow w-full h-full min-h-[240px] sm:min-h-[300px] flex items-center justify-center relative">
                 {historyData && historyData.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%" debounce={150}>
+                    <ResponsiveContainer width="100%" height="100%" debounce={220}>
                         <ComposedChart data={historyData} margin={{ top: 10, right: 0, left: 0, bottom: 30 }} syncId="sentiment-sync">
                             <defs>
                                 <linearGradient id="sentimentGradient" x1="0" y1="0" x2="0" y2="1">
@@ -114,7 +114,7 @@ export const SentimentDivergenceChart: React.FC<{ data: any[], correlation: numb
     const gridColor = theme === 'dark' ? '#334155' : '#E2E8F0';
 
     return (
-        <Card className="flex flex-col h-[350px]">
+        <Card className="flex flex-col h-[290px] sm:h-[350px]">
             <div className="flex justify-between items-center mb-6">
                 <div>
                     <h3 className="text-lg font-bold text-slate-900 dark:text-white">Smart Money vs Retail Divergence</h3>
@@ -129,7 +129,7 @@ export const SentimentDivergenceChart: React.FC<{ data: any[], correlation: numb
 
             <div className="h-full w-full flex items-center justify-center relative">
                 {data && data.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%" debounce={150}>
+                    <ResponsiveContainer width="100%" height="100%" debounce={220}>
                         <ComposedChart data={data} syncId="sentiment-sync">
                             <defs>
                                 <linearGradient id="retailGradient" x1="0" y1="0" x2="0" y2="1">

@@ -35,7 +35,7 @@ export const SentimentSignalAnalysis: React.FC<SentimentSignalAnalysisProps> = R
                 <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Signal Sources</h3>
                 <div className="flex items-center justify-between h-full">
                     <div className="h-48 w-48 relative">
-                        <ResponsiveContainer width="100%" height="100%" debounce={150}>
+                        <ResponsiveContainer width="100%" height="100%" debounce={220}>
                             <PieChart>
                                 <Pie
                                     data={sourceBreakdownData}
@@ -86,7 +86,7 @@ export const SentimentSignalAnalysis: React.FC<SentimentSignalAnalysisProps> = R
                 <div className="relative z-10 flex flex-col h-full">
                     <div className="flex justify-between items-center mb-4">
                         <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                            <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                            <span className="w-2 h-2 bg-blue-500 rounded-full cosmo-live-dot"></span>
                             AI Intelligence Stream
                         </h3>
 

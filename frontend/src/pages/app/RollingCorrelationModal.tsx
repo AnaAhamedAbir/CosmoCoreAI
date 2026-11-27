@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine } from 'recharts';
 import Card from '@/components/common/Card';
 import { XMarkIcon } from '@heroicons/react/24/outline';
@@ -72,7 +72,7 @@ const RollingCorrelationModal: React.FC<RollingCorrelationModalProps> = ({ symbo
                             {error}
                         </div>
                     ) : (
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer debounce={220} width="100%" height="100%">
                             <LineChart data={data}>
                                 <CartesianGrid strokeDasharray="3 3" stroke={theme === 'dark' ? '#334155' : '#e2e8f0'} />
                                 <XAxis

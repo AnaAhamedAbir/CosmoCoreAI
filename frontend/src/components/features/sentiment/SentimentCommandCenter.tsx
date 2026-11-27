@@ -24,49 +24,61 @@ export const SentimentCommandCenter: React.FC<SentimentCommandCenterProps> = Rea
     const [isOpen, setIsOpen] = useState(false);
     const [language, setLanguage] = useState<'en' | 'bn'>('en');
 
-    // Draggable State (refs avoid re-attaching window listeners on every mousemove frame)
-    const [position, setPosition] = useState(() => ({ x: typeof window !== 'undefined' ? window.innerWidth - 100 : 1000, y: 125 }));
+    // Draggable State (PointerEvents support both desktop mouse & Galaxy A34 / Redmi Pad touchscreens)
+    const clampPos = (x: number, y: number) => {
+        if (typeof window === 'undefined') return { x, y };
+        const btnSize = window.innerWidth < 640 ? 56 : 72;
+        return {
+            x: Math.max(8, Math.min(x, window.innerWidth - btnSize)),
+            y: Math.max(8, Math.min(y, window.innerHeight - btnSize)),
+        };
+    };
+
+    const [position, setPosition] = useState(() =>
+        typeof window !== 'undefined' ? clampPos(window.innerWidth - 88, 125) : { x: 1000, y: 125 }
+    );
     const [isDragging, setIsDragging] = useState(false);
     const dragOffsetRef = useRef({ x: 0, y: 0 });
+    const startPointRef = useRef({ x: 0, y: 0 });
     const latestPosRef = useRef(position);
     const wasDraggedRef = useRef(false);
     const buttonRef = useRef<HTMLButtonElement>(null);
 
-    // Load saved position from localStorage
+    // Load saved position from localStorage (clamped to current viewport so phone screens never push it off-screen)
     useEffect(() => {
         const savedPos = localStorage.getItem('sentimentWidgetPos_v2');
         if (savedPos) {
             try {
                 const parsed = JSON.parse(savedPos);
-                setPosition(parsed);
-                latestPosRef.current = parsed;
-            } catch (e) {
+                const clamped = clampPos(Number(parsed.x) || 0, Number(parsed.y) || 125);
+                setPosition(clamped);
+                latestPosRef.current = clamped;
+            } catch {
                 // Invalid JSON, ignore
             }
         }
     }, []);
 
-    // Global Mouse Listeners for Dragging
+    // Global Pointer Listeners for Dragging (mouse + touch)
     useEffect(() => {
         if (!isDragging) return;
 
-        const handleMouseMove = (e: MouseEvent) => {
-            wasDraggedRef.current = true;
-            const newX = e.clientX - dragOffsetRef.current.x;
-            const newY = e.clientY - dragOffsetRef.current.y;
-
-            const maxX = window.innerWidth - 80;
-            const maxY = window.innerHeight - 80;
-
-            const next = {
-                x: Math.max(0, Math.min(newX, maxX)),
-                y: Math.max(0, Math.min(newY, maxY))
-            };
+        const handlePointerMove = (e: PointerEvent) => {
+            if (
+                Math.abs(e.clientX - startPointRef.current.x) > 4 ||
+                Math.abs(e.clientY - startPointRef.current.y) > 4
+            ) {
+                wasDraggedRef.current = true;
+            }
+            const next = clampPos(
+                e.clientX - dragOffsetRef.current.x,
+                e.clientY - dragOffsetRef.current.y
+            );
             latestPosRef.current = next;
             setPosition(next);
         };
 
-        const handleMouseUp = () => {
+        const handlePointerUp = () => {
             setIsDragging(false);
             try {
                 localStorage.setItem('sentimentWidgetPos_v2', JSON.stringify(latestPosRef.current));
@@ -75,22 +87,25 @@ export const SentimentCommandCenter: React.FC<SentimentCommandCenterProps> = Rea
             }
         };
 
-        window.addEventListener('mousemove', handleMouseMove);
-        window.addEventListener('mouseup', handleMouseUp);
+        window.addEventListener('pointermove', handlePointerMove);
+        window.addEventListener('pointerup', handlePointerUp);
+        window.addEventListener('pointercancel', handlePointerUp);
 
         return () => {
-            window.removeEventListener('mousemove', handleMouseMove);
-            window.removeEventListener('mouseup', handleMouseUp);
+            window.removeEventListener('pointermove', handlePointerMove);
+            window.removeEventListener('pointerup', handlePointerUp);
+            window.removeEventListener('pointercancel', handlePointerUp);
         };
     }, [isDragging]);
 
-    const handleMouseDown = (e: React.MouseEvent) => {
+    const handlePointerDown = (e: React.PointerEvent) => {
         if (buttonRef.current) {
             const rect = buttonRef.current.getBoundingClientRect();
             dragOffsetRef.current = {
                 x: e.clientX - rect.left,
                 y: e.clientY - rect.top
             };
+            startPointRef.current = { x: e.clientX, y: e.clientY };
             wasDraggedRef.current = false;
             setIsDragging(true);
         }
@@ -140,7 +155,7 @@ export const SentimentCommandCenter: React.FC<SentimentCommandCenterProps> = Rea
     const FloatingButton = (
         <button
             ref={buttonRef}
-            onMouseDown={handleMouseDown}
+            onPointerDown={handlePointerDown}
             onClick={handleClick}
             style={{
                 left: `${position.x}px`,
@@ -148,19 +163,19 @@ export const SentimentCommandCenter: React.FC<SentimentCommandCenterProps> = Rea
                 cursor: isDragging ? 'grabbing' : 'grab',
                 touchAction: 'none'
             }}
-            className={`fixed z-[100] w-16 h-16 bg-gradient-to-br from-indigo-600 to-purple-700 rounded-full shadow-2xl flex items-center justify-center text-white transition-shadow duration-300 border-4 border-white/20 group animate-in zoom-in ${isDragging ? 'scale-110 shadow-indigo-500/50' : 'hover:scale-105 active:scale-95'}`}
+            className={`fixed z-[100] w-12 h-12 sm:w-16 sm:h-16 bg-gradient-to-br from-indigo-600 to-purple-700 rounded-full shadow-2xl flex items-center justify-center text-white transition-transform duration-150 border-2 sm:border-4 border-white/20 group ${isDragging ? 'scale-110 shadow-indigo-500/50' : 'hover:scale-105 active:scale-95'}`}
             title="Open AI Command Center (Drag to move)"
         >
-            <BrainCircuit className="w-8 h-8 pointer-events-none group-hover:rotate-12 transition-transform" />
+            <BrainCircuit className="w-6 h-6 sm:w-8 sm:h-8 pointer-events-none group-hover:rotate-12 transition-transform" />
 
             {/* Drag Indicator hint */}
             <div className="absolute -right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-50 transition-opacity">
                 <GripVertical className="w-4 h-4 text-white" />
             </div>
 
-            {/* Notification dot if no report yet (static to prevent constant compositor invalidation during scroll) */}
+            {/* GPU-safe live dot if no report yet */}
             {!report && !isLoading && (
-                <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 rounded-full border-2 border-white pointer-events-none"></span>
+                <span className="absolute top-0 right-0 w-3.5 h-3.5 sm:w-4 sm:h-4 bg-red-500 rounded-full border-2 border-white cosmo-live-dot pointer-events-none"></span>
             )}
         </button>
     );

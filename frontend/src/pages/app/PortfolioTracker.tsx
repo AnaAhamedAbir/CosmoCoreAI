@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+﻿import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -897,7 +897,7 @@ const PortfolioTracker: React.FC = () => {
                 fallbackTips.push(
                     `**Low Dry Powder (${stablecoinPct.toFixed(
                         1
-                    )}% Stables):** Target 15–25% USDT/USDC reserve for dip entries and futures margin buffer.`
+                    )}% Stables):** Target 15â€“25% USDT/USDC reserve for dip entries and futures margin buffer.`
                 );
             } else {
                 fallbackTips.push(
@@ -910,7 +910,7 @@ const PortfolioTracker: React.FC = () => {
                 );
             }
             fallbackTips.push(
-                `**${riskProfile} Posture (${scenario} Regime):** Maintain max per-trade risk ≤ ${
+                `**${riskProfile} Posture (${scenario} Regime):** Maintain max per-trade risk â‰¤ ${
                     riskTolerance < 33 ? '0.5%' : riskTolerance > 66 ? '1.5%' : '1.0%'
                 } with 1:2 minimum R:R brackets.`
             );
@@ -963,7 +963,7 @@ const PortfolioTracker: React.FC = () => {
                 isThermalGuard={isThermalGuard}
             />
 
-            {/* ── Top SaaS Portfolio Command Header ─────────────────────────────── */}
+            {/* â”€â”€ Top SaaS Portfolio Command Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
             <div className="relative rounded-2xl bg-white dark:bg-[#070b14] border border-slate-200 dark:border-cyan-500/25 p-4 lg:p-5 shadow-sm dark:shadow-[0_12px_32px_rgba(0,0,0,0.5)] overflow-hidden">
                 <div className="h-[2px] w-full absolute top-0 left-0 bg-gradient-to-r from-cyan-400 via-indigo-500 to-emerald-400 opacity-85" />
 
@@ -1040,7 +1040,7 @@ const PortfolioTracker: React.FC = () => {
                 </div>
             </div>
 
-            {/* ── Row 1: 4 SaaS KPI Cards ──────────────────────────────────────── */}
+            {/* â”€â”€ Row 1: 4 SaaS KPI Cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
             <div
                 className={`grid ${
                     isPhoneMobileUI
@@ -1105,7 +1105,7 @@ const PortfolioTracker: React.FC = () => {
                                             : 'bg-rose-500/10 border-rose-500/30 text-rose-600 dark:text-rose-400'
                                     }`}
                                 >
-                                    {portfolio24hChange >= 0 ? '▲' : '▼'}{' '}
+                                    {portfolio24hChange >= 0 ? 'â–²' : 'â–¼'}{' '}
                                     {Math.abs(portfolio24hChangePercent).toFixed(2)}%
                                 </span>
                                 {activeMarket === 'forex' && (
@@ -1181,7 +1181,7 @@ const PortfolioTracker: React.FC = () => {
                 </div>
             </div>
 
-            {/* ── Row 2: Trajectory Chart + Asset Weighting Donut ───────────────── */}
+            {/* â”€â”€ Row 2: Trajectory Chart + Asset Weighting Donut â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
                 {/* Trajectory Chart */}
                 <div className="xl:col-span-8 rounded-2xl bg-white dark:bg-[#070b14] border border-slate-200 dark:border-white/10 p-4 lg:p-5 shadow-sm flex flex-col">
@@ -1233,7 +1233,7 @@ const PortfolioTracker: React.FC = () => {
 
                     <div className="h-[250px] sm:h-[280px] w-full flex-1">
                         {trajectorySeries.length > 0 ? (
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer debounce={220} width="100%" height="100%">
                                 <AreaChart
                                     data={trajectorySeries}
                                     margin={{ top: 8, right: 10, left: 0, bottom: 0 }}
@@ -1307,7 +1307,7 @@ const PortfolioTracker: React.FC = () => {
 
                     <div className="h-[190px] w-full">
                         {allocationData.length > 0 ? (
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer debounce={220} width="100%" height="100%">
                                 <PieChart>
                                     <Pie
                                         data={allocationData}
@@ -1386,7 +1386,7 @@ const PortfolioTracker: React.FC = () => {
                 </div>
             </div>
 
-            {/* ── Row 3: Connected Exchange Channels Strip ─────────────────────── */}
+            {/* â”€â”€ Row 3: Connected Exchange Channels Strip â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
             <div className="rounded-2xl bg-white dark:bg-[#070b14] border border-slate-200 dark:border-white/10 p-3.5 sm:px-5 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-[10.5px] font-mono font-black uppercase tracking-wider text-slate-500 dark:text-gray-400 mr-1">
@@ -1414,11 +1414,11 @@ const PortfolioTracker: React.FC = () => {
                     onClick={() => setIsModalOpen(true)}
                     className="text-xs font-mono font-bold text-cyan-600 dark:text-cyan-400 hover:underline cursor-pointer"
                 >
-                    Manage Streams →
+                    Manage Streams â†’
                 </button>
             </div>
 
-            {/* ── Row 4: Holdings Inventory Matrix ─────────────────────────────── */}
+            {/* â”€â”€ Row 4: Holdings Inventory Matrix â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
             <div className="rounded-2xl bg-white dark:bg-[#070b14] border border-slate-200 dark:border-white/10 shadow-sm overflow-hidden">
                 {/* Smart Search & Filter Header */}
                 <div className="p-4 lg:p-5 border-b border-slate-200 dark:border-white/10 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
@@ -1563,7 +1563,7 @@ const PortfolioTracker: React.FC = () => {
                                                         : 'text-rose-600 dark:text-rose-400'
                                                 }`}
                                             >
-                                                {change24h >= 0 ? '▲' : '▼'}{' '}
+                                                {change24h >= 0 ? 'â–²' : 'â–¼'}{' '}
                                                 {Math.abs(change24h).toFixed(2)}%
                                             </span>
                                         </div>
@@ -1592,7 +1592,7 @@ const PortfolioTracker: React.FC = () => {
                                             }}
                                             className="px-2.5 py-1 rounded-lg bg-cyan-500/15 border border-cyan-500/35 text-cyan-700 dark:text-cyan-300 text-[10.5px] font-mono font-bold shrink-0"
                                         >
-                                            Trade →
+                                            Trade â†’
                                         </button>
                                     </div>
                                 </div>
@@ -1745,7 +1745,7 @@ const PortfolioTracker: React.FC = () => {
                                                             : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
                                                     }`}
                                                 >
-                                                    {change24h >= 0 ? '▲' : '▼'}{' '}
+                                                    {change24h >= 0 ? 'â–²' : 'â–¼'}{' '}
                                                     {Math.abs(change24h).toFixed(2)}%
                                                 </span>
                                             </td>
@@ -1766,7 +1766,7 @@ const PortfolioTracker: React.FC = () => {
                                                         color={change24h >= 0 ? '#10B981' : '#F43F5E'}
                                                     />
                                                 ) : (
-                                                    <span className="text-slate-400 font-mono text-xs">—</span>
+                                                    <span className="text-slate-400 font-mono text-xs">â€”</span>
                                                 )}
                                             </td>
 
@@ -1804,7 +1804,7 @@ const PortfolioTracker: React.FC = () => {
                 )}
             </div>
 
-            {/* ── Row 5: Stress Simulator & AI Portfolio Architect ─────────────── */}
+            {/* â”€â”€ Row 5: Stress Simulator & AI Portfolio Architect â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {/* Risk Stress Simulator */}
                 <div className="rounded-2xl bg-white dark:bg-[#070b14] border border-slate-200 dark:border-white/10 p-4 lg:p-5 shadow-sm flex flex-col space-y-4">
@@ -1884,7 +1884,7 @@ const PortfolioTracker: React.FC = () => {
                     </div>
 
                     <div className="h-[130px] w-full">
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer debounce={220} width="100%" height="100%">
                             <AreaChart
                                 data={simulationData}
                                 margin={{ top: 5, right: 6, left: 6, bottom: 0 }}

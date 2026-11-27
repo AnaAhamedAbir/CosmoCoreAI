@@ -82,7 +82,7 @@ export const WhaleActivityWidget: React.FC = React.memo(() => {
                 <div className="flex flex-col items-end">
                     <span className="flex items-center gap-1.5">
                         <span className="relative flex h-2 w-2">
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500 cosmo-live-dot"></span>
                         </span>
                         <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 tracking-wider">LIVE</span>
                     </span>

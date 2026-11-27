@@ -1,4 +1,4 @@
-
+﻿
 import React, { useState, useEffect } from 'react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, ReferenceLine } from 'recharts';
 import Card from '@/components/common/Card';
@@ -47,9 +47,9 @@ const ZScoreGauge: React.FC<{ zScore: number }> = ({ zScore }) => {
     return (
         <div className="w-full mt-4">
             <div className="flex justify-between text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
-                <span>Buy Pair (-2σ)</span>
+                <span>Buy Pair (-2Ïƒ)</span>
                 <span>Mean (0)</span>
-                <span>Sell Pair (+2σ)</span>
+                <span>Sell Pair (+2Ïƒ)</span>
             </div>
             <div className="relative h-3 bg-gray-200 dark:bg-[#0A0A0A] rounded-full overflow-hidden">
                 {/* Zones */}
@@ -174,7 +174,7 @@ const PairCard: React.FC<{ pairData: CointegratedPair; index: number }> = ({ pai
                 </div>
 
                 <div className="h-24 w-full opacity-80">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer debounce={220} width="100%" height="100%">
                         <AreaChart data={pairData.spreadHistory}>
                             <defs>
                                 <linearGradient id={`grad-${pairData.id}`} x1="0" y1="0" x2="0" y2="1">
@@ -242,7 +242,7 @@ const CorrelationMatrix: React.FC = () => {
                                 {msg.replace("High Cointegration Signal!", "")}
                             </p>
                             <p className="mt-2 text-[10px] text-gray-500 font-mono uppercase tracking-wider">
-                                {new Date().toLocaleTimeString()} • Z-Score Alert
+                                {new Date().toLocaleTimeString()} â€¢ Z-Score Alert
                             </p>
                         </div>
                     </div>
@@ -252,7 +252,7 @@ const CorrelationMatrix: React.FC = () => {
                         onClick={() => toast.dismiss(t.id)}
                         className="w-full h-full border-transparent p-4 flex items-center justify-center text-sm font-medium text-gray-400 hover:text-white focus:outline-none transition-colors"
                     >
-                        ✕
+                        âœ•
                     </button>
                 </div>
                 {/* Progress bar animation (optional CSS) */}

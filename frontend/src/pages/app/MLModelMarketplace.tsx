@@ -1,4 +1,4 @@
-
+﻿
 import React, { useState, useMemo } from 'react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, Area, AreaChart } from 'recharts';
 import { MOCK_MARKETPLACE_MODELS } from '@/constants';
@@ -94,7 +94,7 @@ const FeaturedModelHero: React.FC<{ model: MarketplaceModel; onSelect: () => voi
             {/* Visualizer for Hero */}
             <div className="w-full md:w-1/3 h-64 bg-slate-100/80 dark:bg-black/20 backdrop-blur-sm rounded-2xl border border-slate-200 dark:border-white/10 p-4 relative overflow-hidden">
                 <div className="absolute top-4 left-4 text-xs font-mono text-slate-500 dark:text-gray-400">LIVE_PERFORMANCE_PREVIEW</div>
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer debounce={220} width="100%" height="100%">
                     <AreaChart data={model.performance.last12Months}>
                         <defs>
                             <linearGradient id="heroChart" x1="0" y1="0" x2="0" y2="1">
@@ -127,7 +127,7 @@ const ModelCard: React.FC<{ model: MarketplaceModel; onSelect: () => void; delay
                     </div>
                     <div>
                         <h3 className="font-bold text-slate-900 dark:text-white leading-tight group-hover:text-brand-primary transition-colors">{model.name}</h3>
-                        <p className="text-xs text-slate-500 dark:text-gray-400">{model.asset} • {model.timeframe}</p>
+                        <p className="text-xs text-slate-500 dark:text-gray-400">{model.asset} â€¢ {model.timeframe}</p>
                     </div>
                 </div>
                 <div className="text-right">
@@ -208,7 +208,7 @@ const ModelDetailView: React.FC<{ model: MarketplaceModel; onBack: () => void }>
                                     <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white">{model.name}</h1>
                                     <div className="flex items-center gap-3 mt-1 text-sm text-slate-600 dark:text-gray-400">
                                         <span>By {model.author}</span>
-                                        <span>•</span>
+                                        <span>â€¢</span>
                                         <span className="font-mono bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-transparent px-2 rounded text-xs py-0.5">{model.id}</span>
                                         <VerifiedBadge />
                                     </div>
@@ -249,7 +249,7 @@ const ModelDetailView: React.FC<{ model: MarketplaceModel; onBack: () => void }>
                             </div>
                         </div>
                         <div className="h-80 w-full">
-                             <ResponsiveContainer width="100%" height="100%">
+                             <ResponsiveContainer debounce={220} width="100%" height="100%">
                                 <BarChart data={model.performance.last12Months}>
                                     <CartesianGrid strokeDasharray="3 3" stroke={isDark ? '#334155' : '#E2E8F0'} vertical={false} />
                                     <XAxis dataKey="month" stroke={axisColor} tick={{ fontSize: 12 }} axisLine={false} tickLine={false} dy={10} />

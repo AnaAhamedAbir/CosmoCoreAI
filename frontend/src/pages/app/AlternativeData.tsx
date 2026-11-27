@@ -1,4 +1,4 @@
-
+﻿
 import React, { useState, useMemo, useEffect } from 'react';
 import { ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell, ComposedChart, Area, AreaChart } from 'recharts';
 import Card from '@/components/common/Card';
@@ -132,7 +132,7 @@ const SatelliteView: React.FC = () => {
                 <Card className="flex-1 flex flex-col !p-4">
                     <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-4">Capacity Utilization Trend</h4>
                     <div className="flex-1 min-h-[150px]">
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer debounce={220} width="100%" height="100%">
                             <AreaChart data={MOCK_SATELLITE_DATA}>
                                 <defs>
                                     <linearGradient id="satGradient" x1="0" y1="0" x2="0" y2="1">
@@ -189,7 +189,7 @@ const TransactionView: React.FC = () => {
                         </div>
                     </div>
                     <div className="flex-1 min-h-[300px]">
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer debounce={220} width="100%" height="100%">
                             <ComposedChart data={MOCK_TRANSACTION_DATA}>
                                 <defs>
                                     <linearGradient id="spendGradient" x1="0" y1="0" x2="0" y2="1">
@@ -281,7 +281,7 @@ const GeolocationView: React.FC = () => {
                     <Card>
                         <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-4">Intraday Foot Traffic</h4>
                         <div className="h-40">
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer debounce={220} width="100%" height="100%">
                                 <BarChart data={MOCK_FOOT_TRAFFIC}>
                                     <Tooltip
                                         cursor={{ fill: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(15,23,42,0.05)' }}
@@ -320,7 +320,7 @@ const JobPostingsView: React.FC = () => {
                     <span className="text-xs bg-purple-500/10 text-purple-600 dark:text-purple-500 px-2 py-1 rounded font-bold">Growth Signal</span>
                 </div>
                 <div className="flex-1 min-h-[300px]">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer debounce={220} width="100%" height="100%">
                         <BarChart data={MOCK_JOB_POSTINGS_DATA} layout="vertical" margin={{ left: 40 }}>
                             <CartesianGrid strokeDasharray="3 3" stroke={isDark ? "#334155" : "#e2e8f0"} horizontal={true} vertical={false} />
                             <XAxis type="number" hide />

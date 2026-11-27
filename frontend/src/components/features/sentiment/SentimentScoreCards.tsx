@@ -75,19 +75,19 @@ const SentimentOrb = ({ score, momentum, volume, netflow, onActionClick }: any) 
             </div>
 
             {/* --- Main Reactor Core --- */}
-            <div className="relative flex items-center justify-center w-72 h-72">
+            <div className="relative flex items-center justify-center w-56 h-56 sm:w-72 sm:h-72">
 
                 {/* 1. Outer Static Ring with Ticks */}
                 <div className="absolute inset-0 border border-slate-300/70 dark:border-[#1F1F1F]/50 rounded-full opacity-70 dark:opacity-50"></div>
 
-                {/* 2. Inner Dashed Ring (Static for 120fps scroll performance) */}
-                <div className="absolute inset-2 border-2 border-dashed border-slate-300 dark:border-slate-600/60 rounded-full"></div>
+                {/* 2. Inner Dashed Ring (GPU transform-only rotation for 120fps scroll performance) */}
+                <div className="absolute inset-2 border-2 border-dashed border-slate-300 dark:border-slate-600/60 rounded-full cosmo-spin-slow"></div>
 
                 {/* 3. Accent Arc Ring */}
                 <div className={`absolute inset-4 rounded-full border-t-2 border-b-2 border-l-0 border-r-0 ${theme.ringBorder}`}></div>
 
                 {/* 5. Center Core (Zero backdrop-blur for 120fps scroll) */}
-                <div className="relative w-48 h-48 rounded-full bg-gradient-to-br from-white to-slate-100 dark:from-slate-800 dark:to-slate-900 flex flex-col items-center justify-center border border-slate-200/90 dark:border-white/10 shadow-xl z-10 overflow-hidden group">
+                <div className="relative w-40 h-40 sm:w-48 sm:h-48 rounded-full bg-gradient-to-br from-white to-slate-100 dark:from-slate-800 dark:to-slate-900 flex flex-col items-center justify-center border border-slate-200/90 dark:border-white/10 shadow-xl z-10 overflow-hidden group">
 
                     {/* Inner Shine */}
                     <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-white/60 dark:from-white/10 to-transparent opacity-60 dark:opacity-50 pointer-events-none"></div>
@@ -143,7 +143,7 @@ const SentimentOrb = ({ score, momentum, volume, netflow, onActionClick }: any) 
                             <InfoTooltip text="The total frequency of mentions across all tracked social platforms." />
                         </div>
                         <div className="flex items-center gap-1">
-                            <span className={theme.zapText}>⚡</span>
+                            <span className={`cosmo-live-dot ${theme.zapText}`}>⚡</span>
                             <span className={`text-slate-800 dark:text-slate-300 font-bold ${theme.hoverMetric} transition-colors`}>{volume}</span>
                         </div>
                     </div>
@@ -278,7 +278,7 @@ interface SentimentScoreCardsProps {
 export const SentimentScoreCards: React.FC<SentimentScoreCardsProps> = React.memo(({ data, onActionClick }) => {
     return (
         <div className="space-y-6">
-            <Card className="h-[420px] !p-0 overflow-hidden relative">
+            <Card className="h-[370px] sm:h-[420px] !p-0 overflow-hidden relative">
                 <SentimentOrb
                     score={data.currentSmartMoney}
                     momentum={data.currentMomentum}

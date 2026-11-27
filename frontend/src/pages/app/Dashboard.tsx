@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+﻿import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     AreaChart,
@@ -207,7 +207,7 @@ const KpiCard: React.FC<KpiCardProps> = ({
                                         : 'bg-rose-500/10 border-rose-500/30 text-rose-600 dark:text-rose-400'
                                 }`}
                             >
-                                {change >= 0 ? '▲' : '▼'} {Math.abs(change).toFixed(2)}%
+                                {change >= 0 ? 'â–²' : 'â–¼'} {Math.abs(change).toFixed(2)}%
                             </span>
                         )}
                         {subtext && (
@@ -495,7 +495,7 @@ const Dashboard: React.FC = () => {
 
     return (
         <div className={`${isPhoneMobileUI ? 'space-y-3.5' : 'space-y-5'} pb-4`}>
-            {/* ── Top SaaS Command Header Bar ────────────────────────────────────── */}
+            {/* â”€â”€ Top SaaS Command Header Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
             <div className="relative rounded-2xl bg-white dark:bg-[#070b14] border border-slate-200 dark:border-cyan-500/25 p-4 lg:p-5 shadow-sm dark:shadow-[0_12px_32px_rgba(0,0,0,0.55)] overflow-hidden">
                 <div className="h-[2px] w-full absolute top-0 left-0 bg-gradient-to-r from-cyan-400 via-indigo-500 to-emerald-400 opacity-85" />
 
@@ -558,7 +558,7 @@ const Dashboard: React.FC = () => {
                 </div>
             </div>
 
-            {/* ── Row 1: 4 SaaS KPI Cards ───────────────────────────────────────── */}
+            {/* â”€â”€ Row 1: 4 SaaS KPI Cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
             <div className={`grid ${isPhoneMobileUI ? 'grid-cols-2 gap-2.5' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4'}`}>
                 <KpiCard
                     title="Total Equity"
@@ -605,7 +605,7 @@ const Dashboard: React.FC = () => {
                 />
             </div>
 
-            {/* ── Row 2: Equity Curve + Capital Allocation ─────────────────────── */}
+            {/* â”€â”€ Row 2: Equity Curve + Capital Allocation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
                 {/* Portfolio Performance Curve */}
                 <div className="lg:col-span-8 rounded-2xl bg-white dark:bg-[#070b14] border border-slate-200 dark:border-white/10 p-4 lg:p-5 shadow-sm dark:shadow-[0_8px_24px_rgba(0,0,0,0.45)] flex flex-col">
@@ -652,7 +652,7 @@ const Dashboard: React.FC = () => {
 
                     <div className="h-64 sm:h-72 w-full min-h-[240px]">
                         {filteredCurveData.length > 0 ? (
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer debounce={220} width="100%" height="100%">
                                 <AreaChart data={filteredCurveData}>
                                     <defs>
                                         <linearGradient id="portfolioGradientSaaS" x1="0" y1="0" x2="0" y2="1">
@@ -734,7 +734,7 @@ const Dashboard: React.FC = () => {
                                         </span>
                                     </div>
                                 )}
-                                <ResponsiveContainer width="100%" height="100%">
+                                <ResponsiveContainer debounce={220} width="100%" height="100%">
                                     <PieChart>
                                         <Pie
                                             data={portfolioAllocationData}
@@ -792,7 +792,7 @@ const Dashboard: React.FC = () => {
                 </div>
             </div>
 
-            {/* ── Row 3: Balanced Operations Grid ──────────────────────────────── */}
+            {/* â”€â”€ Row 3: Balanced Operations Grid â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
                 {/* Left Column (7/12): Active Bot Matrix + Risk Analytics + Recent Backtests */}
                 <div className="lg:col-span-7 space-y-4">
@@ -845,7 +845,7 @@ const Dashboard: React.FC = () => {
                                                             {bot.name}
                                                         </h4>
                                                         <p className="text-[11px] font-mono text-slate-500 dark:text-gray-400 truncate">
-                                                            {bot.market} • {bot.strategy}
+                                                            {bot.market} â€¢ {bot.strategy}
                                                         </p>
                                                     </div>
                                                 </div>
@@ -885,7 +885,7 @@ const Dashboard: React.FC = () => {
                                         onClick={() => goToView(AppView.ORDER_FLOW_HEATMAP)}
                                         className="px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-700 dark:text-amber-300 text-xs font-mono font-bold cursor-pointer"
                                     >
-                                        ⚡ Launch WallHunter
+                                        âš¡ Launch WallHunter
                                     </button>
                                     <button
                                         type="button"
@@ -987,7 +987,7 @@ const Dashboard: React.FC = () => {
                                         <div className="min-w-0">
                                             <p className="font-bold text-sm text-slate-900 dark:text-white truncate">{result.strategy}</p>
                                             <p className="text-[11px] font-mono text-slate-500 dark:text-gray-400">
-                                                {result.market} • {result.timeframe} • WR {result.win_rate}% • Sharpe {result.sharpe_ratio}
+                                                {result.market} â€¢ {result.timeframe} â€¢ WR {result.win_rate}% â€¢ Sharpe {result.sharpe_ratio}
                                             </p>
                                         </div>
                                         <span

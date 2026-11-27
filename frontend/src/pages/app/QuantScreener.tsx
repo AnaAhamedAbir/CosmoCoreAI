@@ -1,4 +1,4 @@
-
+﻿
 import React, { useState, useMemo } from 'react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from 'recharts';
 import Card from '@/components/common/Card';
@@ -386,7 +386,7 @@ const SectorAnalysis: React.FC = () => {
                 <span className="text-xs bg-brand-primary/10 text-brand-primary px-2 py-1 rounded font-bold">LIVE</span>
             </div>
             <div className="flex-1 min-h-[400px]">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer debounce={220} width="100%" height="100%">
                     <BarChart 
                         layout="vertical" 
                         data={sortedData} 

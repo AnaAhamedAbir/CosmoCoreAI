@@ -9,6 +9,8 @@ from app.core.redis import redis_manager
 from app.helpers.orderbook_math import calculate_dynamic_wall_threshold
 from app.services.liquidity_absorption_service import liquidity_absorption_service
 from app.services.subminute_candle_recorder import subminute_candle_recorder
+from app.services.l2_heatmap_recorder import l2_heatmap_recorder
+from app.services.footprint_recorder import footprint_recorder
 
 logger = logging.getLogger(__name__)
 
@@ -418,6 +420,16 @@ class MarketDataStreamer:
                         await pipe.execute()
 
                 try:
+                    await l2_heatmap_recorder.record_orderbook(
+                        exchange_id=exchange_id,
+                        symbol=symbol,
+                        bids=bids,
+                        asks=asks,
+                    )
+                except Exception as hm_err:
+                    logger.debug(f"L2HeatmapRecorder orderbook hook err: {hm_err}")
+
+                try:
                     await liquidity_absorption_service.process_orderbook(
                         exchange_id=exchange_id,
                         symbol=symbol,
@@ -509,6 +521,15 @@ class MarketDataStreamer:
                 )
             except Exception as rec_err:
                 logger.debug(f"SubminuteRecorder trades hook err: {rec_err}")
+
+            try:
+                await footprint_recorder.record_trades(
+                    exchange_id=exchange_id,
+                    symbol=symbol,
+                    trades=batch_raw,
+                )
+            except Exception as fp_err:
+                logger.debug(f"FootprintRecorder trades hook err: {fp_err}")
 
             try:
                 await liquidity_absorption_service.process_trades(

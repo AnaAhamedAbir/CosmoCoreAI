@@ -219,7 +219,7 @@ interface ChartDragBracketEntry {
 const chartDragBracketRegistry = new Map<string, ChartDragBracketEntry>();
 
 // Chart Component
-const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: string; interval: string; walls: { price: number, type: 'buy' | 'sell', size?: number }[]; currentPrice: number; showFootprint: boolean; showCVD: boolean; showVPVR: boolean; indicatorSettings: IndicatorSettings; tradeEvent: any; botStatus: any; openOrders: OpenLimitOrder[]; activePosition?: FastPositionResponse | null; advancedMetrics: AdvancedMetricsSettings; advancedMetricsData: any; selectedApiKeyId: string | null; predictionResult: PredictionResult | null; activeMLModelId: string | null; onAIPredictClick?: (price: number) => void; onChartBackgroundClick?: (price: number) => void; showCrosshairAIPredict?: boolean; bestBid?: number; bestAsk?: number; showBidAsk?: boolean; showMarkPrice?: boolean; isActiveChart?: boolean; totalChartsCount?: number; chartSlotIndex?: number; onToggleUTBotAlerts?: () => void; onSyncUTBotToBot?: () => void }>(({ chartId = 'main', exchange, symbol, interval, walls, currentPrice, showFootprint, showCVD, showVPVR, indicatorSettings, tradeEvent, botStatus, openOrders, activePosition = null, advancedMetrics, advancedMetricsData, selectedApiKeyId, predictionResult, activeMLModelId, onAIPredictClick, onChartBackgroundClick, showCrosshairAIPredict = false, bestBid = 0, bestAsk = 0, showBidAsk = false, showMarkPrice = true, isActiveChart = true, totalChartsCount = 1, chartSlotIndex = 0, onToggleUTBotAlerts, onSyncUTBotToBot }) => {
+const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: string; interval: string; walls: { price: number, type: 'buy' | 'sell', size?: number }[]; bids?: any[]; asks?: any[]; currentPrice: number; showFootprint: boolean; showCVD: boolean; showVPVR: boolean; indicatorSettings: IndicatorSettings; tradeEvent: any; botStatus: any; openOrders: OpenLimitOrder[]; activePosition?: FastPositionResponse | null; advancedMetrics: AdvancedMetricsSettings; advancedMetricsData: any; selectedApiKeyId: string | null; predictionResult: PredictionResult | null; activeMLModelId: string | null; onAIPredictClick?: (price: number) => void; onChartBackgroundClick?: (price: number) => void; showCrosshairAIPredict?: boolean; bestBid?: number; bestAsk?: number; showBidAsk?: boolean; showMarkPrice?: boolean; isActiveChart?: boolean; totalChartsCount?: number; chartSlotIndex?: number; onToggleUTBotAlerts?: () => void; onSyncUTBotToBot?: () => void }>(({ chartId = 'main', exchange, symbol, interval, walls, bids = [], asks = [], currentPrice, showFootprint, showCVD, showVPVR, indicatorSettings, tradeEvent, botStatus, openOrders, activePosition = null, advancedMetrics, advancedMetricsData, selectedApiKeyId, predictionResult, activeMLModelId, onAIPredictClick, onChartBackgroundClick, showCrosshairAIPredict = false, bestBid = 0, bestAsk = 0, showBidAsk = false, showMarkPrice = true, isActiveChart = true, totalChartsCount = 1, chartSlotIndex = 0, onToggleUTBotAlerts, onSyncUTBotToBot }) => {
     const { theme } = useTheme();
     const isDark = theme === 'dark';
     const chartContainerRef = useRef<HTMLDivElement>(null);
@@ -315,13 +315,13 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
     const indicatorSettingsRef = useRef(indicatorSettings);
     indicatorSettingsRef.current = indicatorSettings;
     const isOrderFlowOverlayActive = Boolean(showVPVR || showCVD || showFootprint || indicatorSettings.showQuantumAI || (indicatorSettings.showUTBot && indicatorSettings.utBotOrderFlowConfirm));
-    const { vpvrData, cvdData, footprintData } = useOrderFlowData(symbol, exchange, interval, isOrderFlowOverlayActive);
+    const { vpvrData, cvdData, cvdMeta, footprintData } = useOrderFlowData(symbol, exchange, interval, isOrderFlowOverlayActive, showFootprint);
     const wallsRef = useRef(walls);
     wallsRef.current = walls;
     const footprintDataRef = useRef(footprintData);
     footprintDataRef.current = footprintData;
     const showHeatmapOverlay = Boolean(showVPVR || indicatorSettings.showHeatmap);
-    const { heatmapData: realHeatmapData } = useHeatmapData(symbol, exchange, showHeatmapOverlay);
+    const { heatmapData: realHeatmapData, bucketSize: heatmapBucketSize } = useHeatmapData(symbol, exchange, showHeatmapOverlay, interval, bids, asks);
     useIcebergEvents(symbol);
     const mlSetup = useMLSetupEvents(symbol);
     const showGodMode = Boolean(indicatorSettings.showLiquidationHeatmap);
@@ -4384,7 +4384,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                     {advancedMetrics.showDeltaDivergence && <DeltaDivergenceRenderer chart={chartRef.current} series={candlestickSeriesRef.current} visible={advancedMetrics.showDeltaDivergence} data={advancedMetricsData?.divergenceData} />}
                     {indicatorSettings.showAetherFlow && <AetherFlowRenderer chart={chartRef.current} series={candlestickSeriesRef.current!} data={aetherFlowData} settings={indicatorSettings} />}
 
-                    {showHeatmapOverlay && <LiquidityHeatmapRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={realHeatmapData} />}
+                    {showHeatmapOverlay && <LiquidityHeatmapRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={realHeatmapData} bucketSize={heatmapBucketSize} />}
                     {indicatorSettings.showAutoFibo && <FibonacciCloudRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={fiboData} />}
                     {indicatorSettings.showBB && <BollingerBandsRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={bbData} visible={indicatorSettings.showBB} />}
                     {indicatorSettings.showMACD && (
@@ -4833,7 +4833,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             </div>
             {showCVD && (
                 <div className="h-[25%] border-t border-gray-200 dark:border-white/5 relative z-0">
-                    <CVDChart mainChart={chartRef.current} data={cvdData} />
+                    <CVDChart mainChart={chartRef.current} data={cvdData} meta={cvdMeta} />
                 </div>
             )}
             {/* ── DRAG & DROP ORDER CONFIRMATION MODAL ── */}
@@ -5885,7 +5885,7 @@ const OrderFlowChartPanel = React.memo<{
                 ) : (
                     <OrderFlowChart 
                         chartId={config.id}
-                        exchange={config.exchange} symbol={config.symbol} interval={config.interval} walls={filteredWalls} currentPrice={currentPrice} showFootprint={showFootprint} showCVD={showCVD} showVPVR={showVPVR} indicatorSettings={indicatorSettings} tradeEvent={tradeEvent} botStatus={botStatus} openOrders={openOrders} activePosition={activePosition} advancedMetrics={advancedMetrics} advancedMetricsData={advancedMetricsData} selectedApiKeyId={selectedApiKeyId} predictionResult={predictionResult} activeMLModelId={activeMLModelId} showCrosshairAIPredict={showCrosshairAIPredict} bestBid={bestBid} bestAsk={bestAsk} showBidAsk={showBidAsk} showMarkPrice={showMarkPrice}
+                        exchange={config.exchange} symbol={config.symbol} interval={config.interval} walls={filteredWalls} bids={bids} asks={asks} currentPrice={currentPrice} showFootprint={showFootprint} showCVD={showCVD} showVPVR={showVPVR} indicatorSettings={indicatorSettings} tradeEvent={tradeEvent} botStatus={botStatus} openOrders={openOrders} activePosition={activePosition} advancedMetrics={advancedMetrics} advancedMetricsData={advancedMetricsData} selectedApiKeyId={selectedApiKeyId} predictionResult={predictionResult} activeMLModelId={activeMLModelId} showCrosshairAIPredict={showCrosshairAIPredict} bestBid={bestBid} bestAsk={bestAsk} showBidAsk={showBidAsk} showMarkPrice={showMarkPrice}
                         isActiveChart={isActive || allChartsCount === 1}
                         totalChartsCount={allChartsCount}
                         chartSlotIndex={chartSlotIndex}

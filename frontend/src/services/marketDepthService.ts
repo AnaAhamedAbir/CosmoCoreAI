@@ -34,5 +34,23 @@ export const marketDepthService = {
     }) => {
         const response = await apiClient.get('/market-depth/liquidity-sweep-absorption', { params });
         return response.data;
+    },
+    getOrderflowCVD: async (symbol: string, exchange: string, interval: string, limit: number = 500) => {
+        const response = await apiClient.get('/market-depth/orderflow/cvd', {
+            params: { symbol, exchange, interval, limit }
+        });
+        return response.data;
+    },
+    getOrderflowHeatmapHistory: async (symbol: string, exchange: string, interval: string, limit: number = 200) => {
+        const response = await apiClient.get('/market-depth/orderflow/heatmap-history', {
+            params: { symbol, exchange, interval, limit }
+        });
+        return response.data;
+    },
+    getOrderflowFootprint: async (symbol: string, exchange: string, interval: string, limit: number = 120) => {
+        const response = await apiClient.get('/market-depth/orderflow/footprint', {
+            params: { symbol, exchange, interval, limit }
+        });
+        return response.data;
     }
 };

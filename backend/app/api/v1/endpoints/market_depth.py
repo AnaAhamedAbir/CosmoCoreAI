@@ -14,7 +14,7 @@ router = APIRouter()
 async def get_order_book_heatmap(
     symbol: str = Query(..., description="Trading pair, e.g., 'BTC/USDT'"),
     exchange: str = Query("binance", description="Exchange name, e.g., 'binance'"),
-    bucket_size: float = Query(50.0, description="Price bucket size for aggregation"),
+    bucket_size: float = Query(0.0, description="Price bucket size (0 = auto price-adaptive)"),
     depth: int = Query(100, description="Depth of order book to fetch")
 ) -> Any:
     """
@@ -104,6 +104,72 @@ from app.services.liquidity_absorption_service import liquidity_absorption_servi
 import asyncio
 
 from app.services.oanda_streamer import oanda_streamer
+from app.services.orderflow_cvd_service import orderflow_cvd_service
+from app.services.l2_heatmap_recorder import l2_heatmap_recorder
+from app.services.footprint_recorder import footprint_recorder
+
+
+@router.get("/orderflow/cvd", response_model=Any)
+async def get_orderflow_cvd(
+    symbol: str = Query(..., description="Trading pair, e.g., 'BTC/USDT'"),
+    exchange: str = Query("binance", description="Exchange ID"),
+    interval: str = Query("1m", description="Chart timeframe"),
+    limit: int = Query(500, ge=20, le=1000, description="Number of candles"),
+) -> Any:
+    """Institutional True-CVD series (uses Binance taker_buy_volume when available + divergence summary)."""
+    try:
+        return await orderflow_cvd_service.get_cvd_series(
+            symbol=symbol,
+            exchange_id=exchange,
+            timeframe=interval,
+            limit=limit,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/orderflow/heatmap-history", response_model=Any)
+async def get_orderflow_heatmap_history(
+    symbol: str = Query(..., description="Trading pair"),
+    exchange: str = Query("binance", description="Exchange ID"),
+    interval: str = Query("1m", description="Chart timeframe for exact bar alignment"),
+    limit: int = Query(200, ge=10, le=500, description="Maximum aligned heatmap bars"),
+) -> Any:
+    """Candle-aligned L2 resting liquidity heatmap history with price-adaptive bucketing."""
+    try:
+        base_ex, _ = market_depth_service.normalize_exchange_id(exchange, symbol)
+        if base_ex != "oanda":
+            await market_data_streamer.start_streaming(base_ex, symbol)
+        return await l2_heatmap_recorder.get_aligned_history(
+            exchange_id=base_ex,
+            symbol=symbol,
+            interval=interval,
+            limit=limit,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/orderflow/footprint", response_model=Any)
+async def get_orderflow_footprint(
+    symbol: str = Query(..., description="Trading pair"),
+    exchange: str = Query("binance", description="Exchange ID"),
+    interval: str = Query("1m", description="Chart timeframe"),
+    limit: int = Query(120, ge=10, le=300, description="Number of real footprint candles"),
+) -> Any:
+    """Real trade-clustered Bid x Ask Footprint candles with POC, 300% diagonal imbalances & stacked zones."""
+    try:
+        base_ex, _ = market_depth_service.normalize_exchange_id(exchange, symbol)
+        if base_ex != "oanda":
+            await market_data_streamer.start_streaming(base_ex, symbol)
+        return await footprint_recorder.get_footprint_candles(
+            exchange_id=base_ex,
+            symbol=symbol,
+            interval=interval,
+            limit=limit,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/liquidity-sweep-absorption", response_model=Any)

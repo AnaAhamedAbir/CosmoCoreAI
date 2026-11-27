@@ -337,14 +337,21 @@ class MarketDepthService:
                 if order_book.get('asks') and order_book.get('bids'):
                     current_price = (order_book['asks'][0][0] + order_book['bids'][0][0]) / 2.0
 
+                # Price-adaptive bucket size when caller passes <= 0 (fixes non-BTC coins!)
+                effective_bucket_size = bucket_size
+                if not effective_bucket_size or effective_bucket_size <= 0:
+                    from app.services.l2_heatmap_recorder import compute_adaptive_bucket_size
+                    effective_bucket_size = compute_adaptive_bucket_size(current_price)
+
                 # 3. Aggregate Data
-                aggregated_bids = self._aggregate_orders(order_book['bids'][:depth], bucket_size, is_bid=True)
-                aggregated_asks = self._aggregate_orders(order_book['asks'][:depth], bucket_size, is_bid=False)
+                aggregated_bids = self._aggregate_orders(order_book['bids'][:depth], effective_bucket_size, is_bid=True)
+                aggregated_asks = self._aggregate_orders(order_book['asks'][:depth], effective_bucket_size, is_bid=False)
                 
                 result = {
                     "symbol": symbol,
                     "exchange": base_ex,
                     "current_price": current_price,
+                    "bucket_size": effective_bucket_size,
                     "bids": aggregated_bids,
                     "asks": aggregated_asks
                 }

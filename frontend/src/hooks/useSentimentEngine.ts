@@ -106,12 +106,15 @@ export const useSentimentEngine = () => {
 
     const timeframeRef = useRef(timeframe);
     timeframeRef.current = timeframe;
+    const prevAiModelRef = useRef(aiModel);
+    const hasInitialSyncedRef = useRef(false);
 
     const handleTopicClick = useCallback((topic: string) => {
         setSelectedTopic(prev => prev === topic ? null : topic);
     }, []);
 
-    const syncData = useCallback(async () => {
+    const syncData = useCallback(async (notifyOnComplete: unknown = true) => {
+        const shouldNotify = notifyOnComplete !== false;
         // Cancel previous request if exists
         if (abortControllerRef.current) {
             abortControllerRef.current.abort();
@@ -144,6 +147,17 @@ export const useSentimentEngine = () => {
             ]);
 
             if (signal.aborted) return;
+
+            const settledList = [
+                newsSettled,
+                fgSettled,
+                chartSettled,
+                heatmapSettled,
+                pollSettled,
+                inflSettled,
+                domSettled,
+            ];
+            const anyFulfilled = settledList.some((r) => r.status === 'fulfilled');
 
             // --- A. News ---
             if (newsSettled.status === 'fulfilled') {
@@ -204,6 +218,15 @@ export const useSentimentEngine = () => {
             }
             if (domSettled.status === 'fulfilled' && Array.isArray(domSettled.value.data)) {
                 setSocialDominance(domSettled.value.data);
+            }
+
+            if (shouldNotify) {
+                const modelLabel = aiModel === 'finbert' ? 'FinBERT' : 'VADER';
+                if (anyFulfilled) {
+                    showToast(`${modelLabel} Sentiment Intel synced for ${activePair}`, 'success');
+                } else {
+                    showToast('Sync Failed. Check connection.', 'error');
+                }
             }
         } catch (err: any) {
             if (err.name === 'AbortError' || err.code === "ERR_CANCELED") {
@@ -369,7 +392,11 @@ export const useSentimentEngine = () => {
             }
         };
         loadPersistedData();
-        syncData();
+        const modelChanged = prevAiModelRef.current !== aiModel;
+        prevAiModelRef.current = aiModel;
+        const shouldNotify = hasInitialSyncedRef.current && modelChanged;
+        hasInitialSyncedRef.current = true;
+        syncData(shouldNotify);
 
         return () => {
             if (abortControllerRef.current) {

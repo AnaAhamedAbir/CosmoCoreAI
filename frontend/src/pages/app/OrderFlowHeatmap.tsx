@@ -102,9 +102,10 @@ import { ChevronLeft, ChevronRight, SlidersHorizontal, Zap, X } from 'lucide-rea
 import { isThermalGuardActive } from '@/utils/deviceProfile';
 // Helper to convert interval string to ms
 const parseIntervalToMs = (interval: string): number => {
-    const value = parseInt(interval) || 1;
+    const value = parseInt(interval, 10) || 1;
     const unit = interval.replace(/[0-9]/g, '') || 'm';
     switch (unit) {
+        case 's': return value * 1000;
         case 'm': return value * 60 * 1000;
         case 'h': return value * 60 * 60 * 1000;
         case 'd': return value * 24 * 60 * 60 * 1000;
@@ -159,9 +160,11 @@ const CandleCountdown = React.memo<{
 
             if (remaining < 0) remaining = 0;
 
-            const h = Math.floor(remaining / (1000 * 60 * 60));
-            const m = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
-            const s = Math.floor((remaining % (1000 * 60)) / 1000);
+            const isSubMinute = intervalMs < 60000;
+            const totalSec = isSubMinute ? Math.ceil(remaining / 1000) : Math.floor(remaining / 1000);
+            const h = Math.floor(totalSec / 3600);
+            const m = Math.floor((totalSec % 3600) / 60);
+            const s = totalSec % 60;
 
             if (h > 0) {
                 setCountdownFormatted(`${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`);
@@ -171,7 +174,7 @@ const CandleCountdown = React.memo<{
         };
 
         tick();
-        const timerId = setInterval(tick, 1000);
+        const timerId = setInterval(tick, intervalMs < 60000 ? 200 : 1000);
         const handleVisibility = () => {
             if (!document.hidden) tick();
         };
@@ -285,6 +288,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
     const crosshairBtnRef = useRef<HTMLButtonElement>(null);
     const crosshairPriceRef = useRef<number | null>(null);
     const lastCandleRef = useRef<CandlestickData | null>(null);
+    const historyLoadedRef = useRef<boolean>(false);
     const allCandlesRef = useRef<any[]>([]);
     const candlesVersionRef = useRef<number>(0);
     const [candlesReadyTick, setCandlesReadyTick] = useState(0);
@@ -440,6 +444,8 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             },
             timeScale: {
                 borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(15, 23, 42, 0.15)',
+                timeVisible: true,
+                secondsVisible: interval.endsWith('s'),
             },
             rightPriceScale: {
                 visible: true,
@@ -635,6 +641,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
 
         // Fetch real historical data
         let isMounted = true;
+        historyLoadedRef.current = false;
         const fetchKlines = async () => {
             try {
                 const data = await marketDepthService.getOHLCV(
@@ -708,11 +715,33 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                                 lastDirectTickAtRef.current = Date.now();
                             }
                         }
+                    } else {
+                        // Empty historical array (e.g. quiet sub-minute pair): seed immediately if a live tick already exists
+                        const liveTick = getLatestLiveTick(symbol, exchange);
+                        if (liveTick && liveTick.price > 0) {
+                            const rawTs = liveTick.timestamp || Date.now();
+                            const tickMs = rawTs < 10000000000 ? rawTs * 1000 : rawTs;
+                            const intervalMs = parseIntervalToMs(interval);
+                            const bucketSec = Math.floor(Math.floor(tickMs / intervalMs) * intervalMs / 1000);
+                            const seeded: any = {
+                                time: bucketSec,
+                                open: liveTick.price,
+                                high: Math.max(liveTick.price, liveTick.high ?? liveTick.price),
+                                low: Math.min(liveTick.price, liveTick.low ?? liveTick.price),
+                                close: liveTick.price,
+                                volume: liveTick.volume || 0,
+                            };
+                            candlestickSeriesRef.current.setData([seeded]);
+                            allCandlesRef.current = [seeded];
+                            lastCandleRef.current = seeded;
+                            const side: 'buy' | 'sell' = liveTick.side || (liveTick.isBuyerMaker ? 'sell' : 'buy');
+                            syncCurrentPriceLineRef.current(seeded.close, side);
+                        }
                     }
 
                     // Format and set volume data
                     if (volumeSeriesRef.current && isMounted) {
-                        const volumeData = candles.map((k: any) => ({
+                        const volumeData = allCandlesRef.current.map((k: any) => ({
                             time: k.time,
                             value: k.volume,
                             color: k.close >= k.open ? 'rgba(34, 197, 94, 0.5)' : 'rgba(239, 68, 68, 0.5)'
@@ -720,41 +749,53 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                         volumeSeriesRef.current.setData(volumeData);
                     }
 
-                    if (candles.length > 200) {
+                    if (allCandlesRef.current.length > 200) {
                         chart.timeScale().setVisibleLogicalRange({
-                            from: candles.length - 200,
-                            to: candles.length - 1,
+                            from: allCandlesRef.current.length - 200,
+                            to: allCandlesRef.current.length - 1,
                         });
                     } else {
                         chart.timeScale().fitContent();
                     }
 
                     // Initialize Indicators immediately after fetching history
-                    if (candles.length > 0) {
+                    if (allCandlesRef.current.length > 0) {
+                        const readyCandles = allCandlesRef.current;
                         setCandlesReadyTick(t => t + 1);
                         const curInd = indicatorSettingsRef.current;
                         const bbP = Math.max(1, Math.floor(Number(curInd.bbPeriod) || 20));
                         const bbDev = Number.isFinite(Number(curInd.bbStdDev)) && Number(curInd.bbStdDev) > 0 ? Number(curInd.bbStdDev) : 2;
                         const rsiP = Math.max(1, Math.floor(Number(curInd.rsiPeriod) || 14));
 
-                        syncMtfEma(candles);
+                        syncMtfEma(readyCandles);
                         if (curInd.showBB && bbUpperSeriesRef.current && bbMiddleSeriesRef.current && bbLowerSeriesRef.current) {
-                            const bbResult = calculateBollingerBands(candles, bbP, bbDev);
+                            const bbResult = calculateBollingerBands(readyCandles, bbP, bbDev);
                             bbUpperSeriesRef.current.setData(bbResult.map((d: any) => ({ time: d.time, value: d.upper })) as any);
                             bbMiddleSeriesRef.current.setData(bbResult.map((d: any) => ({ time: d.time, value: d.middle })) as any);
                             bbLowerSeriesRef.current.setData(bbResult.map((d: any) => ({ time: d.time, value: d.lower })) as any);
                             setBbData(bbResult);
                         }
                         if (curInd.showRSI && rsiSeriesRef.current) {
-                            rsiSeriesRef.current.setData(calculateRSI(candles, rsiP) as any);
+                            rsiSeriesRef.current.setData(calculateRSI(readyCandles, rsiP) as any);
                         }
                         if (curInd.showUTBot && utBotPrimitiveRef.current) {
-                            syncUTBotOverlayRef.current(candles, curInd, false, true);
+                            syncUTBotOverlayRef.current(readyCandles, curInd, false, true);
                         }
                     }
                 }
-            } catch (err) {
-                if (isMounted) console.error("Failed to fetch klines for heatmap:", err);
+            } catch (err: any) {
+                if (isMounted) {
+                    console.error("Failed to fetch klines for heatmap:", err);
+                    const detail = err?.response?.data?.detail || err?.message || 'Failed to load candles';
+                    toast.error(`${exchange.toUpperCase()} ${symbol} (${interval}): ${detail}`, {
+                        id: `ohlcv-err-${chartId}`,
+                        duration: 3500,
+                    });
+                }
+            } finally {
+                if (isMounted) {
+                    historyLoadedRef.current = true;
+                }
             }
         };
 
@@ -1135,6 +1176,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             mlTpLineRef.current = null;
             wallLinesRef.current.clear();
             lastCandleRef.current = null;
+            historyLoadedRef.current = false;
             allCandlesRef.current = [];
             if (chartRef.current) {
                 emaSeriesMapRef.current.forEach((series) => {
@@ -2547,8 +2589,39 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             }, decayDelay);
         }
 
-        // Even while REST klines are still loading, keep the horizontal price line live and in lockstep with BBO
+        // Even while REST klines are still loading, keep the horizontal price line live and in lockstep with BBO.
+        // Once REST history finishes empty (e.g. quiet sub-minute pair or OANDA 1s), seed the first live candle directly from ticks!
         if (!lastCandleRef.current) {
+            if (historyLoadedRef.current) {
+                const intervalMsSeed = parseIntervalToMs(interval);
+                const rawTsSeed = (trade && trade.timestamp) ? trade.timestamp : Date.now();
+                const eventTsSeed = rawTsSeed < 10000000000 ? rawTsSeed * 1000 : rawTsSeed;
+                const bucketSec = Math.floor(Math.floor(eventTsSeed / intervalMsSeed) * intervalMsSeed / 1000);
+                const tradeHighSeed = trade?.high !== undefined ? trade.high : livePrice;
+                const tradeLowSeed = trade?.low !== undefined ? trade.low : livePrice;
+                const seededCandle: any = {
+                    time: bucketSec,
+                    open: livePrice,
+                    high: Math.max(livePrice, tradeHighSeed),
+                    low: Math.min(livePrice, tradeLowSeed),
+                    close: livePrice,
+                    volume: tradeVolRaw,
+                };
+                try {
+                    candlestickSeriesRef.current.update(seededCandle);
+                    lastCandleRef.current = seededCandle;
+                    allCandlesRef.current = [seededCandle];
+                    candlesVersionRef.current += 1;
+                    if (volumeSeriesRef.current) {
+                        volumeSeriesRef.current.update({
+                            time: seededCandle.time,
+                            value: seededCandle.volume,
+                            color: 'rgba(34, 197, 94, 0.5)',
+                        });
+                    }
+                    setCandlesReadyTick(t => t + 1);
+                } catch {}
+            }
             syncCurrentPriceLine(livePrice, displaySide, sweepLabel, isSweepActive);
             return;
         }
@@ -5699,8 +5772,8 @@ const OrderFlowChartPanel = React.memo<{
                     )}
                     {!isMain && (
                         <>
-                            <HeatmapSymbolSelector symbol={config.symbol} exchange={config.exchange} onSymbolChange={(s) => onUpdate(config.id, { symbol: s })} onExchangeChange={(e) => onUpdate(config.id, { exchange: e })} />
-                            <TimeframeSelector interval={config.interval} onIntervalChange={(i) => onUpdate(config.id, { interval: i })} />
+                            <HeatmapSymbolSelector compact symbol={config.symbol} exchange={config.exchange} onSymbolChange={(s) => onUpdate(config.id, { symbol: s })} onExchangeChange={(e) => onUpdate(config.id, { exchange: e })} />
+                            <TimeframeSelector compact interval={config.interval} onIntervalChange={(i) => onUpdate(config.id, { interval: i })} />
                         </>
                     )}
 

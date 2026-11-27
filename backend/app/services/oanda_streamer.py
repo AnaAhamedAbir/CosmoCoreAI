@@ -14,25 +14,63 @@ logger = logging.getLogger(__name__)
 class OandaStreamer:
     def __init__(self):
         self.active_symbols: Set[str] = set()
+        self._bg_symbols: Set[str] = set()
         self._task = None
         self._session = None
         self._running = False
         self._last_prices: Dict[str, float] = {}
+        self._subscriber_counts: Dict[str, int] = {}
+
+    @staticmethod
+    def _to_oanda_instrument(symbol: str) -> str:
+        """Convert UI symbol (EUR/USD or EUR_USD) to canonical OANDA instrument (EUR_USD)."""
+        return str(symbol or "").strip().upper().replace("/", "_")
+
+    @staticmethod
+    def _to_ui_symbol(instrument: str) -> str:
+        """Convert OANDA instrument (EUR_USD) to UI symbol (EUR/USD)."""
+        return str(instrument or "").strip().upper().replace("_", "/")
+
+    def _reconcile_active_symbols(self) -> None:
+        desired = self._bg_symbols | set(self._subscriber_counts.keys())
+        if desired != self.active_symbols:
+            self.active_symbols = desired
+            self._restart_stream()
+
+    def sync_background_symbols(self, symbols: Set[str]) -> None:
+        """Idempotently sync symbols driven by main.py's /ws/market-data background loop without disturbing WS depth streams."""
+        normalized = {self._to_oanda_instrument(s) for s in symbols if self._to_oanda_instrument(s)}
+        if normalized != self._bg_symbols:
+            self._bg_symbols = normalized
+            self._reconcile_active_symbols()
 
     def add_symbol(self, symbol: str):
-        """Add a symbol (e.g. EUR/USD) to the streaming list"""
-        if symbol not in self.active_symbols:
-            logger.info(f"OandaStreamer: Adding symbol {symbol}")
-            self.active_symbols.add(symbol)
-            # Restart stream to include new symbol
-            self._restart_stream()
+        """Acquire a refcounted symbol subscription (e.g. from /api/v1/market-depth/ws/oanda/{symbol})."""
+        oanda_sym = self._to_oanda_instrument(symbol)
+        if not oanda_sym:
+            return
+        self._subscriber_counts[oanda_sym] = self._subscriber_counts.get(oanda_sym, 0) + 1
+        if oanda_sym not in self.active_symbols:
+            logger.info(f"OandaStreamer: Adding symbol {oanda_sym} (from {symbol})")
+            self._reconcile_active_symbols()
 
-    def remove_symbol(self, symbol: str):
-        """Remove a symbol from the streaming list"""
-        if symbol in self.active_symbols:
-            logger.info(f"OandaStreamer: Removing symbol {symbol}")
-            self.active_symbols.remove(symbol)
-            self._restart_stream()
+    def remove_symbol(self, symbol: str, force: bool = False):
+        """Release a refcounted symbol subscription and stop streaming only when both WS & background loops release it."""
+        oanda_sym = self._to_oanda_instrument(symbol)
+        if not oanda_sym:
+            return
+        if force:
+            self._subscriber_counts.pop(oanda_sym, None)
+            self._bg_symbols.discard(oanda_sym)
+        else:
+            remaining = max(0, self._subscriber_counts.get(oanda_sym, 0) - 1)
+            if remaining > 0:
+                self._subscriber_counts[oanda_sym] = remaining
+                return
+            self._subscriber_counts.pop(oanda_sym, None)
+        if oanda_sym in self.active_symbols and oanda_sym not in self._bg_symbols:
+            logger.info(f"OandaStreamer: Removing symbol {oanda_sym}")
+        self._reconcile_active_symbols()
 
     def _restart_stream(self):
         """Restart the connection when symbol list changes"""
@@ -98,13 +136,11 @@ class OandaStreamer:
                             error_msg = error_data.get("errorMessage", "")
                             if error_msg.startswith("Invalid Instrument "):
                                 bad_sym_oanda = error_msg.replace("Invalid Instrument ", "").strip()
-                                bad_sym = bad_sym_oanda
-                                if bad_sym in self.active_symbols:
-                                    logger.warning(f"Removing invalid instrument {bad_sym} from active_symbols.")
-                                    self.active_symbols.remove(bad_sym)
-                                elif bad_sym_oanda in self.active_symbols:
+                                if bad_sym_oanda:
                                     logger.warning(f"Removing invalid instrument {bad_sym_oanda} from active_symbols.")
-                                    self.active_symbols.remove(bad_sym_oanda)
+                                    self._subscriber_counts.pop(bad_sym_oanda, None)
+                                    self._bg_symbols.discard(bad_sym_oanda)
+                                    self.active_symbols.discard(bad_sym_oanda)
                         except Exception as e:
                             logger.error(f"Failed to parse Oanda error: {e}")
 

@@ -21,7 +21,7 @@ export const useAdvancedMetrics = (symbol: string, exchange: string, interval: s
                 const keys: string[] = [];
 
                 if (settings.showTPOProfile) {
-                    promises.push(api.get('/advanced-metrics/tpo', { params: { symbol, exchange, interval: "5m", limit: 200 } }));
+                    promises.push(api.get('/advanced-metrics/tpo', { params: { symbol, exchange, interval: interval || "5m", limit: 200 } }));
                     keys.push('tpo');
                 } else { setTpoData(null); }
 
@@ -46,12 +46,12 @@ export const useAdvancedMetrics = (symbol: string, exchange: string, interval: s
                 } else { setSpoofingData([]); }
 
                 if (settings.showAnchoredVWAP) {
-                    promises.push(api.get('/advanced-metrics/anchored-vwap', { params: { symbol, exchange, limit: 200 } }));
+                    promises.push(api.get('/advanced-metrics/anchored-vwap', { params: { symbol, exchange, interval: interval || "5m", limit: 200 } }));
                     keys.push('vwap');
                 } else { setVwapData([]); }
 
                 if (settings.showDeltaDivergence) {
-                    promises.push(api.get('/advanced-metrics/delta-divergence', { params: { symbol, exchange } }));
+                    promises.push(api.get('/advanced-metrics/delta-divergence', { params: { symbol, exchange, interval: interval || "5m" } }));
                     keys.push('divergence');
                 } else { setDivergenceData([]); }
 

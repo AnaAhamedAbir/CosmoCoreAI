@@ -23,14 +23,19 @@ class AdvancedMetricsService:
         """Fetches real trades using CCXT, with Redis List caching to prevent rate limits."""
         import json
         from app.core.redis import redis_manager
-        
-        lock = self._get_trade_lock(symbol, exchange_id)
+
+        symbol = str(symbol or "").strip().upper()
+        base_ex, internal_ex = market_depth_service.normalize_exchange_id(exchange_id, symbol)
+        if base_ex == 'oanda':
+            return []
+
+        lock = self._get_trade_lock(symbol, internal_ex)
         async with lock:
             try:
-                # 1. Try to fetch from Redis stream cache
+                # 1. Try to fetch from Redis stream cache (normalized for KuCoin/Kraken Futures)
                 redis = redis_manager.get_redis()
                 if redis:
-                    trade_key = f"recent_trades:{exchange_id.lower()}:{symbol.upper()}"
+                    trade_key = f"recent_trades:{internal_ex}:{symbol}"
                     cached_trades = await redis.lrange(trade_key, -limit, -1)
                     
                     # If we have at least 10 trades, use cache to avoid 429. 
@@ -39,16 +44,16 @@ class AdvancedMetricsService:
                         return [json.loads(t) for t in cached_trades]
 
                 # 2. Fallback to REST API if cache is empty
-                if exchange_id.lower() == 'binance':
+                if base_ex == 'binance':
                     logger.warning(f"Skipping REST fetch_trades for {symbol} due to Binance IP ban protection. Waiting for WebSocket stream cache.")
                     return []
                     
-                exchange = await market_depth_service.get_exchange_instance(exchange_id, symbol)
-                trades = await exchange.fetch_trades(symbol.upper(), limit=limit)
+                exchange = await market_depth_service.get_exchange_instance(base_ex, symbol)
+                trades = await exchange.fetch_trades(symbol, limit=limit)
                 
                 # Populate cache so subsequent calls don't hit REST again
                 if redis and trades:
-                    trade_key = f"recent_trades:{exchange_id.lower()}:{symbol.upper()}"
+                    trade_key = f"recent_trades:{internal_ex}:{symbol}"
                     trade_strs = [json.dumps(t) for t in trades]
                     
                     # Delete and recreate to ensure it has the historical trades
@@ -59,7 +64,7 @@ class AdvancedMetricsService:
 
                 return trades
             except Exception as e:
-                logger.error(f"Error fetching trades for {symbol}: {e}")
+                logger.error(f"Error fetching trades for {symbol} on {base_ex}: {e}")
                 return []
 
     async def calculate_delta_profile(self, symbol: str, exchange_id: str, limit: int = 1000) -> List[Dict[str, Any]]:
@@ -226,13 +231,13 @@ class AdvancedMetricsService:
             logger.error(f"Error detecting spoofing: {e}")
             return []
 
-    async def detect_delta_divergence(self, symbol: str, exchange_id: str) -> List[Dict[str, Any]]:
+    async def detect_delta_divergence(self, symbol: str, exchange_id: str, interval: str = "5m") -> List[Dict[str, Any]]:
         """
         Detect Delta Divergence by comparing Price trend with CVD trend.
         """
         try:
             # Request 200 limit to share cache with TPO and VWAP, then slice to 20
-            klines = await market_depth_service.fetch_ohlcv(symbol, exchange_id, "5m", limit=200)
+            klines = await market_depth_service.fetch_ohlcv(symbol, exchange_id, interval, limit=200)
             if klines:
                 klines = klines[-20:]
             trades = await self.fetch_recent_trades(symbol, exchange_id, limit=1000)
@@ -268,9 +273,9 @@ class AdvancedMetricsService:
             logger.error(f"Error detecting delta divergence: {e}")
             return []
             
-    async def calculate_anchored_vwap(self, symbol: str, exchange_id: str, anchor_timeframe: str = "1d", limit: int = 200) -> List[Dict[str, Any]]:
+    async def calculate_anchored_vwap(self, symbol: str, exchange_id: str, anchor_timeframe: str = "5m", limit: int = 200) -> List[Dict[str, Any]]:
         try:
-            klines = await market_depth_service.fetch_ohlcv(symbol, exchange_id, "5m", limit)
+            klines = await market_depth_service.fetch_ohlcv(symbol, exchange_id, anchor_timeframe, limit)
             if not klines:
                 return []
             

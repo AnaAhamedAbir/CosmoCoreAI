@@ -126,29 +126,46 @@ class OrderbookSnapshotService:
         interval: str = "1m"
     ) -> List[Dict[str, Any]]:
         """
-        Fetches historical snapshots off the event loop.
+        Fetches historical snapshots off the event loop and downsamples by `interval` when requested.
         """
+        norm_symbol = str(symbol or "").strip().upper()
+        base_ex, _ = market_depth_service.normalize_exchange_id(exchange, norm_symbol)
+        bucket_sec = max(1, market_depth_service._timeframe_to_seconds(interval))
+
         def _query_sync() -> List[Dict[str, Any]]:
             db = SessionLocal()
             try:
                 query = select(OrderBookSnapshot).where(
                     and_(
-                        OrderBookSnapshot.symbol == symbol,
-                        OrderBookSnapshot.exchange == exchange,
+                        OrderBookSnapshot.symbol == norm_symbol,
+                        OrderBookSnapshot.exchange == base_ex,
                         OrderBookSnapshot.timestamp >= start_time,
                         OrderBookSnapshot.timestamp <= end_time
                     )
                 ).order_by(OrderBookSnapshot.timestamp.asc())
 
                 result = db.execute(query).scalars().all()
-                return [
-                    {
+                if bucket_sec <= 60:
+                    return [
+                        {
+                            "timestamp": record.timestamp.isoformat(),
+                            "bids": record.bids,
+                            "asks": record.asks
+                        }
+                        for record in result
+                    ]
+
+                # Keep the latest snapshot per interval bucket
+                bucketed: Dict[int, Dict[str, Any]] = {}
+                for record in result:
+                    ts_sec = int(record.timestamp.timestamp())
+                    b_key = (ts_sec // bucket_sec) * bucket_sec
+                    bucketed[b_key] = {
                         "timestamp": record.timestamp.isoformat(),
                         "bids": record.bids,
                         "asks": record.asks
                     }
-                    for record in result
-                ]
+                return [bucketed[k] for k in sorted(bucketed.keys())]
             finally:
                 db.close()
 

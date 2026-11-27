@@ -156,26 +156,28 @@ async def get_liquidity_sweep_absorption(
 async def websocket_market_depth(websocket: WebSocket, exchange_id: str, symbol: str):
     await websocket.accept()
     
+    norm_symbol = str(symbol or "").strip().upper()
+    base_exchange_id, internal_exchange_id = market_depth_service.normalize_exchange_id(exchange_id, norm_symbol)
+
     # Ensure background stream is running with refcount tracking so idle pairs auto-cleanup
     acquired_stream_key = None
-    if exchange_id.lower() == 'oanda':
-        oanda_streamer.add_symbol(symbol)
+    is_oanda = base_exchange_id == 'oanda'
+    if is_oanda:
+        oanda_streamer.add_symbol(norm_symbol)
     else:
-        acquired_stream_key = await market_data_streamer.acquire_stream(exchange_id, symbol)
+        acquired_stream_key = await market_data_streamer.acquire_stream(base_exchange_id, norm_symbol)
     
     redis = redis_manager.get_redis()
     if not redis:
-        market_data_streamer.release_stream(acquired_stream_key)
+        if is_oanda:
+            oanda_streamer.remove_symbol(norm_symbol)
+        else:
+            market_data_streamer.release_stream(acquired_stream_key)
         await websocket.close(code=1011, reason="Redis connection failed")
         return
         
-    internal_exchange_id = exchange_id.lower()
-    if internal_exchange_id == 'kucoin' and ':' in symbol:
-        internal_exchange_id = 'kucoinfutures'
-    elif internal_exchange_id == 'kraken' and ':' in symbol:
-        internal_exchange_id = 'krakenfutures'
-        
-    channel_name = f"market_depth_stream:{internal_exchange_id}:{symbol}"
+    channel_symbol = norm_symbol.replace("/", "_") if is_oanda else norm_symbol
+    channel_name = f"market_depth_stream:{internal_exchange_id}:{channel_symbol}"
     pubsub = redis.pubsub()
     await pubsub.subscribe(channel_name)
     
@@ -211,7 +213,10 @@ async def websocket_market_depth(websocket: WebSocket, exchange_id: str, symbol:
         for task in pending:
             task.cancel()
     finally:
-        market_data_streamer.release_stream(acquired_stream_key)
+        if is_oanda:
+            oanda_streamer.remove_symbol(norm_symbol)
+        else:
+            market_data_streamer.release_stream(acquired_stream_key)
         try:
             await pubsub.unsubscribe(channel_name)
             await pubsub.close()

@@ -11,10 +11,12 @@ interface TradingViewWidgetProps {
 // Map the generic timeframe strings to TradingView specific values
 const getTVInterval = (tf: string) => {
     if (!tf) return '60';
-    if (tf.includes('m')) return tf.replace('m', '');
-    if (tf.includes('h')) return (parseInt(tf) * 60).toString();
-    if (tf.includes('d')) return 'D';
-    if (tf.includes('w')) return 'W';
+    if (tf.endsWith('s')) return `${parseInt(tf, 10) || 1}S`;
+    if (tf.endsWith('M')) return 'M';
+    if (tf.endsWith('m')) return tf.replace('m', '');
+    if (tf.endsWith('h')) return (parseInt(tf, 10) * 60).toString();
+    if (tf.endsWith('d')) return 'D';
+    if (tf.endsWith('w')) return 'W';
     return '60'; // Default 1 hour
 };
 
@@ -42,9 +44,12 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = ({
             if (container) {
                 container.innerHTML = '';
 
-                // Replace / with empty string (e.g., BTC/USDT -> BTCUSDT)
-                const cleanSymbol = symbol.replace('/', '').toUpperCase();
-                const exch = (exchange || 'BINANCE').toUpperCase();
+                // Replace / with empty string and format perpetual futures cleanly (e.g., BTC/USDT:USDT -> BTCUSDT.P)
+                const isFutures = symbol.includes(':');
+                const basePair = symbol.split(':')[0].replace('/', '').toUpperCase();
+                const cleanSymbol = isFutures ? `${basePair}.P` : basePair;
+                const rawExch = (exchange || 'BINANCE').toUpperCase();
+                const exch = rawExch === 'GATEIO' || rawExch === 'GATE' ? 'GATEIO' : rawExch;
                 const fullSymbol = exch ? `${exch}:${cleanSymbol}` : cleanSymbol;
 
                 new (window as any).TradingView.widget({

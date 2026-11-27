@@ -15,8 +15,18 @@ class CcxtService:
     
     POPULAR_EXCHANGES = [
         'binance', 'kraken', 'coinbase', 'kucoin', 'bybit', 'okx', 'bitstamp', 
-        'gateio', 'htx', 'mexc', 'bitget', 'gemini'
+        'gate', 'htx', 'mexc', 'bitget', 'gemini'
     ]
+    EXCHANGE_ALIASES = {
+        'gateio': 'gate',
+        'huobi': 'htx',
+        'coinbasepro': 'coinbase',
+    }
+
+    @classmethod
+    def normalize_exchange_id(cls, exchange_id: str) -> str:
+        norm = str(exchange_id or '').strip().lower()
+        return cls.EXCHANGE_ALIASES.get(norm, norm)
     
     # In-memory cache for full markets data to make bot startup instant
     _market_cache = {}
@@ -52,7 +62,7 @@ class CcxtService:
         return exchanges_list
 
     async def get_pairs(self, exchange_id: str) -> List[str]:
-        exchange_id = exchange_id.lower()
+        exchange_id = self.normalize_exchange_id(exchange_id)
         cache_key = f"market_discovery:pairs:{exchange_id}"
         
         redis = redis_manager.get_redis()
@@ -104,7 +114,7 @@ class CcxtService:
         Returns full CCXT markets dictionary, heavily cached in memory to allow 0ms bot startups.
         """
         import time
-        exchange_id = exchange_id.lower()
+        exchange_id = self.normalize_exchange_id(exchange_id)
         cache_key = f"{exchange_id}_{default_type}"
         
         # Cache for 1 hour

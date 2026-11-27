@@ -15,6 +15,141 @@ class MarketDepthService:
     Implements caching using Redis to prevent rate limiting.
     """
 
+    EXCHANGE_ALIASES: Dict[str, str] = {
+        "gateio": "gate",
+        "huobi": "htx",
+        "coinbasepro": "coinbase",
+    }
+
+    @classmethod
+    def normalize_exchange_id(cls, exchange_id: str, symbol: Optional[str] = None) -> tuple[str, str]:
+        """Returns (canonical_base_exchange_id, internal_stream_exchange_id)."""
+        raw = str(exchange_id or "").strip().lower()
+        base = cls.EXCHANGE_ALIASES.get(raw, raw)
+        is_futures = bool(symbol and ":" in str(symbol))
+        internal = base
+        if base == "kucoin" and is_futures:
+            internal = "kucoinfutures"
+        elif base == "kraken" and is_futures:
+            internal = "krakenfutures"
+        return base, internal
+
+    @staticmethod
+    def _timeframe_to_seconds(timeframe: str) -> int:
+        tf = str(timeframe or "").strip()
+        if not tf:
+            return 60
+        unit = tf[-1]
+        try:
+            value = int(tf[:-1])
+        except ValueError:
+            return 60
+        if value <= 0:
+            return 60
+        if unit == "s":
+            return value
+        if unit == "m":
+            return value * 60
+        if unit == "h":
+            return value * 3600
+        if unit == "d":
+            return value * 86400
+        if unit == "w":
+            return value * 604800
+        if unit == "M":
+            return value * 2592000
+        return value * 60
+
+    @staticmethod
+    def _resample_ohlcv(candles: List[List[float]], target_ms: int) -> List[List[float]]:
+        """Aggregates chronologically sorted [ts_ms, o, h, l, c, v] rows into target_ms buckets."""
+        if not candles or target_ms <= 0:
+            return []
+        buckets: Dict[int, List[float]] = {}
+        for row in sorted(candles, key=lambda x: x[0]):
+            if not row or len(row) < 6:
+                continue
+            ts = int(row[0])
+            bucket_ts = (ts // target_ms) * target_ms
+            o, h, l, c, v = float(row[1]), float(row[2]), float(row[3]), float(row[4]), float(row[5] or 0.0)
+            existing = buckets.get(bucket_ts)
+            if existing is None:
+                buckets[bucket_ts] = [bucket_ts, o, h, l, c, v]
+            else:
+                if h > existing[2]:
+                    existing[2] = h
+                if l < existing[3]:
+                    existing[3] = l
+                existing[4] = c
+                existing[5] += v
+        return [buckets[k] for k in sorted(buckets.keys())]
+
+    @staticmethod
+    def _aggregate_trades_to_ohlcv(trades: List[Dict[str, Any]], target_ms: int, limit: int) -> List[List[float]]:
+        """Synthesizes [ts_ms, o, h, l, c, v] candles from raw trade ticks."""
+        if not trades or target_ms <= 0:
+            return []
+
+        dedup: Dict[str, tuple[int, float, float]] = {}
+        for idx, t in enumerate(trades):
+            if not isinstance(t, dict):
+                continue
+            raw_ts = t.get("timestamp")
+            price = t.get("price")
+            if raw_ts is None or price is None:
+                continue
+            try:
+                ts_val = int(float(raw_ts))
+                if ts_val < 10_000_000_000:
+                    ts_val *= 1000
+                px = float(price)
+                amt = float(t.get("amount") or t.get("qty") or 0.0)
+            except (TypeError, ValueError):
+                continue
+            if px <= 0:
+                continue
+            tid = t.get("id")
+            key = f"id:{tid}" if tid is not None else f"ts:{ts_val}:{px}:{amt}:{idx}"
+            dedup[key] = (ts_val, px, max(0.0, amt))
+
+        if not dedup:
+            return []
+
+        sorted_trades = sorted(dedup.values(), key=lambda x: x[0])
+        buckets: Dict[int, List[float]] = {}
+        for ts_val, px, amt in sorted_trades:
+            bucket_ts = (ts_val // target_ms) * target_ms
+            existing = buckets.get(bucket_ts)
+            if existing is None:
+                buckets[bucket_ts] = [bucket_ts, px, px, px, px, amt]
+            else:
+                if px > existing[2]:
+                    existing[2] = px
+                if px < existing[3]:
+                    existing[3] = px
+                existing[4] = px
+                existing[5] += amt
+
+        ordered = [buckets[k] for k in sorted(buckets.keys())]
+        return ordered[-limit:] if limit > 0 else ordered
+
+    @classmethod
+    def _find_resample_source_tf(cls, supported_tfs: Dict[str, Any], target_tf: str) -> Optional[str]:
+        """Finds the largest native timeframe strictly smaller than target_tf that can cleanly resample into target_tf."""
+        target_sec = cls._timeframe_to_seconds(target_tf)
+        best_tf: Optional[str] = None
+        best_sec = 0
+        for tf in supported_tfs.keys():
+            sec = cls._timeframe_to_seconds(tf)
+            if sec <= 0 or sec >= target_sec:
+                continue
+            # Allow exact divisibility, or daily -> monthly approximation
+            if (target_sec % sec == 0) or (target_tf == "1M" and tf == "1d"):
+                if sec > best_sec:
+                    best_sec = sec
+                    best_tf = tf
+        return best_tf
+
     def __init__(self):
         self._exchanges: Dict[str, Any] = {}
         self._lock = asyncio.Lock()
@@ -34,24 +169,20 @@ class MarketDepthService:
         return self._ob_locks[key]
 
     async def get_exchange_instance(self, exchange_id: str, symbol: Optional[str] = None):
-        exchange_id = exchange_id.lower()
-        
-        # If the symbol looks like a futures symbol (contains ':'), we may need specific config
-        is_futures = symbol and ':' in symbol
-        
-        if exchange_id == 'binance' and is_futures:
+        base_exchange_id, internal_id = self.normalize_exchange_id(exchange_id, symbol)
+        is_futures = bool(symbol and ':' in symbol)
+
+        if base_exchange_id == 'binance' and is_futures:
             cache_id = 'binance_futures'
-        elif exchange_id == 'kucoin' and is_futures:
-            cache_id = 'kucoinfutures'
-        elif exchange_id == 'kraken' and is_futures:
-            cache_id = 'krakenfutures'
+        elif internal_id in ('kucoinfutures', 'krakenfutures'):
+            cache_id = internal_id
         else:
-            cache_id = exchange_id
+            cache_id = base_exchange_id
 
         async with self._lock:
             if cache_id not in self._exchanges:
                 # For Kucoin/Kraken Futures, use the dedicated class
-                real_class_id = cache_id if cache_id in ['kucoinfutures', 'krakenfutures'] else exchange_id
+                real_class_id = cache_id if cache_id in ('kucoinfutures', 'krakenfutures') else base_exchange_id
                 logger.info(f"Creating exchange instance for {cache_id} (class: {real_class_id})")
                 exchange_class = getattr(ccxt, real_class_id, None)
                 
@@ -59,13 +190,13 @@ class MarketDepthService:
                     logger.error(f"Exchange class '{real_class_id}' not found in CCXT async_support.")
                     raise ValueError(f"Exchange '{real_class_id}' not supported.")
                 
-                options = {
+                options: Dict[str, Any] = {
                     'enableRateLimit': True,
                     'options': {'adjustForTimeDifference': True}
                 }
                 
                 if cache_id == 'binance_futures':
-                    options['options'] = {'defaultType': 'swap'}  # 'swap' = USDⓈ-M (fapi.binance.com); 'future' = COIN-M (dapi.binance.com)
+                    options['options']['defaultType'] = 'swap'  # 'swap' = USDⓈ-M (fapi.binance.com); 'future' = COIN-M (dapi.binance.com)
                     
                 exchange = exchange_class(options)
                 
@@ -109,17 +240,14 @@ class MarketDepthService:
         """
         Normalizes the order book limit based on exchange-specific requirements.
         """
-        exchange_id = exchange_id.lower()
+        exchange_id = str(exchange_id or "").lower()
         
-        if exchange_id == 'kucoin':
-            # Kucoin supports: 20 or 100
-            if limit <= 20: 
-                return 20
-            else: 
-                return 100
+        if 'kucoin' in exchange_id:
+            # Kucoin / Kucoin Futures supports: 20 or 100
+            return 20 if limit <= 20 else 100
         
-        if exchange_id == 'binance':
-            # Binance supports: 5, 10, 20, 50, 100, 500, 1000, 5000 (futures up to 1000)
+        if 'binance' in exchange_id:
+            # Binance supports: 5, 10, 20, 50, 100, 500, 1000 (futures up to 1000)
             if limit <= 5: return 5
             elif limit <= 10: return 10
             elif limit <= 20: return 20
@@ -128,20 +256,23 @@ class MarketDepthService:
             elif limit <= 500: return 500
             else: return 1000
 
-        if exchange_id == 'kraken':
-            # Kraken supports: 10, 25, 100, 500, 1000
+        if 'kraken' in exchange_id:
+            # Kraken / Kraken Futures supports: 10, 25, 100, 500, 1000
             if limit <= 10: return 10
             elif limit <= 25: return 25
             elif limit <= 100: return 100
             elif limit <= 500: return 500
             else: return 1000
         
-        if exchange_id == 'htx':
+        if 'htx' in exchange_id:
             # HTX supports: 5, 10, 20, 150
             if limit <= 5: return 5
             elif limit <= 10: return 10
             elif limit <= 20: return 20
             else: return 150
+
+        if 'bitfinex' in exchange_id:
+            return 25 if limit <= 25 else 100
             
         return limit
 
@@ -154,41 +285,27 @@ class MarketDepthService:
     ) -> Dict[str, Any]:
         """
         Fetches the order book and aggregates it into price buckets.
-        
-        Args:
-            symbol (str): Trading pair, e.g., 'BTC/USDT'.
-            exchange_id (str): Exchange name, e.g., 'binance'.
-            depth (int): Number of order book levels to fetch.
-            bucket_size (float): Price range for grouping orders.
-
-        Returns:
-            Dict[str, Any]: {
-                "current_price": float,
-                "bids": [{"price": float, "volume": float}, ...],
-                "asks": [{"price": float, "volume": float}, ...],
-                "symbol": str,
-                "exchange": str
-            }
         """
         # normalize inputs
-        symbol = symbol.upper()
-        exchange_id = exchange_id.lower()
+        symbol = str(symbol or "").strip().upper()
+        base_ex, internal_ex = self.normalize_exchange_id(exchange_id, symbol)
         
         # 1. Check Cache
-        cache_key = f"market_depth_heatmap:{exchange_id}:{symbol}:{bucket_size}:{depth}"
+        cache_key = f"market_depth_heatmap:{internal_ex}:{symbol}:{bucket_size}:{depth}"
         redis = redis_manager.get_redis()
         
-        lock = self._get_ob_lock(exchange_id, symbol)
+        lock = self._get_ob_lock(internal_ex, symbol)
         async with lock:
             if redis:
                 cached_data = await redis.get(cache_key)
                 if cached_data:
                     return json.loads(cached_data)
 
-            # 1.5 Try Live Streamer Cache First
+            # 1.5 Try Live Streamer Cache First (normalized for KuCoin/Kraken Futures & OANDA)
             order_book = None
             if redis:
-                live_ob = await redis.get(f"latest_orderbook:{exchange_id.lower()}:{symbol.upper()}")
+                ob_sym = symbol.replace("/", "_") if base_ex == "oanda" else symbol
+                live_ob = await redis.get(f"latest_orderbook:{internal_ex}:{ob_sym}")
                 if live_ob:
                     live_data = json.loads(live_ob)
                     bids = [[b["price"], b["size"]] for b in live_data.get("bids", [])]
@@ -196,22 +313,22 @@ class MarketDepthService:
                     order_book = {"bids": bids, "asks": asks}
 
             # 2. Fetch Live Data if cache missing
-            if exchange_id.lower() == 'oanda':
-                # OANDA doesn't provide level 2 data, just tick volume
-                return {"symbol": symbol, "exchange": exchange_id, "current_price": 0, "bids": [], "asks": []}
-                
-            exchange = await self.get_exchange_instance(exchange_id, symbol)
+            if base_ex == 'oanda':
+                if not order_book:
+                    return {"symbol": symbol, "exchange": base_ex, "current_price": 0, "bids": [], "asks": []}
+            else:
+                exchange = await self.get_exchange_instance(base_ex, symbol)
             
             try:
                 # Normalize limit for different exchanges
-                depth = self._normalize_order_book_limit(exchange_id, depth)
+                depth = self._normalize_order_book_limit(internal_ex, depth)
                     
                 # Fetch Order Book
                 if not order_book:
                     # ✅ Bypass REST API for Binance to prevent rate limits
-                    if exchange_id.lower() == 'binance':
+                    if base_ex == 'binance':
                         logger.info(f"Bypassing Binance REST API for {symbol} to prevent rate limits. Relying on WebSocket stream cache.")
-                        return {"symbol": symbol, "exchange": exchange_id, "current_price": 0, "bids": [], "asks": []}
+                        return {"symbol": symbol, "exchange": base_ex, "current_price": 0, "bids": [], "asks": []}
                         
                     order_book = await exchange.fetch_order_book(symbol, limit=depth)
                 
@@ -226,7 +343,7 @@ class MarketDepthService:
                 
                 result = {
                     "symbol": symbol,
-                    "exchange": exchange_id,
+                    "exchange": base_ex,
                     "current_price": current_price,
                     "bids": aggregated_bids,
                     "asks": aggregated_asks
@@ -239,7 +356,7 @@ class MarketDepthService:
                 return result
 
             except Exception as e:
-                logger.error(f"Error fetching market depth for {symbol} on {exchange_id}: {e}")
+                logger.error(f"Error fetching market depth for {symbol} on {base_ex}: {e}")
                 raise e
 
     def _aggregate_orders(self, orders: List[List[float]], bucket_size: float, is_bid: bool) -> List[Dict[str, float]]:
@@ -287,16 +404,23 @@ class MarketDepthService:
         """
         Returns a list of all exchanges supported by CCXT + OANDA.
         """
-        popular = ['binance', 'kraken', 'coinbase', 'kucoin', 'bybit', 'okx', 'bitfinex', 'gateio', 'htx', 'mexc', 'oanda']
+        popular = ['binance', 'kraken', 'coinbase', 'kucoin', 'bybit', 'okx', 'bitfinex', 'gate', 'htx', 'mexc', 'oanda']
         return popular
+
+    @staticmethod
+    def _extract_active_symbols(markets: Optional[Dict[str, Any]]) -> List[str]:
+        if not isinstance(markets, dict):
+            return []
+        return [sym for sym, meta in markets.items() if isinstance(meta, dict) and meta.get('active', True)]
 
     async def get_exchange_markets(self, exchange_id: str) -> List[str]:
         """
-        Returns a list of symbols for a given exchange.
-        For Binance and Kucoin, it merges both Spot and Futures markets.
+        Returns a list of active symbols for a given exchange.
+        For Binance, KuCoin, and Kraken, it merges both Spot and Futures markets.
         For OANDA, it uses the OANDA REST API to fetch currency pairs.
         """
-        cache_key = f"markets:{exchange_id}"
+        base_ex, _ = self.normalize_exchange_id(exchange_id)
+        cache_key = f"markets:{base_ex}"
         redis = redis_manager.get_redis()
         
         if redis:
@@ -304,11 +428,11 @@ class MarketDepthService:
             if cached:
                 return json.loads(cached)
 
-        symbols = []
+        symbols: List[str] = []
         try:
-            logger.info(f"Fetching markets for {exchange_id}...")
+            logger.info(f"Fetching markets for {base_ex}...")
             
-            if exchange_id.lower() == 'oanda':
+            if base_ex == 'oanda':
                 import requests
                 import os
                 
@@ -324,7 +448,7 @@ class MarketDepthService:
                         data = response.json()
                         for inst in data.get("instruments", []):
                             if inst.get("type") == "CURRENCY":
-                                # OANDA pairs are returned as EUR_USD. Let's return them as EUR/USD for UI consistency.
+                                # OANDA pairs are returned as EUR_USD. Return as EUR/USD for UI consistency.
                                 symbols.append(inst["name"].replace("_", "/"))
                     except Exception as e:
                         logger.error(f"Failed to fetch OANDA markets: {e}")
@@ -336,14 +460,17 @@ class MarketDepthService:
                 symbols = sorted(symbols)
             else:
                 # ⚡ Check ccxt_service memory cache first for 0ms instant response
-                if exchange_id.lower() == 'binance':
+                if base_ex == 'binance':
                     try:
                         from app.services.ccxt_service import ccxt_service
                         spot_cache = ccxt_service._market_cache.get('binance_spot')
                         swap_cache = ccxt_service._market_cache.get('binance_swap')
                         if spot_cache and swap_cache:
-                            symbols = sorted(list(set(list(spot_cache.keys()) + list(swap_cache.keys()))))
-                            logger.info(f"⚡ [MarketDepth] Served {len(symbols)} Binance markets directly from memory cache (0ms)")
+                            symbols = sorted(list(set(
+                                self._extract_active_symbols(spot_cache)
+                                + self._extract_active_symbols(swap_cache)
+                            )))
+                            logger.info(f"⚡ [MarketDepth] Served {len(symbols)} active Binance markets directly from memory cache (0ms)")
                             if redis:
                                 await redis.setex(cache_key, 3600, json.dumps(symbols))
                             return symbols
@@ -351,30 +478,30 @@ class MarketDepthService:
                         logger.debug(f"[MarketDepth] Memory cache lookup fallback: {mem_e}")
 
                 # 1. Fetch Spot Markets (without redundant reload)
-                spot_exchange = await self.get_exchange_instance(exchange_id)
+                spot_exchange = await self.get_exchange_instance(base_ex)
                 spot_markets = spot_exchange.markets if getattr(spot_exchange, 'markets', None) else await spot_exchange.load_markets()
-                symbols.extend(list(spot_markets.keys()))
-                logger.info(f"Fetched {len(spot_markets)} spot markets for {exchange_id}")
+                symbols.extend(self._extract_active_symbols(spot_markets))
+                logger.info(f"Fetched {len(spot_markets)} spot markets for {base_ex}")
 
                 # 2. Fetch Futures Markets (without redundant reload)
-                if exchange_id == 'binance':
+                if base_ex == 'binance':
                     logger.info("Fetching Binance Futures markets...")
                     futures_exchange = await self.get_exchange_instance('binance', symbol='BTC/USDT:USDT')
                     futures_markets = futures_exchange.markets if getattr(futures_exchange, 'markets', None) else await futures_exchange.load_markets()
-                    symbols.extend(list(futures_markets.keys()))
+                    symbols.extend(self._extract_active_symbols(futures_markets))
                     logger.info(f"Fetched {len(futures_markets)} Binance futures markets")
-                elif exchange_id == 'kucoin':
+                elif base_ex == 'kucoin':
                     logger.info("Fetching Kucoin Futures markets...")
                     futures_exchange = await self.get_exchange_instance('kucoin', symbol='BTC/USDT:USDT')
                     futures_markets = futures_exchange.markets if getattr(futures_exchange, 'markets', None) else await futures_exchange.load_markets()
-                    symbols.extend(list(futures_markets.keys()))
+                    symbols.extend(self._extract_active_symbols(futures_markets))
                     logger.info(f"Fetched {len(futures_markets)} Kucoin futures markets")
-                elif exchange_id == 'kraken':
+                elif base_ex == 'kraken':
                     logger.info("Fetching Kraken Futures markets...")
                     try:
                         futures_exchange = await self.get_exchange_instance('kraken', symbol='BTC/USDT:USDT')
                         futures_markets = futures_exchange.markets if getattr(futures_exchange, 'markets', None) else await futures_exchange.load_markets()
-                        symbols.extend(list(futures_markets.keys()))
+                        symbols.extend(self._extract_active_symbols(futures_markets))
                         logger.info(f"Fetched {len(futures_markets)} Kraken futures markets")
                     except Exception as e:
                         logger.error(f"Error fetching Kraken futures markets. It might be due to API accessibility or CCXT version: {e}")
@@ -382,191 +509,387 @@ class MarketDepthService:
                 # Remove duplicates and sort
                 symbols = sorted(list(set(symbols)))
             
-            logger.info(f"Total merged markets for {exchange_id}: {len(symbols)}")
+            logger.info(f"Total merged active markets for {base_ex}: {len(symbols)}")
 
             # Cache for 1 hour as markets don't change often
             if redis:
                 await redis.setex(cache_key, 3600, json.dumps(symbols))
             return symbols
         except Exception as e:
-            logger.error(f"Error loading markets for {exchange_id}: {e}")
+            logger.error(f"Error loading markets for {base_ex}: {e}")
             raise e
+
+    async def _fetch_native_ohlcv(
+        self,
+        exchange: Any,
+        symbol: str,
+        timeframe: str,
+        fetch_limit: int,
+    ) -> List[List[float]]:
+        """Fetches native OHLCV candles from CCXT with safe pagination above 1000 candles."""
+        import time as _time
+
+        BATCH_SIZE = 1000
+        all_ohlcv: List[List[float]] = []
+
+        if fetch_limit <= BATCH_SIZE:
+            all_ohlcv = await exchange.fetch_ohlcv(symbol, timeframe, limit=fetch_limit)
+        else:
+            tf_ms: int = self._timeframe_to_seconds(timeframe) * 1000
+            now_ms: int = int(_time.time() * 1000)
+            since_ms: int = now_ms - (fetch_limit * tf_ms)
+            remaining: int = fetch_limit
+
+            while remaining > 0:
+                batch = min(remaining, BATCH_SIZE)
+                chunk = await exchange.fetch_ohlcv(symbol, timeframe, since=since_ms, limit=batch)
+                if not chunk:
+                    break
+                all_ohlcv.extend(chunk)
+                remaining -= len(chunk)
+                next_since = int(chunk[-1][0]) + tf_ms
+                if next_since <= since_ms:
+                    break
+                since_ms = next_since
+                if remaining > 0:
+                    await asyncio.sleep(0.35)
+
+        seen: Dict[int, List[float]] = {}
+        for candle in all_ohlcv:
+            if candle and len(candle) >= 6:
+                seen[int(candle[0])] = candle
+        return sorted(seen.values(), key=lambda x: x[0])
+
+    async def _fetch_subminute_from_trades(
+        self,
+        exchange: Any,
+        base_ex: str,
+        internal_ex: str,
+        symbol: str,
+        target_sec: int,
+        limit: int,
+        redis: Any,
+    ) -> List[List[float]]:
+        """
+        Synthesizes 1s/5s/15s/30s OHLCV candles from Redis live trades + exchange public trades
+        for venues/markets that do not expose sub-minute REST klines (e.g. Binance Futures, Bybit, OKX, etc.).
+        """
+        target_ms = target_sec * 1000
+        trades: List[Dict[str, Any]] = []
+
+        # 1. Read live trades already buffered by MarketDataStreamer in Redis
+        if redis:
+            try:
+                raw_cached = await redis.lrange(f"recent_trades:{internal_ex}:{symbol}", -1000, -1)
+                for item in raw_cached or []:
+                    try:
+                        parsed = json.loads(item)
+                        if isinstance(parsed, dict):
+                            trades.append(parsed)
+                    except Exception:
+                        continue
+            except Exception as redis_err:
+                logger.debug(f"[OHLCV] Redis recent_trades read skipped for {internal_ex}:{symbol}: {redis_err}")
+
+        # Determine how much time span our cached trades already cover
+        desired_span_ms = min(max(target_sec * 30, 60), 600) * 1000
+        cached_timestamps = [
+            int(float(t["timestamp"])) * (1000 if int(float(t["timestamp"])) < 10_000_000_000 else 1)
+            for t in trades
+            if t.get("timestamp") is not None
+        ]
+        cached_span_ms = (max(cached_timestamps) - min(cached_timestamps)) if len(cached_timestamps) >= 2 else 0
+
+        # 2. Supplement with public exchange trades if Redis doesn't have enough history yet
+        if len(trades) < 300 or cached_span_ms < desired_span_ms:
+            try:
+                if internal_ex == 'krakenfutures' or base_ex == 'okx':
+                    rest_limit = 100
+                elif base_ex in ('binance', 'bybit', 'coinbase', 'gate', 'htx', 'bitfinex', 'mexc'):
+                    rest_limit = 1000
+                else:
+                    rest_limit = 500
+                rest_trades = await exchange.fetch_trades(symbol, limit=rest_limit)
+                if rest_trades:
+                    trades.extend(rest_trades)
+
+                    # On high-volume Binance Futures pairs (e.g. BTC/USDT:USDT), 1000 aggTrades may span <20s.
+                    # Do up to 2 lightweight backward aggTrade pages via fromId so 1s-30s charts look populated.
+                    if base_ex == 'binance' and ':' in symbol:
+                        try:
+                            cur_batch = rest_trades
+                            for _ in range(2):
+                                ts_list = [
+                                    int(float(t["timestamp"])) * (1000 if int(float(t["timestamp"])) < 10_000_000_000 else 1)
+                                    for t in trades
+                                    if t.get("timestamp") is not None
+                                ]
+                                if len(ts_list) >= 2 and (max(ts_list) - min(ts_list)) >= desired_span_ms:
+                                    break
+                                ids = []
+                                for t in cur_batch:
+                                    try:
+                                        ids.append(int(t["id"]))
+                                    except (KeyError, TypeError, ValueError):
+                                        pass
+                                if not ids:
+                                    break
+                                min_id = min(ids)
+                                if min_id <= 1:
+                                    break
+                                from_id = max(1, min_id - rest_limit)
+                                older = await exchange.fetch_trades(
+                                    symbol,
+                                    limit=rest_limit,
+                                    params={"fromId": from_id},
+                                )
+                                if not older:
+                                    break
+                                trades.extend(older)
+                                cur_batch = older
+                        except Exception as page_err:
+                            logger.debug(f"[OHLCV] Backward aggTrades pagination skipped for {symbol}: {page_err}")
+            except Exception as trade_err:
+                logger.warning(f"[OHLCV] Trade synthesis REST fallback failed for {base_ex}:{symbol}: {trade_err}")
+
+        return self._aggregate_trades_to_ohlcv(trades, target_ms=target_ms, limit=limit)
 
     async def fetch_ohlcv(self, symbol: str, exchange_id: str, timeframe: str = '1h', limit: int = 100) -> List[Dict[str, Any]]:
         """
-        Fetches OHLCV data for a symbol with automatic pagination for large limits.
-
-        Key improvements:
-        - Cache key now includes `limit` to avoid stale data bugs.
-        - Requests >1000 candles are split into safe batches of 1000 with a
-          500ms delay between each request to prevent IP bans / rate-limit errors.
-        - CCXT's built-in `enableRateLimit` handles per-request throttling.
-        - Results are deduplicated and sorted chronologically before returning.
-        - Max limit is hard-capped at 2000 for safety.
+        Fetches OHLCV data for a symbol with:
+        - Exchange alias & futures normalization (gateio -> gate, kucoin/kraken futures)
+        - Native klines when supported
+        - Automatic resampling from smaller native timeframes (e.g. 1s -> 5s/15s/30s on Binance Spot,
+          15m -> 45m, 1m -> 3m, 1h -> 2h/4h/6h/12h on exchanges lacking those intervals)
+        - Trade-tick OHLCV synthesis for 1s-30s on Binance Futures and non-Binance crypto exchanges
+        - OANDA native S5/S15/S30 & resampled 3m/45m support
+        - Exhaustion-aware Redis caching (fixes repeated cache misses when exchange returns < limit)
         """
-        import time as _time
+        symbol = str(symbol or "").strip().upper()
+        timeframe = str(timeframe or "1h").strip()
+        base_ex, internal_ex = self.normalize_exchange_id(exchange_id, symbol)
 
         # Hard cap to avoid accidental abuse or server overload
-        limit = min(limit, 2000)
+        limit = max(1, min(int(limit or 100), 2000))
         fetch_limit = limit
+        target_sec = self._timeframe_to_seconds(timeframe)
+        target_ms = target_sec * 1000
 
-        # Use a unified cache key without limit to serve all sizes from one cache
-        cache_key = f"ohlcv:{exchange_id}:{symbol}:{timeframe}"
+        # Unified normalized cache key
+        cache_key = f"ohlcv:{internal_ex}:{symbol}:{timeframe}"
         redis = redis_manager.get_redis()
 
-        lock = self._get_ohlcv_lock(exchange_id, symbol, timeframe)
+        lock = self._get_ohlcv_lock(internal_ex, symbol, timeframe)
         async with lock:
             if redis:
                 cached = await redis.get(cache_key)
                 if cached:
-                    cached_data = json.loads(cached)
-                    # If we have enough data in cache, slice and return it
-                    if len(cached_data) >= limit:
+                    parsed_cache = json.loads(cached)
+                    if isinstance(parsed_cache, dict) and "candles" in parsed_cache:
+                        cached_data = parsed_cache.get("candles") or []
+                        exhausted = bool(parsed_cache.get("exhausted", False))
+                    else:
+                        cached_data = parsed_cache if isinstance(parsed_cache, list) else []
+                        exhausted = False
+                    # Serve from cache if we have enough candles OR the source already returned all available candles
+                    if len(cached_data) >= limit or exhausted:
                         return cached_data[-limit:]
-                    # If not enough, we will fetch fetch_limit from exchange
 
-            if exchange_id.lower() == 'oanda':
+            if base_ex == 'oanda':
                 import requests
                 import os
-                import yfinance as yf
-                from datetime import datetime, timedelta
-                
-                # OANDA uses M1, H1 etc instead of 1m, 1h
-                tf_map = {'1m': 'M1', '5m': 'M5', '15m': 'M15', '30m': 'M30', '1h': 'H1', '4h': 'H4', '1d': 'D'}
-                oanda_tf = tf_map.get(timeframe, 'H1')
+                from datetime import datetime
+
+                # OANDA v3 official granularities (note: S5/S15/S30 are native; 3m & 45m are resampled)
+                oanda_native_map = {
+                    '5s': 'S5', '15s': 'S15', '30s': 'S30',
+                    '1m': 'M1', '5m': 'M5', '15m': 'M15', '30m': 'M30',
+                    '1h': 'H1', '2h': 'H2', '4h': 'H4', '6h': 'H6', '12h': 'H12',
+                    '1d': 'D', '1w': 'W', '1M': 'M',
+                }
+                oanda_resample_map = {
+                    '3m': ('M1', 3),
+                    '45m': ('M15', 3),
+                }
+
+                # OANDA does not offer 1s REST candles; return empty gracefully so live stream ticks build 1s candles
+                if timeframe == '1s':
+                    return []
+
+                resample_factor = 1
+                if timeframe in oanda_native_map:
+                    oanda_tf = oanda_native_map[timeframe]
+                elif timeframe in oanda_resample_map:
+                    oanda_tf, resample_factor = oanda_resample_map[timeframe]
+                else:
+                    oanda_tf = 'H1'
+
                 oanda_symbol = symbol.replace("/", "_")
-                
+                oanda_count = min(limit * resample_factor, 2000)
+
                 account_id = os.getenv("OANDA_ACCOUNT_ID")
                 api_key = os.getenv("OANDA_API_KEY")
-                
-                formatted_data = []
+
+                formatted_data: List[Dict[str, Any]] = []
                 fetch_success = False
-                
+
                 if account_id and api_key:
-                    url = f"https://api-fxpractice.oanda.com/v3/instruments/{oanda_symbol}/candles?count={limit}&granularity={oanda_tf}&price=M"
+                    url = f"https://api-fxpractice.oanda.com/v3/instruments/{oanda_symbol}/candles?count={oanda_count}&granularity={oanda_tf}&price=M"
                     headers = {"Authorization": f"Bearer {api_key}"}
                     try:
                         response = await asyncio.to_thread(requests.get, url, headers=headers, timeout=5)
                         response.raise_for_status()
                         data = response.json()
                         candles = data.get("candles", [])
+                        raw_oanda: List[List[float]] = []
                         for c in candles:
-                            if c["complete"]:
-                                # OANDA time is RFC3339 string
-                                dt = datetime.fromisoformat(c["time"].replace('Z', '+00:00'))
-                                formatted_data.append({
-                                    "time": int(dt.timestamp()),
-                                    "open": float(c["mid"]["o"]),
-                                    "high": float(c["mid"]["h"]),
-                                    "low": float(c["mid"]["l"]),
-                                    "close": float(c["mid"]["c"]),
-                                    "volume": int(c["volume"])
-                                })
+                            dt = datetime.fromisoformat(c["time"].replace('Z', '+00:00'))
+                            raw_oanda.append([
+                                int(dt.timestamp() * 1000),
+                                float(c["mid"]["o"]),
+                                float(c["mid"]["h"]),
+                                float(c["mid"]["l"]),
+                                float(c["mid"]["c"]),
+                                float(c["volume"]),
+                            ])
+                        if resample_factor > 1 and raw_oanda:
+                            raw_oanda = self._resample_ohlcv(raw_oanda, target_ms)
+                        formatted_data = [
+                            {
+                                "time": int(r[0] / 1000),
+                                "open": r[1],
+                                "high": r[2],
+                                "low": r[3],
+                                "close": r[4],
+                                "volume": int(r[5]),
+                            }
+                            for r in raw_oanda[-limit:]
+                        ]
                         fetch_success = len(formatted_data) > 0
                     except Exception as e:
-                        logger.error(f"OANDA API failed for {symbol}: {e}. Falling back to yfinance.")
-                
+                        logger.error(f"OANDA API failed for {symbol} ({timeframe}): {e}. Falling back to yfinance.")
+
                 if not fetch_success:
-                    # Fallback to yfinance
+                    # yfinance does not support sub-minute intervals; return empty gracefully instead of fake 1h bars
+                    if target_sec < 60:
+                        return []
                     try:
-                        logger.info(f"Using yfinance fallback for {symbol}")
-                        yf_symbol = f"{symbol.replace('/', '')}=X"
-                        
-                        # map timeframe to yfinance
-                        yf_tf_map = {'1m': '1m', '5m': '5m', '15m': '15m', '30m': '30m', '1h': '1h', '1d': '1d'}
-                        yf_tf = yf_tf_map.get(timeframe, '1h')
-                        
+                        import yfinance as yf
+                        logger.info(f"Using yfinance fallback for {symbol} ({timeframe})")
+                        yf_symbol = f"{symbol.replace('/', '').replace('_', '')}=X"
+                        yf_tf_map = {
+                            '1m': ('1m', '7d', 1),
+                            '3m': ('1m', '7d', 3),
+                            '5m': ('5m', '1mo', 1),
+                            '15m': ('15m', '1mo', 1),
+                            '30m': ('30m', '1mo', 1),
+                            '45m': ('15m', '1mo', 3),
+                            '1h': ('1h', '3mo', 1),
+                            '2h': ('1h', '6mo', 2),
+                            '4h': ('1h', '6mo', 4),
+                            '6h': ('1h', '6mo', 6),
+                            '12h': ('1h', '6mo', 12),
+                            '1d': ('1d', '2y', 1),
+                            '1w': ('1wk', '5y', 1),
+                            '1M': ('1mo', '10y', 1),
+                        }
+                        yf_tf, period, yf_factor = yf_tf_map.get(timeframe, ('1h', '1mo', 1))
                         ticker = yf.Ticker(yf_symbol)
-                        
-                        # If timeframe is intraday (e.g. 1m, 1h), yfinance limits the history (e.g. 7 days for 1m, 730 days for 1h)
-                        period = "1mo"
-                        if timeframe == '1m': period = "7d"
-                        
-                        df = ticker.history(period=period, interval=yf_tf)
+                        df = await asyncio.to_thread(ticker.history, period=period, interval=yf_tf)
                         if not df.empty:
-                            df = df.tail(limit)
-                            for index, row in df.iterrows():
-                                formatted_data.append({
-                                    "time": int(index.timestamp()),
-                                    "open": float(row['Open']),
-                                    "high": float(row['High']),
-                                    "low": float(row['Low']),
-                                    "close": float(row['Close']),
-                                    "volume": float(row['Volume'])
-                                })
+                            raw_yf: List[List[float]] = [
+                                [
+                                    int(index.timestamp() * 1000),
+                                    float(row['Open']),
+                                    float(row['High']),
+                                    float(row['Low']),
+                                    float(row['Close']),
+                                    float(row['Volume']),
+                                ]
+                                for index, row in df.iterrows()
+                            ]
+                            if yf_factor > 1:
+                                raw_yf = self._resample_ohlcv(raw_yf, target_ms)
+                            formatted_data = [
+                                {
+                                    "time": int(r[0] / 1000),
+                                    "open": r[1],
+                                    "high": r[2],
+                                    "low": r[3],
+                                    "close": r[4],
+                                    "volume": r[5],
+                                }
+                                for r in raw_yf[-limit:]
+                            ]
                     except Exception as e:
                         logger.error(f"yfinance fallback failed for {symbol}: {e}")
                         raise e
-                
-                # Decorate with candlestick pattern analysis
+
                 from app.helpers.candlestick_patterns import attach_candlestick_patterns
                 formatted_data = attach_candlestick_patterns(formatted_data)
-                
-                if redis and formatted_data:
-                    await redis.setex(cache_key, 60, json.dumps(formatted_data))
-                    
-                return formatted_data
-                
-            exchange = await self.get_exchange_instance(exchange_id, symbol)
 
-            # Max candles most exchanges allow per single request
-            BATCH_SIZE = 1000
+                if redis and formatted_data:
+                    oanda_ttl = 2 if target_sec <= 5 else (5 if target_sec < 60 else 60)
+                    cache_payload = {"candles": formatted_data, "exhausted": len(formatted_data) < limit}
+                    await redis.setex(cache_key, oanda_ttl, json.dumps(cache_payload))
+
+                return formatted_data
+
+            exchange = await self.get_exchange_instance(base_ex, symbol)
 
             try:
-                all_ohlcv: list = []
+                supported_tfs = dict(getattr(exchange, 'timeframes', None) or {})
+                # Binance USD-M / COIN-M Futures REST API does NOT support '1s' klines (only Spot does)
+                if base_ex == 'binance' and ':' in symbol:
+                    supported_tfs.pop('1s', None)
 
-                if fetch_limit <= BATCH_SIZE:
-                    # ── Single request, no pagination needed ──────────────────────
-                    all_ohlcv = await exchange.fetch_ohlcv(symbol, timeframe, limit=fetch_limit)
+                all_ohlcv: List[List[float]] = []
 
+                if timeframe in supported_tfs:
+                    # ── Tier 1: Native exchange klines ─────────────────────────────
+                    all_ohlcv = await self._fetch_native_ohlcv(exchange, symbol, timeframe, fetch_limit)
                 else:
-                    # ── Paginated fetching ─────────────────────────────────────────
-                    # Calculate timeframe duration in milliseconds so we can step
-                    # backward from "now" to find the correct `since` start point.
-                    tf_ms: int = exchange.parse_timeframe(timeframe) * 1000
-                    now_ms: int = int(_time.time() * 1000)
-
-                    # Start from `fetch_limit` candles ago
-                    since_ms: int = now_ms - (fetch_limit * tf_ms)
-                    remaining: int = fetch_limit
-
-                    while remaining > 0:
-                        batch = min(remaining, BATCH_SIZE)
-                        chunk = await exchange.fetch_ohlcv(
-                            symbol, timeframe, since=since_ms, limit=batch
+                    # ── Tier 2: Resample from a smaller native timeframe ───────────
+                    # e.g., Binance Spot 1s -> 5s/15s/30s; Any exchange 15m -> 45m, 1m -> 3m, 1h -> 2h/4h/6h/12h
+                    source_tf = self._find_resample_source_tf(supported_tfs, timeframe)
+                    if source_tf:
+                        src_sec = self._timeframe_to_seconds(source_tf)
+                        factor = max(1, target_sec // src_sec)
+                        src_limit = min(max(fetch_limit * factor, 200), 2000)
+                        logger.info(
+                            f"[OHLCV] Resampling {base_ex}:{symbol} {timeframe} from native {source_tf} (src_limit={src_limit})"
                         )
-
-                        if not chunk:
-                            break  # Exchange returned nothing — stop
-
-                        all_ohlcv.extend(chunk)
-                        remaining -= len(chunk)
-
-                        # Advance `since` past the last candle to avoid re-fetching
-                        since_ms = chunk[-1][0] + tf_ms
-
-                        # ── Rate-limit safety delay between paginated requests ──
-                        # CCXT's enableRateLimit handles per-request throttling, but
-                        # we add an extra 500ms buffer to avoid soft IP bans on
-                        # stricter exchanges (Binance, Bybit, etc.).
-                        if remaining > 0:
-                            await asyncio.sleep(0.5)
-
-                # ── Deduplicate by timestamp (keep latest) and sort ascending ──
-                seen: dict = {}
-                for candle in all_ohlcv:
-                    seen[candle[0]] = candle
-                all_ohlcv = sorted(seen.values(), key=lambda x: x[0])
+                        raw_src = await self._fetch_native_ohlcv(exchange, symbol, source_tf, src_limit)
+                        all_ohlcv = self._resample_ohlcv(raw_src, target_ms)[-fetch_limit:]
+                    elif target_sec < 60:
+                        # ── Tier 3: Sub-minute trade-tick OHLCV synthesis ──────────
+                        # Works for 1s, 5s, 15s, 30s on Binance Futures & all non-Binance crypto exchanges
+                        logger.info(
+                            f"[OHLCV] Synthesizing sub-minute {timeframe} candles from trades for {internal_ex}:{symbol}"
+                        )
+                        all_ohlcv = await self._fetch_subminute_from_trades(
+                            exchange=exchange,
+                            base_ex=base_ex,
+                            internal_ex=internal_ex,
+                            symbol=symbol,
+                            target_sec=target_sec,
+                            limit=fetch_limit,
+                            redis=redis,
+                        )
+                    else:
+                        raise ValueError(
+                            f"Timeframe '{timeframe}' is not supported by {base_ex} and no smaller native timeframe is available."
+                        )
 
                 # ── Format for Lightweight Charts ──────────────────────────────
                 formatted_data = [
                     {
                         "time":   int(c[0] / 1000),  # ms → seconds
-                        "open":   c[1],
-                        "high":   c[2],
-                        "low":    c[3],
-                        "close":  c[4],
-                        "volume": c[5],
+                        "open":   float(c[1]),
+                        "high":   float(c[2]),
+                        "low":    float(c[3]),
+                        "close":  float(c[4]),
+                        "volume": float(c[5]),
                     }
                     for c in all_ohlcv
                 ]
@@ -576,10 +899,8 @@ class MarketDepthService:
                 formatted_data = attach_candlestick_patterns(formatted_data)
 
                 # ── Dynamic cache TTL based on timeframe ───────────────────────
-                # Short timeframes need fresh data; long timeframes can be cached longer.
-                # Increased TTL to prevent IP bans from Binance REST API over-polling.
                 tf_ttl_map = {
-                    '1s': 5, '5s': 5, '15s': 5, '30s': 5,
+                    '1s': 1, '5s': 2, '15s': 5, '30s': 5,
                     '1m': 30, '3m': 60, '5m': 120, '15m': 300,
                     '30m': 600, '45m': 600, '1h': 1800,
                     '2h': 3600, '4h': 7200, '6h': 10800, '12h': 21600,
@@ -587,13 +908,17 @@ class MarketDepthService:
                 }
                 cache_ttl = tf_ttl_map.get(timeframe, 60)
 
-                if redis:
-                    await redis.setex(cache_key, cache_ttl, json.dumps(formatted_data))
+                if redis and formatted_data:
+                    cache_payload = {
+                        "candles": formatted_data,
+                        "exhausted": len(formatted_data) < fetch_limit,
+                    }
+                    await redis.setex(cache_key, cache_ttl, json.dumps(cache_payload))
 
                 return formatted_data[-limit:]
 
             except Exception as e:
-                logger.error(f"Error fetching OHLCV for {symbol} on {exchange_id}: {e}")
+                logger.error(f"Error fetching OHLCV for {symbol} on {base_ex} ({timeframe}): {e}")
                 raise e
 
 
@@ -602,54 +927,57 @@ class MarketDepthService:
         Fetches the raw order book from the exchange. Uses live cache if available.
         """
         import time
+        symbol = str(symbol or "").strip().upper()
+        base_ex, internal_ex = self.normalize_exchange_id(exchange_id, symbol)
         redis = redis_manager.get_redis()
         
-        lock = self._get_ob_lock(exchange_id, symbol)
+        lock = self._get_ob_lock(internal_ex, symbol)
         async with lock:
             if redis:
-                cached_ob = await redis.get(f"latest_orderbook:{exchange_id.lower()}:{symbol.upper()}")
+                ob_sym = symbol.replace("/", "_") if base_ex == "oanda" else symbol
+                cached_ob = await redis.get(f"latest_orderbook:{internal_ex}:{ob_sym}")
                 if cached_ob:
                     data = json.loads(cached_ob)
                     return {
-                        "symbol": symbol.upper(),
-                        "exchange": exchange_id.lower(),
+                        "symbol": symbol,
+                        "exchange": base_ex,
                         "bids": [{"price": b["price"], "size": b["size"]} for b in data.get("bids", [])][:limit],
                         "asks": [{"price": a["price"], "size": a["size"]} for a in data.get("asks", [])][:limit],
                         "timestamp": int(time.time() * 1000),
                         "datetime": None
                     }
 
-            if exchange_id.lower() == 'oanda':
+            if base_ex == 'oanda':
                 return {
-                    "symbol": symbol.upper(),
-                    "exchange": exchange_id.lower(),
+                    "symbol": symbol,
+                    "exchange": base_ex,
                     "bids": [],
                     "asks": [],
                     "timestamp": int(time.time() * 1000),
                     "datetime": None
                 }
 
-            exchange = await self.get_exchange_instance(exchange_id, symbol)
+            exchange = await self.get_exchange_instance(base_ex, symbol)
             try:
                 # Normalize limit for different exchanges
-                limit = self._normalize_order_book_limit(exchange_id, limit)
+                limit = self._normalize_order_book_limit(internal_ex, limit)
                 
                 # ✅ Bypass REST API for Binance to prevent rate limits
-                if exchange_id.lower() == 'binance':
+                if base_ex == 'binance':
                     logger.info(f"Bypassing Binance REST API for {symbol} to prevent rate limits. Relying on WebSocket stream cache.")
-                    return {"symbol": symbol.upper(), "exchange": exchange_id.lower(), "bids": [], "asks": [], "timestamp": None, "datetime": None}
+                    return {"symbol": symbol, "exchange": base_ex, "bids": [], "asks": [], "timestamp": None, "datetime": None}
                     
-                order_book = await exchange.fetch_order_book(symbol.upper(), limit=limit)
+                order_book = await exchange.fetch_order_book(symbol, limit=limit)
                 return {
-                    "symbol": symbol.upper(),
-                    "exchange": exchange_id.lower(),
+                    "symbol": symbol,
+                    "exchange": base_ex,
                     "bids": [{"price": b[0], "size": b[1]} for b in order_book.get('bids', [])],
                     "asks": [{"price": a[0], "size": a[1]} for a in order_book.get('asks', [])],
                     "timestamp": order_book.get('timestamp'),
                     "datetime": order_book.get('datetime')
                 }
             except Exception as e:
-                logger.error(f"Error fetching raw order book for {symbol} on {exchange_id}: {e}")
+                logger.error(f"Error fetching raw order book for {symbol} on {base_ex}: {e}")
                 raise e
 
 market_depth_service = MarketDepthService()

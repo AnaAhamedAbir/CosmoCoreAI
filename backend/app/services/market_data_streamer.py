@@ -73,10 +73,17 @@ class MarketDataStreamer:
         self._lock = asyncio.Lock()
         self._initialized = True
 
-    @staticmethod
-    def _normalize_exchange_and_key(exchange_id: str, symbol: str = "") -> Tuple[str, str, bool]:
-        """Normalizes exchange ID (handling KuCoin/Kraken Futures) and builds a Spot/Futures cache key."""
-        norm_ex = str(exchange_id or "").lower()
+    EXCHANGE_ALIASES: Dict[str, str] = {
+        "gateio": "gate",
+        "huobi": "htx",
+        "coinbasepro": "coinbase",
+    }
+
+    @classmethod
+    def _normalize_exchange_and_key(cls, exchange_id: str, symbol: str = "") -> Tuple[str, str, bool]:
+        """Normalizes exchange ID (handling aliases & KuCoin/Kraken Futures) and builds a Spot/Futures cache key."""
+        raw_ex = str(exchange_id or "").strip().lower()
+        norm_ex = cls.EXCHANGE_ALIASES.get(raw_ex, raw_ex)
         is_futures = ':' in str(symbol or "")
         if norm_ex == 'kucoin' and is_futures:
             norm_ex = 'kucoinfutures'
@@ -89,9 +96,10 @@ class MarketDataStreamer:
 
     def get_mem_bbo(self, exchange_id: str, symbol: str, max_age_seconds: float = 1.5) -> Optional[Tuple[float, float]]:
         """Ultra-fast (~0ms) in-process BBO reader populated by @bookTicker/orderbook WS streams."""
-        norm_ex, _, _ = self._normalize_exchange_and_key(exchange_id, symbol)
-        stream_key = f"{norm_ex}:{symbol}"
-        entry = self._latest_bbo_mem.get(stream_key) or self._latest_bbo_mem.get(f"{norm_ex}:{symbol.upper()}")
+        sym_upper = str(symbol or "").strip().upper()
+        norm_ex, _, _ = self._normalize_exchange_and_key(exchange_id, sym_upper)
+        stream_key = f"{norm_ex}:{sym_upper}"
+        entry = self._latest_bbo_mem.get(stream_key) or self._latest_bbo_mem.get(f"{norm_ex}:{symbol}")
         if not entry:
             return None
         bid_p, ask_p, ts = entry
@@ -157,6 +165,7 @@ class MarketDataStreamer:
 
     async def start_streaming(self, exchange_id: str, symbol: str) -> str:
         """Starts streaming order book/trades/BBO for a pair, or refreshes its idle TTL."""
+        symbol = str(symbol or "").strip().upper()
         internal_exchange_id, _, _ = self._normalize_exchange_and_key(exchange_id, symbol)
         stream_key = f"{internal_exchange_id}:{symbol}"
 

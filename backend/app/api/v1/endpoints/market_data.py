@@ -208,25 +208,14 @@ async def get_aether_flow(
 ):
     try:
         from app.services.market_depth_service import market_depth_service
-        
-        ex = await market_depth_service.get_exchange_instance(exchange, symbol)
-        ohlcv = await ex.fetch_ohlcv(symbol, interval, limit=limit)
-        
-        # Convert to dictionary format
-        data = []
-        for row in ohlcv:
-            data.append({
-                "time": row[0] / 1000 if row[0] > 9999999999 else row[0], # ensure unix seconds or match frontend format
-                "open": row[1],
-                "high": row[2],
-                "low": row[3],
-                "close": row[4],
-                "volume": row[5]
-            })
-            from app.strategies.helpers.aether_flow_analyzer import AetherFlowAnalyzer
+        from app.strategies.helpers.aether_flow_analyzer import AetherFlowAnalyzer
+
+        data = await market_depth_service.fetch_ohlcv(symbol, exchange, interval, limit=limit)
+        if not data:
+            return {"signals": [], "trend": "neutral", "data": []}
+
         analyzer = AetherFlowAnalyzer()
         result = analyzer.analyze(data)
-        
         return result
         
     except Exception as e:

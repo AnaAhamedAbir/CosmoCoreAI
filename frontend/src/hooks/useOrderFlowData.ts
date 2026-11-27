@@ -5,6 +5,21 @@ import { CVDDataPoint } from '../components/features/market/CVDChart';
 import { FootprintCandleData } from '../components/features/market/FootprintRenderer';
 import { HeatmapDataPoint } from '../components/features/market/LiquidityHeatmapRenderer';
 import { isThermalGuardActive } from '@/utils/deviceProfile';
+import { subscribeLiveTradeTicks } from '@/services/liveMarketHub';
+
+const parseOrderFlowIntervalMs = (interval: string): number => {
+    const value = parseInt(interval, 10) || 1;
+    const unit = interval.replace(/[0-9]/g, '') || 'm';
+    switch (unit) {
+        case 's': return value * 1000;
+        case 'm': return value * 60 * 1000;
+        case 'h': return value * 60 * 60 * 1000;
+        case 'd': return value * 24 * 60 * 60 * 1000;
+        case 'w': return value * 7 * 24 * 60 * 60 * 1000;
+        case 'M': return value * 30 * 24 * 60 * 60 * 1000;
+        default: return value * 60 * 1000;
+    }
+};
 
 interface OrderFlowData {
     heatmapData: HeatmapDataPoint[];
@@ -234,8 +249,7 @@ export const useOrderFlowData = (
 
         fetchOrderFlowData();
         
-        // WebSocket Connection for Order Flow (Real-Time CVD & Footprints)
-        let ws: WebSocket | null = null;
+        // Shared Live Market Hub subscription for Order Flow (Real-Time CVD & Footprints)
         let pendingCvdDelta = 0;
         let pendingCandleTime: number | null = null;
         let hasPendingFootprint = false;
@@ -299,161 +313,130 @@ export const useOrderFlowData = (
             document.addEventListener('visibilitychange', handleVisibilityChange);
         }
 
-        if (symbol) {
-             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-             // Vite proxy forwards paths starting with /ws to backend
-             const wsUrl = `${protocol}//${window.location.host}/ws/market-data/${symbol}`;
-             ws = new WebSocket(wsUrl);
-             
-             // defined inside useEffect instead so the historical fetch can modify it
-             // activeFootprints has been declared outside and accessible (already defined in let above)
-             
-             ws.onmessage = (event) => {
-                 try {
-                     const data = JSON.parse(event.data);
-                     
-                     // Handle real-time trades
-                     if (data.type === "trade" && Array.isArray(data.data)) {
-                          let cvdDelta = 0;
-                          const trades = data.data;
-                          
-                          // Align timestamp to the current candlestick interval
-                          const nowMs = new Date().getTime();
-                          let intervalMs = 60000; // default 1m
-                          if (interval.endsWith('m')) intervalMs = parseInt(interval) * 60000;
-                          else if (interval.endsWith('h')) intervalMs = parseInt(interval) * 3600000;
-                          else if (interval.endsWith('d')) intervalMs = parseInt(interval) * 86400000;
-                          
-                          const currentCandleTime = Math.floor(nowMs / intervalMs) * (intervalMs / 1000);
-                          const now = currentCandleTime; // Use bucketed time for both CVD and Footprint
-                          
-                          // Process each trade
-                          trades.forEach((trade: any) => {
-                               const amount = parseFloat(trade.amount);
-                               const price = parseFloat(trade.price);
-                               const isBuy = trade.type === 'buy';
-                               
-                               // 1. Update CVD (Buy = +, Sell = -)
-                               cvdDelta += isBuy ? amount : -amount;
-                               
-                               // 2. Update Footprint
-                               if (activeFootprints.length === 0 || activeFootprints[activeFootprints.length - 1].time !== now) {
-                                   activeFootprints.push({
-                                        time: now as any,
-                                        open: price,
-                                        close: price,
-                                        high: price,
-                                        low: price,
-                                        pocPrice: price,
-                                        totalDelta: 0,
-                                        hasDeltaDivergence: false,
-                                        ticks: []
-                                   });
-                               }
-                               
-                               const currentCandle = activeFootprints[activeFootprints.length - 1];
-                               currentCandle.close = price;
-                               if (price > currentCandle.high) currentCandle.high = price;
-                               if (price < currentCandle.low) currentCandle.low = price;
-                               
-                               // Find or create tick bucket
-                               const tickStep = 0.5; // Example tick size
-                               const bucketPrice = Math.floor(price / tickStep) * tickStep;
-                               let tick = currentCandle.ticks.find(t => t.price === bucketPrice);
-                               
-                               if (!tick) {
-                                   tick = { price: bucketPrice, bidVolume: 0, askVolume: 0, isImbalance: false };
-                                   currentCandle.ticks.push(tick);
-                                   currentCandle.ticks.sort((a, b) => b.price - a.price); // Descending order
-                               }
-                               
-                               if (isBuy) tick.askVolume += amount; // Buy hits Ask
-                               else tick.bidVolume += amount;       // Sell hits Bid
-                               
-                               tick.isImbalance = Math.max(tick.bidVolume, tick.askVolume) > Math.min(tick.bidVolume, tick.askVolume) * 2;
-                               tick.imbalanceType = tick.isImbalance ? (tick.bidVolume > tick.askVolume ? 'bid' : 'ask') : undefined;
-                          });
-                          
-                          // Post-process current candle ticks for advanced footprint features
-                          if (activeFootprints.length > 0) {
-                              const currentCandle = activeFootprints[activeFootprints.length - 1];
-                              const ticks = currentCandle.ticks;
-                              if (ticks.length > 0) {
-                                  let totalVol = 0;
-                                  for (let i = 0; i < ticks.length; i++) {
-                                      totalVol += ticks[i].bidVolume + ticks[i].askVolume;
-                                  }
-                                  const avgTickVol = totalVol / ticks.length;
+        // Subscribe to exchange-aware live trade ticks via shared liveMarketHub (works for ALL exchanges & sub-minute intervals)
+        let unsubscribeLiveTicks: (() => void) | null = null;
+        if (symbol && exchange) {
+            const intervalMs = parseOrderFlowIntervalMs(interval);
+            unsubscribeLiveTicks = subscribeLiveTradeTicks(symbol, exchange, (tick) => {
+                try {
+                    const price = Number(tick.price);
+                    const amount = Number(tick.quantity ?? tick.volume ?? 0);
+                    if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(amount) || amount <= 0) return;
 
-                                  for (let i = 0; i < ticks.length; i++) {
-                                      const t = ticks[i];
-                                      
-                                      // 1. Unfinished Auction Check (extreme top/bottom)
-                                      if (i === 0 || i === ticks.length - 1) {
-                                          t.isUnfinishedAuction = t.bidVolume > 0 && t.askVolume > 0;
-                                      } else {
-                                          t.isUnfinishedAuction = false;
-                                      }
+                    const isBuy = tick.side ? tick.side === 'buy' : !tick.isBuyerMaker;
+                    const rawTs = tick.timestamp || Date.now();
+                    const tsMs = rawTs < 10000000000 ? rawTs * 1000 : rawTs;
+                    const currentCandleTime = Math.floor(tsMs / intervalMs) * (intervalMs / 1000);
+                    const now = currentCandleTime;
 
-                                      // 2. Stacked Imbalance Check (3 consecutive)
-                                      t.isStackedImbalance = false;
-                                      if (t.isImbalance && t.imbalanceType) {
-                                           if (i < ticks.length - 2) {
-                                               const t2 = ticks[i + 1];
-                                               const t3 = ticks[i + 2];
-                                               if (t2.isImbalance && t3.isImbalance && 
-                                                   t.imbalanceType === (t2.bidVolume > t2.askVolume ? 'bid' : 'ask') && 
-                                                   t.imbalanceType === (t3.bidVolume > t3.askVolume ? 'bid' : 'ask')) {
-                                                       t.isStackedImbalance = true;
-                                                       t2.isStackedImbalance = true;
-                                                       t3.isStackedImbalance = true;
-                                                       t2.imbalanceType = t.imbalanceType;
-                                                       t3.imbalanceType = t.imbalanceType;
-                                               }
-                                           }
-                                      }
+                    // Guard against out-of-order older ticks corrupting chronological Footprint/CVD series
+                    if (activeFootprints.length > 0 && now < Number(activeFootprints[activeFootprints.length - 1].time)) {
+                        return;
+                    }
 
-                                      // 3. Absorption Check (Volume > 3x average)
-                                      const tVol = t.bidVolume + t.askVolume;
-                                      t.isAbsorption = tVol > (avgTickVol * 3.0) && tVol > 0;
-                                  }
-                                  
-                                  // 4. Calculate POC & Delta Divergence
-                                  let pocPrice = currentCandle.low;
-                                  let maxVol = 0;
-                                  let totalDelta = 0;
-                                  for (let i = 0; i < ticks.length; i++) {
-                                      const tVol = ticks[i].bidVolume + ticks[i].askVolume;
-                                      totalDelta += (ticks[i].askVolume - ticks[i].bidVolume);
-                                      if (tVol > maxVol) {
-                                          maxVol = tVol;
-                                          pocPrice = ticks[i].price;
-                                      }
-                                  }
-                                  currentCandle.pocPrice = pocPrice;
-                                  currentCandle.totalDelta = totalDelta;
-                                  
-                                  let isDivergent = false;
-                                  const cClose = currentCandle.close || currentCandle.low;
-                                  const cOpen = currentCandle.open || currentCandle.low;
-                                  if (cClose > cOpen && totalDelta < 0) isDivergent = true;
-                                  if (cClose < cOpen && totalDelta > 0) isDivergent = true;
-                                  currentCandle.hasDeltaDivergence = isDivergent;
-                              }
-                          }
-                          
-                          // Queue update for throttled batching
-                          if (isMounted) {
-                              pendingCvdDelta += cvdDelta;
-                              pendingCandleTime = currentCandleTime;
-                              hasPendingFootprint = true;
-                              scheduleOrderFlowFlush();
-                          }
-                     }
-                 } catch (e) {
-                     console.error("WebSocket order flow parse error", e);
-                 }
-             };
+                    const cvdDelta = isBuy ? amount : -amount;
+
+                    // Update Footprint
+                    if (activeFootprints.length === 0 || activeFootprints[activeFootprints.length - 1].time !== now) {
+                        activeFootprints.push({
+                            time: now as any,
+                            open: price,
+                            close: price,
+                            high: price,
+                            low: price,
+                            pocPrice: price,
+                            totalDelta: 0,
+                            hasDeltaDivergence: false,
+                            ticks: []
+                        });
+                    }
+
+                    const currentCandle = activeFootprints[activeFootprints.length - 1];
+                    currentCandle.close = price;
+                    if (price > currentCandle.high) currentCandle.high = price;
+                    if (price < currentCandle.low) currentCandle.low = price;
+
+                    let tickStep = 0.5;
+                    if (price < 0.1) tickStep = 0.0001;
+                    else if (price < 1) tickStep = 0.001;
+                    else if (price < 10) tickStep = 0.01;
+                    else if (price < 100) tickStep = 0.1;
+
+                    const bucketPrice = Math.floor(price / tickStep) * tickStep;
+                    let fpTick = currentCandle.ticks.find(t => t.price === bucketPrice);
+
+                    if (!fpTick) {
+                        fpTick = { price: bucketPrice, bidVolume: 0, askVolume: 0, isImbalance: false };
+                        currentCandle.ticks.push(fpTick);
+                        currentCandle.ticks.sort((a, b) => b.price - a.price);
+                    }
+
+                    if (isBuy) fpTick.askVolume += amount;
+                    else fpTick.bidVolume += amount;
+
+                    fpTick.isImbalance = Math.max(fpTick.bidVolume, fpTick.askVolume) > Math.min(fpTick.bidVolume, fpTick.askVolume) * 2;
+                    fpTick.imbalanceType = fpTick.isImbalance ? (fpTick.bidVolume > fpTick.askVolume ? 'bid' : 'ask') : undefined;
+
+                    const ticks = currentCandle.ticks;
+                    if (ticks.length > 0) {
+                        let totalVol = 0;
+                        for (let i = 0; i < ticks.length; i++) {
+                            totalVol += ticks[i].bidVolume + ticks[i].askVolume;
+                        }
+                        const avgTickVol = totalVol / ticks.length;
+
+                        for (let i = 0; i < ticks.length; i++) {
+                            const t = ticks[i];
+                            t.isUnfinishedAuction = (i === 0 || i === ticks.length - 1) && t.bidVolume > 0 && t.askVolume > 0;
+                            t.isStackedImbalance = false;
+                            if (t.isImbalance && t.imbalanceType && i < ticks.length - 2) {
+                                const t2 = ticks[i + 1];
+                                const t3 = ticks[i + 2];
+                                if (
+                                    t2.isImbalance && t3.isImbalance &&
+                                    t.imbalanceType === (t2.bidVolume > t2.askVolume ? 'bid' : 'ask') &&
+                                    t.imbalanceType === (t3.bidVolume > t3.askVolume ? 'bid' : 'ask')
+                                ) {
+                                    t.isStackedImbalance = true;
+                                    t2.isStackedImbalance = true;
+                                    t3.isStackedImbalance = true;
+                                    t2.imbalanceType = t.imbalanceType;
+                                    t3.imbalanceType = t.imbalanceType;
+                                }
+                            }
+                            const tVol = t.bidVolume + t.askVolume;
+                            t.isAbsorption = tVol > (avgTickVol * 3.0) && tVol > 0;
+                        }
+
+                        let pocPrice = currentCandle.low;
+                        let maxVol = 0;
+                        let totalDelta = 0;
+                        for (let i = 0; i < ticks.length; i++) {
+                            const tVol = ticks[i].bidVolume + ticks[i].askVolume;
+                            totalDelta += (ticks[i].askVolume - ticks[i].bidVolume);
+                            if (tVol > maxVol) {
+                                maxVol = tVol;
+                                pocPrice = ticks[i].price;
+                            }
+                        }
+                        currentCandle.pocPrice = pocPrice;
+                        currentCandle.totalDelta = totalDelta;
+
+                        const cClose = currentCandle.close || currentCandle.low;
+                        const cOpen = currentCandle.open || currentCandle.low;
+                        currentCandle.hasDeltaDivergence = (cClose > cOpen && totalDelta < 0) || (cClose < cOpen && totalDelta > 0);
+                    }
+
+                    if (isMounted) {
+                        pendingCvdDelta += cvdDelta;
+                        pendingCandleTime = currentCandleTime;
+                        hasPendingFootprint = true;
+                        scheduleOrderFlowFlush();
+                    }
+                } catch (e) {
+                    console.error("Order flow live tick error", e);
+                }
+            });
         }
 
         return () => {
@@ -469,15 +452,9 @@ export const useOrderFlowData = (
                 clearTimeout(reconnectTimer);
                 reconnectTimer = null;
             }
-            if (ws) {
-                ws.onclose = null;
-                if (ws.readyState === WebSocket.CONNECTING) {
-                    const closingWs = ws;
-                    closingWs.onopen = () => closingWs.close();
-                } else if (ws.readyState === WebSocket.OPEN) {
-                    ws.close();
-                }
-                ws = null;
+            if (unsubscribeLiveTicks) {
+                unsubscribeLiveTicks();
+                unsubscribeLiveTicks = null;
             }
         };
     }, [symbol, exchange, interval, enabled]);

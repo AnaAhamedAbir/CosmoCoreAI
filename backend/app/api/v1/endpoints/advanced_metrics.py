@@ -77,10 +77,11 @@ async def get_spoofing(
 async def get_anchored_vwap(
     symbol: str,
     exchange: str = "binance",
+    interval: str = "5m",
     limit: int = 200
 ):
     try:
-        vwap_data = await advanced_metrics_service.calculate_anchored_vwap(symbol, exchange, limit=limit)
+        vwap_data = await advanced_metrics_service.calculate_anchored_vwap(symbol, exchange, anchor_timeframe=interval, limit=limit)
         return {"status": "success", "data": vwap_data}
     except Exception as e:
         logger.error(f"Failed to calculate VWAP for {symbol}: {e}")
@@ -102,10 +103,11 @@ async def get_footprint_imbalances(
 @router.get("/delta-divergence", response_model=Dict[str, Any])
 async def get_delta_divergence(
     symbol: str,
-    exchange: str = "binance"
+    exchange: str = "binance",
+    interval: str = "5m"
 ):
     try:
-        divergence = await advanced_metrics_service.detect_delta_divergence(symbol, exchange)
+        divergence = await advanced_metrics_service.detect_delta_divergence(symbol, exchange, interval=interval)
         return {"status": "success", "data": divergence}
     except Exception as e:
         logger.error(f"Failed to detect delta divergence for {symbol}: {e}")

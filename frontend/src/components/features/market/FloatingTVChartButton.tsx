@@ -849,12 +849,14 @@ const FloatingTVChartButtonBase: React.FC<FloatingTVChartButtonProps> = ({
                 {/* Symbol + Timeframe on same row, side by side */}
                 <div className="flex items-center gap-2">
                   <HeatmapSymbolSelector
+                    compact
                     symbol={chartSym}
                     exchange={chartExchange}
                     onSymbolChange={handleSymbolChange}
                     onExchangeChange={handleExchangeChange}
                   />
                   <TimeframeSelector
+                    compact
                     interval={interval}
                     onIntervalChange={(tf) => {
                       setInterval(tf);

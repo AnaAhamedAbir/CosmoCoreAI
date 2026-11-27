@@ -450,6 +450,7 @@ async def fetch_market_data_background():
             }
             
             current_target_symbols = set()
+            current_forex_symbols = set()
 
             if active_symbols:
                 for symbol in active_symbols:
@@ -467,7 +468,7 @@ async def fetch_market_data_background():
                     
                     if is_forex:
                         current_target_symbols.add(symbol)
-                        oanda_streamer.add_symbol(symbol)
+                        current_forex_symbols.add(symbol)
                         continue
 
                     # Normalize symbol (BTCUSDT -> BTC/USDT) in O(1)
@@ -554,10 +555,8 @@ async def fetch_market_data_background():
                         active_stream_tasks[symbol] = [t1, t2]
 
             # --- Cleanup Unused Stream Tasks ---
-            # Also clean up Oanda streamer symbols
-            for s in list(oanda_streamer.active_symbols):
-                if s not in current_target_symbols:
-                    oanda_streamer.remove_symbol(s)
+            # Sync background-loop Forex symbols idempotently without disturbing /market-depth/ws/oanda streams
+            oanda_streamer.sync_background_symbols(current_forex_symbols)
 
             for sym in list(active_stream_tasks.keys()):
                 if sym not in current_target_symbols:
@@ -755,7 +754,14 @@ async def startup_event():
                 import json
                 redis = redis_manager.get_redis()
                 if redis and spot_mkts and swap_mkts:
-                    all_syms = sorted(list(set(list(spot_mkts.keys()) + list(swap_mkts.keys()))))
+                    all_syms = sorted(
+                        list(
+                            set(
+                                [s for s, m in spot_mkts.items() if m.get("active", True)]
+                                + [s for s, m in swap_mkts.items() if m.get("active", True)]
+                            )
+                        )
+                    )
                     await redis.setex("markets:binance", 86400, json.dumps(all_syms))
                     logger.info(f"✅ Pre-warmed {len(all_syms)} Binance symbols into Redis (markets:binance) for instant chart load!")
             except Exception as re:

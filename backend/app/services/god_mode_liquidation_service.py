@@ -221,11 +221,38 @@ class GodModeRunner:
         self.state["true_cvd"] = payload.get("true_cvd", 0)
         iceberg_event = payload.get("iceberg_event")
         if iceberg_event:
-            self.state["iceberg_events"].insert(0, iceberg_event)
-            if len(self.state["iceberg_events"]) > 10:
-                self.state["iceberg_events"].pop()
-            self._iceberg_history.appendleft(iceberg_event)
-            if "BEARISH" in iceberg_event["type"] or "BULLISH" in iceberg_event["type"]:
+            ev_type = iceberg_event.get("type")
+            ev_price = float(iceberg_event.get("price") or 0.0)
+            ev_ts = int(iceberg_event.get("timestamp") or 0)
+            ev_vol = float(iceberg_event.get("absorbed_volume") or 0.0)
+
+            # Deduplicate 1s rolling-window repeats at the same price zone (<= 0.15%, within 12s)
+            merged_existing = None
+            for existing in self.state["iceberg_events"]:
+                ex_price = float(existing.get("price") or 0.0)
+                ex_ts = int(existing.get("timestamp") or 0)
+                if (
+                    existing.get("type") == ev_type
+                    and ev_price > 0
+                    and ex_price > 0
+                    and abs(ev_price - ex_price) / ex_price <= 0.0015
+                    and abs(ev_ts - ex_ts) <= 12_000
+                ):
+                    merged_existing = existing
+                    break
+
+            if merged_existing is not None:
+                merged_existing["price"] = ev_price
+                merged_existing["absorbed_volume"] = round(max(float(merged_existing.get("absorbed_volume") or 0.0), ev_vol))
+                merged_existing["timestamp"] = ev_ts
+                merged_existing["msg"] = iceberg_event.get("msg", merged_existing.get("msg"))
+            else:
+                self.state["iceberg_events"].insert(0, iceberg_event)
+                if len(self.state["iceberg_events"]) > 10:
+                    self.state["iceberg_events"].pop()
+                self._iceberg_history.appendleft(iceberg_event)
+
+            if "BEARISH" in str(ev_type) or "BULLISH" in str(ev_type):
                 self.state["cvd_spoof"] = "DETECTED: HIGH RISK"
 
     async def _handle_gex_event(self, payload: Dict[str, Any]):
@@ -270,7 +297,13 @@ class GodModeRunner:
             if symbol in markets:
                 return symbol
             base_pair = symbol.split(":")[0]
-            for cand in (f"{base_pair}:USDT", base_pair, f"{base_pair}:USD"):
+            base_coin = base_pair.split("/")[0] if "/" in base_pair else ""
+            candidates = [f"{base_pair}:USDT", f"{base_pair}:USDC"]
+            # Prefer USDT linear swap before spot fallback (e.g., OKX has BTC/USDT:USDT swap, not BTC/USDC:USDC)
+            if base_coin:
+                candidates.append(f"{base_coin}/USDT:USDT")
+            candidates.extend([base_pair, f"{base_pair}:USD"])
+            for cand in candidates:
                 if cand in markets:
                     return cand
         except Exception as e:

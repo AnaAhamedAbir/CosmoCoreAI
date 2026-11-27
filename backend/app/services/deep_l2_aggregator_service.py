@@ -37,7 +37,8 @@ class DeepL2Aggregator:
         self.symbol = (symbol or "BTC/USDT").upper()
         self._base_pair = self.symbol.split(":")[0]
         self._norm_sym = _normalize_futures_symbol(self.symbol)
-        base_coin = self._base_pair.split("/")[0] if "/" in self._base_pair else self._norm_sym.replace("USDT", "")
+        base_coin = self._base_pair.split("/")[0] if "/" in self._base_pair else self._norm_sym.replace("USDT", "").replace("USDC", "")
+        self._usdt_sym = f"{base_coin}USDT"
         self._okx_inst_id = f"{base_coin}-USDT-SWAP"
 
         self.walls: List[Dict[str, Any]] = []
@@ -359,33 +360,44 @@ class DeepL2Aggregator:
         return inner_bids + outer_bids, inner_asks + outer_asks
 
     async def _fetch_binance_depth(self, session: aiohttp.ClientSession) -> Optional[Tuple[List[List[float]], List[List[float]]]]:
-        try:
-            url = f"https://fapi.binance.com/fapi/v1/depth?symbol={self._norm_sym}&limit=1000"
-            async with session.get(url) as resp:
-                if resp.status != 200:
-                    return None
-                data = await resp.json()
-            bids = [[float(b[0]), float(b[1])] for b in data.get("bids", [])]
-            asks = [[float(a[0]), float(a[1])] for a in data.get("asks", [])]
-            return (bids, asks) if bids and asks else None
-        except Exception as e:
-            logger.debug(f"DeepL2 Binance fetch err ({self._norm_sym}): {e}")
-            return None
+        candidates = [self._norm_sym]
+        if self._usdt_sym not in candidates:
+            candidates.append(self._usdt_sym)
+        for sym in candidates:
+            try:
+                url = f"https://fapi.binance.com/fapi/v1/depth?symbol={sym}&limit=1000"
+                async with session.get(url) as resp:
+                    if resp.status != 200:
+                        continue
+                    data = await resp.json()
+                bids = [[float(b[0]), float(b[1])] for b in data.get("bids", [])]
+                asks = [[float(a[0]), float(a[1])] for a in data.get("asks", [])]
+                if bids and asks:
+                    return (bids, asks)
+            except Exception as e:
+                logger.debug(f"DeepL2 Binance fetch err ({sym}): {e}")
+        return None
 
     async def _fetch_bybit_depth(self, session: aiohttp.ClientSession) -> Optional[Tuple[List[List[float]], List[List[float]]]]:
-        try:
-            url = f"https://api.bybit.com/v5/market/orderbook?category=linear&symbol={self._norm_sym}&limit=500"
-            async with session.get(url) as resp:
-                if resp.status != 200:
-                    return None
-                payload = await resp.json()
-            res = payload.get("result") or {}
-            bids = [[float(b[0]), float(b[1])] for b in res.get("b", [])]
-            asks = [[float(a[0]), float(a[1])] for a in res.get("a", [])]
-            return (bids, asks) if bids and asks else None
-        except Exception as e:
-            logger.debug(f"DeepL2 Bybit fetch err ({self._norm_sym}): {e}")
-            return None
+        # Bybit linear USDT perps use {BASE}USDT (USDC perps use {BASE}PERP, not {BASE}USDC)
+        candidates = [self._usdt_sym] if self._norm_sym.endswith(("USDC", "FDUSD", "BUSD")) else [self._norm_sym]
+        if self._usdt_sym not in candidates:
+            candidates.append(self._usdt_sym)
+        for sym in candidates:
+            try:
+                url = f"https://api.bybit.com/v5/market/orderbook?category=linear&symbol={sym}&limit=500"
+                async with session.get(url) as resp:
+                    if resp.status != 200:
+                        continue
+                    payload = await resp.json()
+                res = payload.get("result") or {}
+                bids = [[float(b[0]), float(b[1])] for b in res.get("b", [])]
+                asks = [[float(a[0]), float(a[1])] for a in res.get("a", [])]
+                if bids and asks:
+                    return (bids, asks)
+            except Exception as e:
+                logger.debug(f"DeepL2 Bybit fetch err ({sym}): {e}")
+        return None
 
     async def _get_okx_ctval(self, session: aiohttp.ClientSession) -> Optional[float]:
         cached = self._okx_ctval_cache.get(self._okx_inst_id)
@@ -432,10 +444,12 @@ class DeepL2Aggregator:
             return None
 
     async def _fetch_bitget_depth(self, session: aiohttp.ClientSession) -> Optional[Tuple[List[List[float]], List[List[float]]]]:
+        # Bitget productType=USDT-FUTURES strictly requires {BASE}USDT (e.g., BTCUSDT)
+        target_sym = self._usdt_sym if self._norm_sym.endswith(("USDC", "FDUSD", "BUSD")) else self._norm_sym
         try:
             url = (
                 f"https://api.bitget.com/api/v2/mix/market/depth"
-                f"?productType=USDT-FUTURES&symbol={self._norm_sym}&limit=100"
+                f"?productType=USDT-FUTURES&symbol={target_sym}&limit=100"
             )
             async with session.get(url) as resp:
                 if resp.status != 200:
@@ -446,5 +460,5 @@ class DeepL2Aggregator:
             asks = [[float(a[0]), float(a[1])] for a in data.get("asks", [])]
             return (bids, asks) if bids and asks else None
         except Exception as e:
-            logger.debug(f"DeepL2 Bitget fetch err ({self._norm_sym}): {e}")
+            logger.debug(f"DeepL2 Bitget fetch err ({target_sym}): {e}")
             return None

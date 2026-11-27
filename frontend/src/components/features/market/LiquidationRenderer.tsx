@@ -694,6 +694,8 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
 
                 const intensityMultiplier = (bookmapIntensity || 50) / 50;
                 const minCellThreshold = isThermalGuard ? 0.14 : 0.08;
+                const minMobileColPx = isThermalGuard ? 3 : 0;
+                let lastMobileEndX = -Infinity;
 
                 for (let i = 0; i < snapshots.length; i++) {
                     const xStart = xPositions[i];
@@ -715,7 +717,18 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
                     }
 
                     if (xEnd < 0 || xStart > W) continue;
-                    const stripWidth = Math.max(1.5, xEnd - xStart + 0.6);
+                    // On mobile/tablet ECO mode, skip sub-3px overlapping columns when zoomed out to 2H
+                    if (minMobileColPx > 0 && i < snapshots.length - 1 && xEnd - xStart < minMobileColPx && xStart < lastMobileEndX) {
+                        continue;
+                    }
+                    const baseWidth = Math.max(1.5, xEnd - xStart + 0.6);
+                    const stripWidth =
+                        minMobileColPx > 0 && i < snapshots.length - 1
+                            ? Math.max(baseWidth, Math.min(minMobileColPx + 0.4, W - xStart))
+                            : baseWidth;
+                    if (minMobileColPx > 0) {
+                        lastMobileEndX = xStart + stripWidth;
+                    }
                     // Gentle age fade across the 2h window while keeping scrolled history clearly legible (min 0.45)
                     const ageFrac = Math.max(0, Math.min(1, (now - snapshots[i].time) / windowMs));
                     const ageFade = Math.max(0.45, 1 - ageFrac * 0.45);
@@ -894,38 +907,177 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
             }
         }
 
-        // 2.6 Draw True CVD & Iceberg Events
+        // 2.6 Draw True CVD & Iceberg Events (ExoCharts/ATAS Style: Micro Shelf + Wick-Offset Glass Pill)
         if (showTrueCVD && icebergsRef.current.length > 0) {
+            const rawCandles = candlesRef?.current || [];
+            // Build screen-space items and deduplicate closely overlapping events (keep peak absorbed volume)
+            interface IcebergScreenItem {
+                x: number;
+                y: number;
+                candleHighY: number | null;
+                candleLowY: number | null;
+                isBullish: boolean;
+                volume: number;
+                alpha: number;
+            }
+            const clustered: IcebergScreenItem[] = [];
+
             icebergsRef.current.forEach((iceberg) => {
                 const x = toSnappedX(iceberg.timestamp);
                 const y = toY(iceberg.price);
                 if (x === null || y === null || x < -40 || x > W + 40 || y < -40 || y > H + 40) return;
 
-                const isBullish = iceberg.type === 'BULLISH_ABSORPTION';
-                const glowColor = '168, 85, 247';
-                const textColor = isBullish ? (isDark ? '#22c55e' : '#15803d') : (isDark ? '#ef4444' : '#b91c1c');
-
                 const age = now - iceberg.createdAt;
-                const alpha = Math.max(0, 1 - age / 15000);
+                if (age >= 15000) return;
+                // Crisp full visibility for 10s, then smooth 5s fade-out
+                const alpha = age < 10000 ? 1 : Math.max(0, 1 - (age - 10000) / 5000);
+                const isBullish = iceberg.type === 'BULLISH_ABSORPTION';
+                const vol = Number(iceberg.absorbed_volume) || 0;
 
+                // Look up snapped candle high/low so the pill sits cleanly outside the wick
+                let candleHighY: number | null = null;
+                let candleLowY: number | null = null;
+                if (rawCandles.length > 0 && effectiveCandleTimes.length > 0) {
+                    const sec = iceberg.timestamp > 10_000_000_000 ? iceberg.timestamp / 1000 : iceberg.timestamp;
+                    const idx = findCandleIndex(sec, effectiveCandleTimes);
+                    const c = rawCandles[idx];
+                    if (c) {
+                        const hi = Number(c.high);
+                        const lo = Number(c.low);
+                        if (Number.isFinite(hi) && hi > 0) candleHighY = toY(hi);
+                        if (Number.isFinite(lo) && lo > 0) candleLowY = toY(lo);
+                    }
+                }
+
+                const nearby = clustered.find(
+                    (it) => it.isBullish === isBullish && Math.abs(it.x - x) < 18 && Math.abs(it.y - y) < 22
+                );
+                if (nearby) {
+                    if (vol >= nearby.volume) {
+                        nearby.volume = vol;
+                        nearby.y = y;
+                        nearby.alpha = Math.max(nearby.alpha, alpha);
+                    }
+                } else {
+                    clustered.push({ x, y, candleHighY, candleLowY, isBullish, volume: vol, alpha });
+                }
+            });
+
+            const placedPills: { x1: number; y1: number; x2: number; y2: number }[] = [];
+
+            clustered.forEach((item) => {
+                const { x, y, candleHighY, candleLowY, isBullish, volume, alpha } = item;
+                // Distinct institutional directional accents: Emerald for Bullish floor, Rose/Fuchsia for Bearish ceiling
+                const accentRgb = isBullish ? '16, 185, 129' : '244, 63, 94';
+                const textHex = isBullish
+                    ? isDark
+                        ? '#34d399'
+                        : '#047857'
+                    : isDark
+                    ? '#fb7185'
+                    : '#be123c';
+
+                // 1) Crisp horizontal micro-shelf at exact absorption price (zero candle occlusion)
+                ctx.save();
                 ctx.beginPath();
-                ctx.fillStyle = `rgba(${glowColor}, ${alpha * 0.4})`;
-                ctx.arc(x, y, 25, 0, 2 * Math.PI);
+                ctx.strokeStyle = `rgba(${accentRgb}, ${alpha * 0.85})`;
+                ctx.lineWidth = 1.5;
+                ctx.moveTo(x - 10, y);
+                ctx.lineTo(x + 18, y);
+                ctx.stroke();
+
+                // 2) Subtle outer halo + crisp 3.5px hollow ring dot at exact tick price
+                ctx.beginPath();
+                ctx.fillStyle = `rgba(${accentRgb}, ${alpha * 0.16})`;
+                ctx.arc(x, y, 7, 0, 2 * Math.PI);
                 ctx.fill();
 
-                ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
-                ctx.font = '16px Arial, sans-serif';
+                ctx.beginPath();
+                ctx.fillStyle = isDark ? `rgba(15, 23, 42, ${alpha * 0.9})` : `rgba(255, 255, 255, ${alpha * 0.95})`;
+                ctx.strokeStyle = `rgba(${accentRgb}, ${alpha})`;
+                ctx.lineWidth = 1.6;
+                ctx.arc(x, y, 3.5, 0, 2 * Math.PI);
+                ctx.fill();
+                ctx.stroke();
+
+                // 3) Compact glass pill badge offset cleanly ABOVE candle high (Bearish) or BELOW candle low (Bullish)
+                const volLabel =
+                    volume >= 1_000_000
+                        ? `${(volume / 1_000_000).toFixed(1)}M`
+                        : `${Math.max(1, Math.round(volume / 1000))}k`;
+                const dirArrow = isBullish ? '▲' : '▼';
+                const badgeText = `🛡️ ${volLabel} ${dirArrow}`;
+
+                ctx.font = 'bold 9.5px Inter, sans-serif';
+                const textW = ctx.measureText(badgeText).width;
+                const pillW = Math.ceil(textW + 12);
+                const pillH = 18;
+                const pillX = Math.max(6, Math.min(W - pillW - 6, x - pillW / 2));
+
+                // Anchor outside the candle wick so body & wicks stay 100% clear
+                let pillCenterY = isBullish
+                    ? Math.max(y, candleLowY ?? y) + 22
+                    : Math.min(y, candleHighY ?? y) - 22;
+                pillCenterY = Math.max(pillH / 2 + 6, Math.min(H - pillH / 2 - 6, pillCenterY));
+
+                // Prevent pill-to-pill overlap
+                for (let attempt = 0; attempt < 5; attempt++) {
+                    const y1 = pillCenterY - pillH / 2;
+                    const y2 = pillCenterY + pillH / 2;
+                    const collides = placedPills.some(
+                        (p) => pillX < p.x2 + 4 && pillX + pillW > p.x1 - 4 && y1 < p.y2 + 3 && y2 > p.y1 - 3
+                    );
+                    if (!collides) break;
+                    pillCenterY += isBullish ? 21 : -21;
+                    pillCenterY = Math.max(pillH / 2 + 6, Math.min(H - pillH / 2 - 6, pillCenterY));
+                }
+
+                const pillY = pillCenterY - pillH / 2;
+                placedPills.push({ x1: pillX, y1: pillY, x2: pillX + pillW, y2: pillY + pillH });
+
+                // Dotted vertical leader connecting exact price dot to offset pill
+                const stemStartY = isBullish ? y + 4 : y - 4;
+                const stemEndY = isBullish ? pillY : pillY + pillH;
+                if (Math.abs(stemEndY - stemStartY) > 3) {
+                    ctx.beginPath();
+                    ctx.strokeStyle = `rgba(${accentRgb}, ${alpha * 0.55})`;
+                    ctx.lineWidth = 1;
+                    ctx.setLineDash([2, 2]);
+                    ctx.moveTo(x, stemStartY);
+                    ctx.lineTo(x, stemEndY);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+
+                // Rounded glass pill container
+                const r = 5;
+                ctx.beginPath();
+                ctx.moveTo(pillX + r, pillY);
+                ctx.lineTo(pillX + pillW - r, pillY);
+                ctx.quadraticCurveTo(pillX + pillW, pillY, pillX + pillW, pillY + r);
+                ctx.lineTo(pillX + pillW, pillY + pillH - r);
+                ctx.quadraticCurveTo(pillX + pillW, pillY + pillH, pillX + pillW - r, pillY + pillH);
+                ctx.lineTo(pillX + r, pillY + pillH);
+                ctx.quadraticCurveTo(pillX, pillY + pillH, pillX, pillY + pillH - r);
+                ctx.lineTo(pillX, pillY + r);
+                ctx.quadraticCurveTo(pillX, pillY, pillX + r, pillY);
+                ctx.closePath();
+
+                ctx.fillStyle = isDark
+                    ? `rgba(15, 23, 42, ${alpha * 0.9})`
+                    : `rgba(255, 255, 255, ${alpha * 0.95})`;
+                ctx.fill();
+                ctx.strokeStyle = `rgba(${accentRgb}, ${alpha * 0.85})`;
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                // Crisp pill label
+                ctx.fillStyle = textHex;
+                ctx.globalAlpha = alpha;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText('🛡️', x, y);
-
-                ctx.fillStyle = textColor;
-                ctx.font = 'bold 10px Inter, sans-serif';
-                const volK =
-                    iceberg.absorbed_volume >= 1000000
-                        ? (iceberg.absorbed_volume / 1000000).toFixed(1) + 'M'
-                        : (iceberg.absorbed_volume / 1000).toFixed(0) + 'k';
-                ctx.fillText(`${volK} Absorbed`, x, y - 20);
+                ctx.fillText(badgeText, pillX + pillW / 2, pillCenterY + 0.5);
+                ctx.restore();
             });
         }
 
@@ -1733,9 +1885,22 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
             data.iceberg_events.forEach((ev) => {
                 if (ev.price && ev.timestamp) {
                     const existing = icebergsRef.current.find(
-                        (b) => b.timestamp === ev.timestamp && b.price === ev.price
+                        (b) =>
+                            (b.timestamp === ev.timestamp && b.price === ev.price) ||
+                            (b.type === ev.type &&
+                                b.price > 0 &&
+                                Math.abs(ev.price - b.price) / b.price <= 0.0015 &&
+                                Math.abs(ev.timestamp - b.timestamp) <= 12000)
                     );
-                    if (!existing) {
+                    if (existing) {
+                        // Update existing clustered iceberg in place instead of stacking duplicates
+                        existing.price = ev.price;
+                        existing.absorbed_volume = Math.max(existing.absorbed_volume || 0, ev.absorbed_volume || 0);
+                        if (ev.timestamp > existing.timestamp) {
+                            existing.timestamp = ev.timestamp;
+                            existing.createdAt = now;
+                        }
+                    } else {
                         icebergsRef.current.push({ ...ev, createdAt: now });
                     }
                 }

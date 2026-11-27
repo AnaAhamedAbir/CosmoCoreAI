@@ -204,8 +204,16 @@ class DerivativesService:
                 return cached["data"]
 
             series = await self._fetch_binance_oi_history(norm_sym, safe_period, safe_limit)
+            if not series and norm_sym.endswith(("USDC", "FDUSD", "BUSD")):
+                usdt_fallback = norm_sym.rsplit("USDC", 1)[0].rsplit("FDUSD", 1)[0].rsplit("BUSD", 1)[0] + "USDT"
+                series = await self._fetch_binance_oi_history(usdt_fallback, safe_period, safe_limit)
             if not series:
-                series = await self._fetch_bybit_oi_history(norm_sym, safe_period, safe_limit, symbol)
+                bybit_sym = (
+                    norm_sym.rsplit("USDC", 1)[0].rsplit("FDUSD", 1)[0].rsplit("BUSD", 1)[0] + "USDT"
+                    if norm_sym.endswith(("USDC", "FDUSD", "BUSD"))
+                    else norm_sym
+                )
+                series = await self._fetch_bybit_oi_history(bybit_sym, safe_period, safe_limit, symbol)
             if not series and cached:
                 return cached["data"]
 

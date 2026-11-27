@@ -9,7 +9,7 @@ interface ExchangeFlowData {
     tx_count: number;
 }
 
-const ExchangeFlowWidget: React.FC = () => {
+const ExchangeFlowWidget: React.FC = React.memo(() => {
     const thermalGuard = isThermalGuardActive();
     const [data, setData] = useState<ExchangeFlowData | null>(null);
     const [loading, setLoading] = useState<boolean>(true);
@@ -137,6 +137,6 @@ const ExchangeFlowWidget: React.FC = () => {
             </div>
         </div>
     );
-};
+});
 
 export default ExchangeFlowWidget;

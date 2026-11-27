@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { getFearAndGreedIndex, FearAndGreedData } from '../../../services/fng';
 
-const FearGreedWidget: React.FC = () => {
+const FearGreedWidget: React.FC = React.memo(() => {
     const [data, setData] = useState<FearAndGreedData | null>(null);
     const [loading, setLoading] = useState<boolean>(true);
 
@@ -109,6 +109,6 @@ const FearGreedWidget: React.FC = () => {
             </div>
         </div>
     );
-};
+});
 
 export default FearGreedWidget;

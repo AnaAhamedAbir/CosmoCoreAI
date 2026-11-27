@@ -7,7 +7,6 @@ import ChartTooltip from './components/ChartTooltip';
 import { formatToLocalTime } from '@/utils/dateUtils';
 import { useTheme } from '@/context/ThemeContext';
 import Card from '@/components/common/Card';
-import { isThermalGuardActive } from '@/utils/deviceProfile';
 
 interface SentimentChartsProps {
     historyData: any[];
@@ -24,13 +23,12 @@ const timeframes = [
     { label: '30D', value: '30d' }
 ];
 
-export const SentimentPriceChart: React.FC<SentimentChartsProps> = ({
+export const SentimentPriceChart: React.FC<SentimentChartsProps> = React.memo(({
     historyData,
     timeframe,
     setTimeframe,
 }) => {
     const { theme } = useTheme();
-    const thermalGuard = isThermalGuardActive();
 
     return (
         <Card className="flex flex-col h-[500px]">
@@ -58,7 +56,7 @@ export const SentimentPriceChart: React.FC<SentimentChartsProps> = ({
             </div>
             <div className="flex-grow w-full h-full min-h-[300px] flex items-center justify-center relative">
                 {historyData && historyData.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" debounce={150}>
                         <ComposedChart data={historyData} margin={{ top: 10, right: 0, left: 0, bottom: 30 }} syncId="sentiment-sync">
                             <defs>
                                 <linearGradient id="sentimentGradient" x1="0" y1="0" x2="0" y2="1">
@@ -109,11 +107,10 @@ export const SentimentPriceChart: React.FC<SentimentChartsProps> = ({
             </div>
         </Card>
     );
-};
+});
 
-export const SentimentDivergenceChart: React.FC<{ data: any[], correlation: number }> = ({ data, correlation }) => {
+export const SentimentDivergenceChart: React.FC<{ data: any[], correlation: number }> = React.memo(({ data, correlation }) => {
     const { theme } = useTheme();
-    const thermalGuard = isThermalGuardActive();
     const gridColor = theme === 'dark' ? '#334155' : '#E2E8F0';
 
     return (
@@ -132,7 +129,7 @@ export const SentimentDivergenceChart: React.FC<{ data: any[], correlation: numb
 
             <div className="h-full w-full flex items-center justify-center relative">
                 {data && data.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" debounce={150}>
                         <ComposedChart data={data} syncId="sentiment-sync">
                             <defs>
                                 <linearGradient id="retailGradient" x1="0" y1="0" x2="0" y2="1">
@@ -159,4 +156,4 @@ export const SentimentDivergenceChart: React.FC<{ data: any[], correlation: numb
             </div>
         </Card>
     );
-};
+});

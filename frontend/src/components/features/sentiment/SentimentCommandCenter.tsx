@@ -16,7 +16,7 @@ interface SentimentCommandCenterProps {
     onGenerate: (language: 'en' | 'bn') => void;
 }
 
-export const SentimentCommandCenter: React.FC<SentimentCommandCenterProps> = ({
+export const SentimentCommandCenter: React.FC<SentimentCommandCenterProps> = React.memo(({
     report,
     isLoading,
     onGenerate
@@ -24,10 +24,12 @@ export const SentimentCommandCenter: React.FC<SentimentCommandCenterProps> = ({
     const [isOpen, setIsOpen] = useState(false);
     const [language, setLanguage] = useState<'en' | 'bn'>('en');
 
-    // Draggable State
-    const [position, setPosition] = useState({ x: window.innerWidth - 100, y: 125 }); // Default above Alpha Scanner
+    // Draggable State (refs avoid re-attaching window listeners on every mousemove frame)
+    const [position, setPosition] = useState(() => ({ x: typeof window !== 'undefined' ? window.innerWidth - 100 : 1000, y: 125 }));
     const [isDragging, setIsDragging] = useState(false);
-    const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+    const dragOffsetRef = useRef({ x: 0, y: 0 });
+    const latestPosRef = useRef(position);
+    const wasDraggedRef = useRef(false);
     const buttonRef = useRef<HTMLButtonElement>(null);
 
     // Load saved position from localStorage
@@ -35,7 +37,9 @@ export const SentimentCommandCenter: React.FC<SentimentCommandCenterProps> = ({
         const savedPos = localStorage.getItem('sentimentWidgetPos_v2');
         if (savedPos) {
             try {
-                setPosition(JSON.parse(savedPos));
+                const parsed = JSON.parse(savedPos);
+                setPosition(parsed);
+                latestPosRef.current = parsed;
             } catch (e) {
                 // Invalid JSON, ignore
             }
@@ -44,54 +48,60 @@ export const SentimentCommandCenter: React.FC<SentimentCommandCenterProps> = ({
 
     // Global Mouse Listeners for Dragging
     useEffect(() => {
+        if (!isDragging) return;
+
         const handleMouseMove = (e: MouseEvent) => {
-            if (isDragging) {
-                const newX = e.clientX - dragOffset.x;
-                const newY = e.clientY - dragOffset.y;
+            wasDraggedRef.current = true;
+            const newX = e.clientX - dragOffsetRef.current.x;
+            const newY = e.clientY - dragOffsetRef.current.y;
 
-                // Boundary checks (keep button on screen)
-                const maxX = window.innerWidth - 80;
-                const maxY = window.innerHeight - 80;
+            const maxX = window.innerWidth - 80;
+            const maxY = window.innerHeight - 80;
 
-                setPosition({
-                    x: Math.max(0, Math.min(newX, maxX)),
-                    y: Math.max(0, Math.min(newY, maxY))
-                });
-            }
+            const next = {
+                x: Math.max(0, Math.min(newX, maxX)),
+                y: Math.max(0, Math.min(newY, maxY))
+            };
+            latestPosRef.current = next;
+            setPosition(next);
         };
 
         const handleMouseUp = () => {
-            if (isDragging) {
-                setIsDragging(false);
-                // Save final position
-                localStorage.setItem('sentimentWidgetPos_v2', JSON.stringify(position));
+            setIsDragging(false);
+            try {
+                localStorage.setItem('sentimentWidgetPos_v2', JSON.stringify(latestPosRef.current));
+            } catch {
+                // ignore storage errors
             }
         };
 
-        if (isDragging) {
-            window.addEventListener('mousemove', handleMouseMove);
-            window.addEventListener('mouseup', handleMouseUp);
-        }
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
 
         return () => {
             window.removeEventListener('mousemove', handleMouseMove);
             window.removeEventListener('mouseup', handleMouseUp);
         };
-    }, [isDragging, dragOffset, position]);
+    }, [isDragging]);
 
     const handleMouseDown = (e: React.MouseEvent) => {
         if (buttonRef.current) {
             const rect = buttonRef.current.getBoundingClientRect();
-            setDragOffset({
+            dragOffsetRef.current = {
                 x: e.clientX - rect.left,
                 y: e.clientY - rect.top
-            });
+            };
+            wasDraggedRef.current = false;
             setIsDragging(true);
         }
     };
 
     // prevent click if it was a drag
-    const handleClick = (e: React.MouseEvent) => {
+    const handleClick = () => {
+        if (wasDraggedRef.current) {
+            wasDraggedRef.current = false;
+            return;
+        }
         setIsOpen(true);
     };
 
@@ -148,9 +158,9 @@ export const SentimentCommandCenter: React.FC<SentimentCommandCenterProps> = ({
                 <GripVertical className="w-4 h-4 text-white" />
             </div>
 
-            {/* Ping animation to draw attention if no report */}
+            {/* Notification dot if no report yet (static to prevent constant compositor invalidation during scroll) */}
             {!report && !isLoading && (
-                <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 rounded-full border-2 border-white animate-pulse pointer-events-none"></span>
+                <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 rounded-full border-2 border-white pointer-events-none"></span>
             )}
         </button>
     );
@@ -304,4 +314,4 @@ export const SentimentCommandCenter: React.FC<SentimentCommandCenterProps> = ({
             {isOpen && createPortal(Modal, document.body)}
         </>
     );
-};
+});

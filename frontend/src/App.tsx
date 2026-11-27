@@ -252,36 +252,38 @@ function App() {
       />
       <VersionUpdateBanner />
       
-      {/* 1. Public Landing Page & Modals (preserved across transitions so it never re-animates on logout) */}
-      <div className={isDashboardActive || isTransitioning || isResetScreen ? "hidden" : "contents"}>
-        <PublicWebsite onLogin={handleLoginInitiate} onSignUp={handleSignUpInitiate} />
-        <AnimatePresence>
-          {appState === AppState.SHOW_LOGIN_MODAL && (
-            <LoginFormModal
-              key="login-modal"
-              onClose={() => setAppState(AppState.PUBLIC)}
-              onLoginSuccess={handleAuthSuccess}
-              onSwitchToSignup={switchToSignUp}
-              onSwitchToForgotPassword={handleForgotPasswordInitiate}
-            />
-          )}
-          {appState === AppState.SHOW_SIGNUP_MODAL && (
-            <SignUpFormModal
-              key="signup-modal"
-              onClose={() => setAppState(AppState.PUBLIC)}
-              onRegister={handleAuthSuccess}
-              onSwitchToLogin={switchToLogin}
-            />
-          )}
-          {appState === AppState.SHOW_FORGOT_PASSWORD_MODAL && (
-            <ForgotPasswordModal
-              key="forgot-password-modal"
-              onClose={() => setAppState(AppState.PUBLIC)}
-              onBackToLogin={handleBackToLogin}
-            />
-          )}
-        </AnimatePresence>
-      </div>
+      {/* 1. Public Landing Page & Modals (unmounted while authenticated to avoid background WS/canvas/iframe overhead) */}
+      {!isDashboardActive && !isTransitioning && !isResetScreen && (
+        <div className="contents">
+          <PublicWebsite onLogin={handleLoginInitiate} onSignUp={handleSignUpInitiate} />
+          <AnimatePresence>
+            {appState === AppState.SHOW_LOGIN_MODAL && (
+              <LoginFormModal
+                key="login-modal"
+                onClose={() => setAppState(AppState.PUBLIC)}
+                onLoginSuccess={handleAuthSuccess}
+                onSwitchToSignup={switchToSignUp}
+                onSwitchToForgotPassword={handleForgotPasswordInitiate}
+              />
+            )}
+            {appState === AppState.SHOW_SIGNUP_MODAL && (
+              <SignUpFormModal
+                key="signup-modal"
+                onClose={() => setAppState(AppState.PUBLIC)}
+                onRegister={handleAuthSuccess}
+                onSwitchToLogin={switchToLogin}
+              />
+            )}
+            {appState === AppState.SHOW_FORGOT_PASSWORD_MODAL && (
+              <ForgotPasswordModal
+                key="forgot-password-modal"
+                onClose={() => setAppState(AppState.PUBLIC)}
+                onBackToLogin={handleBackToLogin}
+              />
+            )}
+          </AnimatePresence>
+        </div>
+      )}
 
       {/* 2. Login Transition */}
       {isTransitioning && (

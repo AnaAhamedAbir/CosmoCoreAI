@@ -12,7 +12,7 @@ interface SentimentNarrativesProps {
     selectedWord: string | null;
 }
 
-export const SentimentNarratives: React.FC<SentimentNarrativesProps> = ({
+export const SentimentNarratives: React.FC<SentimentNarrativesProps> = React.memo(({
     narratives,
     wordCloud,
     isNarrativeLoading,
@@ -126,4 +126,4 @@ export const SentimentNarratives: React.FC<SentimentNarrativesProps> = ({
             </Card>
         </div>
     );
-};
+});

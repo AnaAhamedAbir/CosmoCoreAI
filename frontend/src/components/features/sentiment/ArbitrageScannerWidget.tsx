@@ -26,7 +26,7 @@ interface ArbitrageScannerWidgetProps {
     onSelectOpportunity?: (symbol: string, exchange: string, action: string) => void;
 }
 
-export const ArbitrageScannerWidget: React.FC<ArbitrageScannerWidgetProps> = ({ onSelectOpportunity }) => {
+export const ArbitrageScannerWidget: React.FC<ArbitrageScannerWidgetProps> = React.memo(({ onSelectOpportunity }) => {
     const thermalGuard = isThermalGuardActive();
     const [opportunities, setOpportunities] = useState<ArbitrageOpportunity[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
@@ -187,12 +187,9 @@ export const ArbitrageScannerWidget: React.FC<ArbitrageScannerWidgetProps> = ({ 
             <div className="relative flex-1 overflow-auto custom-scrollbar p-2 space-y-2">
 
                 {loading && opportunities.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full gap-4 text-slate-500">
-                        <div className="relative">
-                            <div className="absolute inset-0 bg-indigo-500/20 blur-xl rounded-full animate-pulse"></div>
-                            <Activity className="relative w-10 h-10 text-indigo-500 animate-bounce" />
-                        </div>
-                        <span className="text-xs font-mono animate-pulse">SCANNING {selectedExchange.toUpperCase()} PROTOCOLS...</span>
+                    <div className="flex flex-col items-center justify-center h-full gap-3 text-slate-500">
+                        <Activity className="w-8 h-8 text-indigo-500 animate-spin" />
+                        <span className="text-xs font-mono">SCANNING {selectedExchange.toUpperCase()} PROTOCOLS...</span>
                     </div>
                 ) : error ? (
                     <div className="flex flex-col items-center justify-center h-48 gap-3 text-rose-500/80">
@@ -264,8 +261,7 @@ export const ArbitrageScannerWidget: React.FC<ArbitrageScannerWidgetProps> = ({ 
                                             {[1, 2, 3].map((bar) => (
                                                 <div key={bar}
                                                     className={`w-1 h-3 rounded-full ${theme.bg} ${theme.border} 
-                                                    ${(opp.signal_strength === 'High' || bar === 1) ? theme.signalActive : 'bg-slate-200 dark:bg-[#0A0A0A]'} 
-                                                    ${bar === 3 && opp.signal_strength === 'High' ? 'animate-pulse' : ''}`}
+                                                    ${(opp.signal_strength === 'High' || bar === 1) ? theme.signalActive : 'bg-slate-200 dark:bg-[#0A0A0A]'}`}
                                                 ></div>
                                             ))}
                                         </div>
@@ -289,4 +285,4 @@ export const ArbitrageScannerWidget: React.FC<ArbitrageScannerWidgetProps> = ({ 
             </div>
         </div>
     );
-};
+});

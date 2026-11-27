@@ -1,4 +1,4 @@
-@tailwind base;
+﻿@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
@@ -802,394 +802,10 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   animation: title-pop-in 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
 }
 
-
 /* General UI helpers */
-.body-no-scroll {
-  overflow: hidden;
-}
+.body-no-scroll { overflow: hidden; }
 
-@keyframes flash-line {
-  0% {
-    opacity: 0;
-    transform: scaleX(0);
-  }
-
-  50% {
-    opacity: 1;
-    transform: scaleX(1);
-  }
-
-  100% {
-    opacity: 0;
-    transform: scaleX(1);
-  }
-}
-
-@keyframes flash-bg-green {
-  50% {
-    background-color: rgba(16, 185, 129, 0.2);
-  }
-}
-
-@keyframes flash-bg-red {
-  50% {
-    background-color: rgba(244, 63, 94, 0.2);
-  }
-}
-
-/* New animations for Sentiment Engine */
-@keyframes pulse-green {
-
-  0%,
-  100% {
-    filter: drop-shadow(0 0 2px rgba(16, 185, 129, 0.6));
-  }
-
-  50% {
-    filter: drop-shadow(0 0 10px rgba(16, 185, 129, 0.8));
-  }
-}
-
-.animate-pulse-green {
-  animation: pulse-green 2.5s ease-in-out infinite;
-}
-
-@keyframes pulse-red {
-
-  0%,
-  100% {
-    filter: drop-shadow(0 0 2px rgba(244, 63, 94, 0.6));
-  }
-
-  50% {
-    filter: drop-shadow(0 0 10px rgba(244, 63, 94, 0.8));
-  }
-}
-
-.animate-pulse-red {
-  animation: pulse-red 2.5s ease-in-out infinite;
-}
-
-@keyframes pulse-yellow {
-
-  0%,
-  100% {
-    filter: drop-shadow(0 0 2px rgba(251, 191, 36, 0.6));
-  }
-
-  50% {
-    filter: drop-shadow(0 0 10px rgba(251, 191, 36, 0.8));
-  }
-}
-
-.animate-pulse-yellow {
-  animation: pulse-yellow 2.5s ease-in-out infinite;
-}
-
-@keyframes fade-slide-in {
-  from {
-    opacity: 0;
-    transform: translateY(-20px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.animate-fade-slide-in {
-  animation: fade-slide-in 0.5s ease-out forwards;
-}
-
-@keyframes flash-bg-blue {
-  50% {
-    background-color: rgba(99, 102, 241, 0.15);
-  }
-}
-
-.animate-flash-blue {
-  animation: flash-bg-blue 1s ease-out;
-}
-
-@keyframes title-pop-in {
-  0% {
-    opacity: 0;
-    transform: scale(0.8) translateY(10px);
-  }
-
-  60% {
-    opacity: 1;
-    transform: scale(1.05) translateY(0);
-  }
-
-  100% {
-    transform: scale(1);
-  }
-}
-
-.animate-title-pop-in {
-  animation: title-pop-in 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
-}
-
-
-
-
-@keyframes pulse-yellow {
-
-  0%,
-  100% {
-    filter: drop-shadow(0 0 2px rgba(251, 191, 36, 0.6));
-  }
-
-  50% {
-    filter: drop-shadow(0 0 10px rgba(251, 191, 36, 0.8));
-  }
-}
-
-.animate-pulse-yellow {
-  animation: pulse-yellow 2.5s ease-in-out infinite;
-}
-
-@keyframes fade-slide-in {
-  from {
-    opacity: 0;
-    transform: translateY(-20px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.animate-fade-slide-in {
-  animation: fade-slide-in 0.5s ease-out forwards;
-}
-
-@keyframes flash-bg-blue {
-  50% {
-    background-color: rgba(99, 102, 241, 0.15);
-  }
-}
-
-.animate-flash-blue {
-  animation: flash-bg-blue 1s ease-out;
-}
-
-@keyframes title-pop-in {
-  0% {
-    opacity: 0;
-    transform: scale(0.8) translateY(10px);
-  }
-
-  60% {
-    opacity: 1;
-    transform: scale(1.05) translateY(0);
-  }
-
-  100% {
-    transform: scale(1);
-  }
-}
-
-.animate-title-pop-in {
-  animation: title-pop-in 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
-}
-
-
-/* General UI helpers */
-.body-no-scroll {
-  overflow: hidden;
-}
-
-@keyframes flash-line {
-  0% {
-    opacity: 0;
-    transform: scaleX(0);
-  }
-
-  50% {
-    opacity: 1;
-    transform: scaleX(1);
-  }
-
-  100% {
-    opacity: 0;
-    transform: scaleX(1);
-  }
-}
-
-@keyframes flash-bg-green {
-  50% {
-    background-color: rgba(16, 185, 129, 0.2);
-  }
-}
-
-@keyframes flash-bg-red {
-  50% {
-    background-color: rgba(244, 63, 94, 0.2);
-  }
-}
-
-/* New animations for Sentiment Engine */
-@keyframes pulse-green {
-
-  0%,
-  100% {
-    filter: drop-shadow(0 0 2px rgba(16, 185, 129, 0.6));
-  }
-
-  50% {
-    filter: drop-shadow(0 0 10px rgba(16, 185, 129, 0.8));
-  }
-}
-
-.animate-pulse-green {
-  animation: pulse-green 2.5s ease-in-out infinite;
-}
-
-@keyframes pulse-red {
-
-  0%,
-  100% {
-    filter: drop-shadow(0 0 2px rgba(244, 63, 94, 0.6));
-  }
-
-  50% {
-    filter: drop-shadow(0 0 10px rgba(244, 63, 94, 0.8));
-  }
-}
-
-.animate-pulse-red {
-  animation: pulse-red 2.5s ease-in-out infinite;
-}
-
-@keyframes pulse-yellow {
-
-  0%,
-  100% {
-    filter: drop-shadow(0 0 2px rgba(251, 191, 36, 0.6));
-  }
-
-  50% {
-    filter: drop-shadow(0 0 10px rgba(251, 191, 36, 0.8));
-  }
-}
-
-.animate-pulse-yellow {
-  animation: pulse-yellow 2.5s ease-in-out infinite;
-}
-
-@keyframes fade-slide-in {
-  from {
-    opacity: 0;
-    transform: translateY(-20px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.animate-fade-slide-in {
-  animation: fade-slide-in 0.5s ease-out forwards;
-}
-
-@keyframes flash-bg-blue {
-  50% {
-    background-color: rgba(99, 102, 241, 0.15);
-  }
-}
-
-.animate-flash-blue {
-  animation: flash-bg-blue 1s ease-out;
-}
-
-@keyframes title-pop-in {
-  0% {
-    opacity: 0;
-    transform: scale(0.8) translateY(10px);
-  }
-
-  60% {
-    opacity: 1;
-    transform: scale(1.05) translateY(0);
-  }
-
-  100% {
-    transform: scale(1);
-  }
-}
-
-.animate-title-pop-in {
-  animation: title-pop-in 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
-}
-
-
-/* General UI helpers */
-.body-no-scroll {
-  overflow: hidden;
-}
-
-@keyframes flash-line {
-  0% {
-    opacity: 0;
-    transform: scaleX(0);
-  }
-
-  50% {
-    opacity: 1;
-    transform: scaleX(1);
-  }
-
-  100% {
-    opacity: 0;
-    transform: scaleX(1);
-  }
-}
-
-@keyframes flash-bg-green {
-  50% {
-    background-color: rgba(16, 185, 129, 0.2);
-  }
-}
-
-@keyframes flash-bg-red {
-  50% {
-    background-color: rgba(244, 63, 94, 0.2);
-  }
-}
-
-/* New animations for Sentiment Engine */
-@keyframes pulse-green {
-
-  0%,
-  100% {
-    filter: drop-shadow(0 0 2px rgba(16, 185, 129, 0.6));
-  }
-
-  50% {
-    filter: drop-shadow(0 0 10px rgba(16, 185, 129, 0.8));
-  }
-}
-
-.animate-pulse-green {
-  animation: pulse-green 2.5s ease-in-out infinite;
-}
-
-@keyframes pulse-red {
-
-  0%,
-  100% {
-    filter: drop-shadow(0 0 2px rgba(244, 63, 94, 0.6));
-  }
-
-  50% {
-    filter: drop-shadow(0 0 10px rgba(244, 63, 94, 0.8));
-  }
-}
+.cv-auto { content-visibility: auto; contain-intrinsic-size: auto 480px; }
 
 /* Custom DatePicker Styles */
 .react-datepicker-wrapper {
@@ -1250,18 +866,18 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
 /* React Datepicker Dark Mode Overrides */
 @layer components {
-  /* মেইন ক্যালেন্ডার কন্টেইনার */
+  /* à¦®à§‡à¦‡à¦¨ à¦•à§à¦¯à¦¾à¦²à§‡à¦¨à§à¦¡à¦¾à¦° à¦•à¦¨à§à¦Ÿà§‡à¦‡à¦¨à¦¾à¦° */
   .dark .react-datepicker {
     @apply bg-slate-800 border border-slate-700 text-slate-200 shadow-xl;
     font-family: inherit;
   }
 
-  /* ক্যালেন্ডার হেডার (যেখানে মাস ও বছর থাকে) */
+  /* à¦•à§à¦¯à¦¾à¦²à§‡à¦¨à§à¦¡à¦¾à¦° à¦¹à§‡à¦¡à¦¾à¦° (à¦¯à§‡à¦–à¦¾à¦¨à§‡ à¦®à¦¾à¦¸ à¦“ à¦¬à¦›à¦° à¦¥à¦¾à¦•à§‡) */
   .dark .react-datepicker__header {
     @apply bg-slate-900 border-b border-slate-700;
   }
 
-  /* টেক্সট কালার (মাসের নাম, দিনের নাম) */
+  /* à¦Ÿà§‡à¦•à§à¦¸à¦Ÿ à¦•à¦¾à¦²à¦¾à¦° (à¦®à¦¾à¦¸à§‡à¦° à¦¨à¦¾à¦®, à¦¦à¦¿à¦¨à§‡à¦° à¦¨à¦¾à¦®) */
   .dark .react-datepicker__current-month,
   .dark .react-datepicker-time__header,
   .dark .react-datepicker-year-header,
@@ -1269,24 +885,24 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     @apply text-slate-200;
   }
 
-  /* সাধারণ দিনগুলো */
+  /* à¦¸à¦¾à¦§à¦¾à¦°à¦£ à¦¦à¦¿à¦¨à¦—à§à¦²à§‹ */
   .dark .react-datepicker__day {
     @apply text-slate-300 hover:bg-slate-700 hover:text-white rounded-full transition-colors;
   }
 
-  /* সিলেক্ট করা দিন (Brand Color ব্যবহার করা হয়েছে) */
+  /* à¦¸à¦¿à¦²à§‡à¦•à§à¦Ÿ à¦•à¦°à¦¾ à¦¦à¦¿à¦¨ (Brand Color à¦¬à§à¦¯à¦¬à¦¹à¦¾à¦° à¦•à¦°à¦¾ à¦¹à§Ÿà§‡à¦›à§‡) */
   .dark .react-datepicker__day--selected,
   .dark .react-datepicker__day--keyboard-selected {
     @apply bg-brand-primary text-white font-bold hover:bg-brand-primary/90;
   }
 
-  /* ডিজেবল বা অন্য মাসের দিনগুলো */
+  /* à¦¡à¦¿à¦œà§‡à¦¬à¦² à¦¬à¦¾ à¦…à¦¨à§à¦¯ à¦®à¦¾à¦¸à§‡à¦° à¦¦à¦¿à¦¨à¦—à§à¦²à§‹ */
   .dark .react-datepicker__day--disabled,
   .dark .react-datepicker__day--outside-month {
     @apply text-slate-600 hover:bg-transparent cursor-not-allowed;
   }
 
-  /* বছরের ড্রপডাউন মেনু (Year Dropdown) */
+  /* à¦¬à¦›à¦°à§‡à¦° à¦¡à§à¦°à¦ªà¦¡à¦¾à¦‰à¦¨ à¦®à§‡à¦¨à§ (Year Dropdown) */
   .dark .react-datepicker__year-dropdown,
   .dark .react-datepicker__month-dropdown,
   .dark .react-datepicker__year-dropdown-container {
@@ -1298,13 +914,13 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     @apply bg-slate-700 text-white;
   }
 
-  /* ড্রপডাউন অ্যারো (Arrow) আইকন ফিক্স */
+  /* à¦¡à§à¦°à¦ªà¦¡à¦¾à¦‰à¦¨ à¦…à§à¦¯à¦¾à¦°à§‹ (Arrow) à¦†à¦‡à¦•à¦¨ à¦«à¦¿à¦•à§à¦¸ */
   .dark .react-datepicker__year-read-view--down-arrow,
   .dark .react-datepicker__month-read-view--down-arrow {
     border-top-color: #cbd5e1 !important; /* slate-300 */
   }
   
-  /* টুডে বাটন (যদি থাকে) */
+  /* à¦Ÿà§à¦¡à§‡ à¦¬à¦¾à¦Ÿà¦¨ (à¦¯à¦¦à¦¿ à¦¥à¦¾à¦•à§‡) */
   .dark .react-datepicker__today-button {
     @apply bg-slate-800 border-t border-slate-700 text-brand-primary font-bold;
   }
@@ -1548,7 +1164,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
 @media screen and (max-width: 1600px), (hover: none) and (pointer: coarse) {
   /* --- Global Font Scale ---
-     Scales the entire UI down proportionally (16px → 14px).
+     Scales the entire UI down proportionally (16px â†’ 14px).
      rem-based values throughout Tailwind will scale automatically. */
   html {
     font-size: 14px;
@@ -1556,7 +1172,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
   /* --- Sidebar Width Overrides ---
      Tailwind's w-72 (288px) is too wide for 1366px.
-     Expanded sidebar → 240px, collapsed stays at 80px. */
+     Expanded sidebar â†’ 240px, collapsed stays at 80px. */
   aside.w-72 {
     width: 220px !important;
   }
@@ -1621,7 +1237,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   }
 
   /* --- Grid Adjustments ---
-     3-column grids that are too wide on 1366px → force to 2 columns. */
+     3-column grids that are too wide on 1366px â†’ force to 2 columns. */
   .laptop-grid-2 {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
@@ -1695,7 +1311,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
 /* ============================================================
    PHASE 2: Deeper Component-Level Optimizations
-   Scoped to main content area — safe, non-destructive rules.
+   Scoped to main content area â€” safe, non-destructive rules.
    ============================================================ */
 
 @media screen and (max-width: 1600px), (hover: none) and (pointer: coarse) {
@@ -1704,10 +1320,10 @@ input[type="date"]::-webkit-calendar-picker-indicator {
      React's space-y utility adds margin-top to children.
      We reduce these to keep more content visible on screen. */
   main .space-y-8 > * + * {
-    margin-top: 1.25rem !important;   /* 32px → 20px */
+    margin-top: 1.25rem !important;   /* 32px â†’ 20px */
   }
   main .space-y-6 > * + * {
-    margin-top: 0.875rem !important;  /* 24px → 14px */
+    margin-top: 0.875rem !important;  /* 24px â†’ 14px */
   }
 
   /* --- Section Bottom Margins ---
@@ -1722,10 +1338,10 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   /* --- Chart Heights ---
      Recharts containers: h-64 and h-72 are very tall on 1366px screens. */
   main .h-64 {
-    height: 9rem !important;   /* 256px → 144px */
+    height: 9rem !important;   /* 256px â†’ 144px */
   }
   main .h-72 {
-    height: 10rem !important;  /* 288px → 160px */
+    height: 10rem !important;  /* 288px â†’ 160px */
   }
 
   /* --- Order Book Row Density (Market page) ---

@@ -9,7 +9,7 @@ interface HighImpactWidgetProps {
     news: SentimentSource[];
 }
 
-export const HighImpactWidget: React.FC<HighImpactWidgetProps> = ({ news }) => {
+export const HighImpactWidget: React.FC<HighImpactWidgetProps> = React.memo(({ news }) => {
     // Filter High Impact news, show more items (up to 8) for "bigger downwards" look
     const highImpactNews = news.filter(item => item.impact_level === 'HIGH').slice(0, 8);
 
@@ -96,4 +96,4 @@ export const HighImpactWidget: React.FC<HighImpactWidgetProps> = ({ news }) => {
             </div>
         </div>
     );
-};
+});

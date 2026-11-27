@@ -4,69 +4,104 @@ import Button from '@/components/common/Button';
 import { Loader2, RefreshCw, Maximize2 } from 'lucide-react';
 import { ResponsiveContainer, Treemap, Tooltip } from 'recharts';
 import { SentimentHeatmapItem } from '@/types';
-import { isThermalGuardActive } from '@/utils/deviceProfile';
+import { useTheme } from '@/context/ThemeContext';
 
+/** Pure SVG treemap tile avoiding HTML <foreignObject> so GPU scrolling remains 60-120fps. */
 const ModernHeatmapContent = (props: any) => {
-    const { x, y, width, height, name, sentimentScore, marketCap } = props;
+    const { x, y, width, height, name, sentimentScore, marketCap, depth, isDark } = props;
     const score = typeof sentimentScore === 'number' ? sentimentScore : 0;
 
-    if (!width || !height || width < 0 || height < 0) return null;
+    if (depth === 0 || !name || !width || !height || width < 4 || height < 4) return null;
 
-    // Dynamic Styling based on Score
-    let gradient = "from-slate-100 to-slate-200 dark:from-slate-700/50 dark:to-slate-900/90";
-    let borderColor = "border-slate-300 dark:border-slate-600/30";
-    let textColor = "text-slate-800 dark:text-slate-200";
-    let scoreColor = "text-slate-600 dark:text-slate-400";
+    const tileW = Math.max(0, width - 4);
+    const tileH = Math.max(0, height - 4);
+    if (tileW <= 0 || tileH <= 0) return null;
+
+    let fill = isDark ? '#1e293b' : '#e2e8f0';
+    let stroke = isDark ? 'rgba(148,163,184,0.28)' : '#cbd5e1';
+    let titleColor = isDark ? '#e2e8f0' : '#1e293b';
+    let scoreColor = isDark ? '#94a3b8' : '#475569';
 
     if (score > 0.5) {
-        gradient = "from-emerald-100 via-emerald-50 to-emerald-200/80 dark:from-emerald-500/30 dark:via-emerald-600/20 dark:to-emerald-900/90";
-        borderColor = "border-emerald-400 dark:border-emerald-500/50";
-        textColor = "text-emerald-950 dark:text-emerald-100";
-        scoreColor = "text-emerald-700 dark:text-emerald-400";
+        fill = isDark ? 'rgba(16,185,129,0.28)' : '#d1fae5';
+        stroke = isDark ? 'rgba(16,185,129,0.55)' : '#34d399';
+        titleColor = isDark ? '#d1fae5' : '#064e3b';
+        scoreColor = isDark ? '#34d399' : '#047857';
     } else if (score > 0.1) {
-        gradient = "from-teal-50 via-teal-100/70 to-slate-100 dark:from-teal-500/20 dark:via-teal-600/10 dark:to-slate-900/90";
-        borderColor = "border-teal-400/70 dark:border-teal-500/40";
-        textColor = "text-teal-950 dark:text-teal-50";
-        scoreColor = "text-teal-700 dark:text-teal-400";
+        fill = isDark ? 'rgba(20,184,166,0.20)' : '#ccfbf1';
+        stroke = isDark ? 'rgba(20,184,166,0.42)' : '#2dd4bf';
+        titleColor = isDark ? '#f0fdfa' : '#134e4a';
+        scoreColor = isDark ? '#2dd4bf' : '#0f766e';
     } else if (score < -0.5) {
-        gradient = "from-rose-100 via-rose-50 to-rose-200/80 dark:from-rose-500/30 dark:via-rose-600/20 dark:to-rose-900/90";
-        borderColor = "border-rose-400 dark:border-rose-500/50";
-        textColor = "text-rose-950 dark:text-rose-100";
-        scoreColor = "text-rose-700 dark:text-rose-400";
+        fill = isDark ? 'rgba(244,63,94,0.28)' : '#ffe4e6';
+        stroke = isDark ? 'rgba(244,63,94,0.55)' : '#fb7185';
+        titleColor = isDark ? '#ffe4e6' : '#881337';
+        scoreColor = isDark ? '#fb7185' : '#be123c';
     } else if (score < -0.1) {
-        gradient = "from-orange-50 via-orange-100/70 to-slate-100 dark:from-orange-500/20 dark:via-orange-600/10 dark:to-slate-900/90";
-        borderColor = "border-orange-400/70 dark:border-orange-500/40";
-        textColor = "text-orange-950 dark:text-orange-50";
-        scoreColor = "text-orange-700 dark:text-orange-400";
+        fill = isDark ? 'rgba(249,115,22,0.20)' : '#ffedd5';
+        stroke = isDark ? 'rgba(249,115,22,0.42)' : '#fb923c';
+        titleColor = isDark ? '#fff7ed' : '#7c2d12';
+        scoreColor = isDark ? '#fb923c' : '#c2410c';
     }
 
     const showDetail = width > 60 && height > 50;
     const showMini = width > 30 && height > 30;
+    const cx = x + 2 + tileW / 2;
+    const cy = y + 2 + tileH / 2;
 
     return (
-        <foreignObject x={x + 2} y={y + 2} width={width - 4} height={height - 4}>
-            <div
-                className={`w-full h-full rounded-xl border ${borderColor} bg-gradient-to-br ${gradient} flex flex-col items-center justify-center overflow-hidden relative group`}
-            >
-                <div className="z-10 flex flex-col items-center text-center p-1">
-                    {showMini && (
-                        <span className={`font-black tracking-tighter ${width < 50 ? 'text-[10px]' : 'text-sm'} ${textColor} dark:drop-shadow-md`}>
-                            {name}
-                        </span>
+        <g>
+            <rect
+                x={x + 2}
+                y={y + 2}
+                width={tileW}
+                height={tileH}
+                rx={10}
+                ry={10}
+                fill={fill}
+                stroke={stroke}
+                strokeWidth={1}
+            />
+            {showMini && (
+                <text
+                    x={cx}
+                    y={showDetail ? cy - 8 : cy + 4}
+                    textAnchor="middle"
+                    fill={titleColor}
+                    fontSize={width < 50 ? 10 : 13}
+                    fontWeight={800}
+                >
+                    {name}
+                </text>
+            )}
+            {showDetail && (
+                <>
+                    <text
+                        x={cx}
+                        y={cy + 7}
+                        textAnchor="middle"
+                        fill={scoreColor}
+                        fontSize={10}
+                        fontWeight={700}
+                        fontFamily="monospace"
+                    >
+                        {score > 0 ? '+' : ''}{score.toFixed(2)}
+                    </text>
+                    {typeof marketCap === 'number' && marketCap > 0 && (
+                        <text
+                            x={cx}
+                            y={cy + 20}
+                            textAnchor="middle"
+                            fill={isDark ? 'rgba(255,255,255,0.55)' : '#475569'}
+                            fontSize={8}
+                            fontWeight={600}
+                        >
+                            {(marketCap / 1_000_000_000).toFixed(0)}B
+                        </text>
                     )}
-                    {showDetail && (
-                        <>
-                            <span className={`text-[10px] font-mono mt-0.5 font-bold ${scoreColor}`}>
-                                {score > 0 ? '+' : ''}{score.toFixed(2)}
-                            </span>
-                            <span className="text-[8px] opacity-60 text-slate-600 dark:text-white mt-1 uppercase tracking-widest scale-75">
-                                {(marketCap / 1_000_000_000).toFixed(0)}B
-                            </span>
-                        </>
-                    )}
-                </div>
-            </div>
-        </foreignObject>
+                </>
+            )}
+        </g>
     );
 };
 
@@ -76,7 +111,10 @@ interface SentimentHeatmapProps {
     onSync: () => void;
 }
 
-export const SentimentHeatmap: React.FC<SentimentHeatmapProps> = ({ heatmapData, isHeatmapLoading, onSync }) => {
+export const SentimentHeatmap: React.FC<SentimentHeatmapProps> = React.memo(({ heatmapData, isHeatmapLoading, onSync }) => {
+    const { theme } = useTheme();
+    const isDark = theme === 'dark';
+
     return (
         <Card className="min-h-[450px] flex flex-col relative overflow-hidden border-slate-200 dark:border-white/10 bg-white dark:bg-[#070b14]">
             <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 z-10">
@@ -111,14 +149,14 @@ export const SentimentHeatmap: React.FC<SentimentHeatmapProps> = ({ heatmapData,
                         <p className="text-xs font-mono text-brand-primary mt-4">INITIALIZING NEURAL GRID...</p>
                     </div>
                 ) : (
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" debounce={150}>
                         <Treemap
                             data={heatmapData}
                             dataKey="marketCap"
                             aspectRatio={4 / 3}
                             stroke="transparent"
                             fill="#8884d8"
-                            content={<ModernHeatmapContent />}
+                            content={<ModernHeatmapContent isDark={isDark} />}
                             isAnimationActive={false}
                             animationDuration={0}
                         >
@@ -143,4 +181,4 @@ export const SentimentHeatmap: React.FC<SentimentHeatmapProps> = ({ heatmapData,
             </div>
         </Card>
     );
-};
+});

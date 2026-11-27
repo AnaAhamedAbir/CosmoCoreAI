@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Activity,
@@ -23,7 +23,6 @@ import {
     Zap,
 } from 'lucide-react';
 import { useSentimentEngine } from '@/hooks/useSentimentEngine';
-import { isThermalGuardActive } from '@/utils/deviceProfile';
 import AssetSearchControl from '@/components/common/AssetSearchControl';
 import { DigitalClock } from '@/components/common/DigitalClock';
 import { EntityAnalysisWidget } from '@/components/features/sentiment/EntityAnalysisWidget';
@@ -65,9 +64,57 @@ type SentimentWorkspaceTab =
 
 const QUICK_MAJOR_PAIRS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT'] as const;
 
+/** Defers mounting below-the-fold sections until near the viewport so initial render & scrolling stay 60-120fps. */
+const DeferredSection: React.FC<{
+    immediate?: boolean;
+    minHeightClass?: string;
+    children: React.ReactNode;
+}> = ({ immediate = false, minHeightClass = 'min-h-[420px]', children }) => {
+    const [shouldRender, setShouldRender] = useState(immediate);
+    const hostRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (immediate) {
+            setShouldRender(true);
+            return;
+        }
+        if (shouldRender) return;
+
+        const el = hostRef.current;
+        if (!el || typeof IntersectionObserver === 'undefined') {
+            setShouldRender(true);
+            return;
+        }
+
+        const observer = new IntersectionObserver(
+            (entries) => {
+                if (entries.some((entry) => entry.isIntersecting)) {
+                    setShouldRender(true);
+                    observer.disconnect();
+                }
+            },
+            { rootMargin: '400px 0px' }
+        );
+
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, [immediate, shouldRender]);
+
+    return (
+        <div ref={hostRef} className={shouldRender ? 'cv-auto' : minHeightClass}>
+            {shouldRender ? (
+                children
+            ) : (
+                <div className="h-full min-h-[260px] rounded-2xl bg-white/40 dark:bg-[#070b14]/60 border border-slate-200/60 dark:border-white/5 flex items-center justify-center text-xs font-mono text-slate-400">
+                    Scroll to load intelligence module...
+                </div>
+            )}
+        </div>
+    );
+};
+
 const SentimentEngine: React.FC = () => {
     const navigate = useNavigate();
-    const thermalGuard = isThermalGuardActive();
 
     const {
         activePair,
@@ -138,10 +185,17 @@ const SentimentEngine: React.FC = () => {
         const clampedAlpha = Math.max(-100, Math.min(100, Math.round(rawAlpha)));
         const convictionPct = Math.min(99, Math.max(15, Math.round(50 + clampedAlpha * 0.48)));
 
-        const posCount = sentimentSources.filter((s) => s.sentiment === 'Positive').length;
-        const negCount = sentimentSources.filter((s) => s.sentiment === 'Negative').length;
-        const neuCount = sentimentSources.filter((s) => s.sentiment === 'Neutral').length;
-        const highImpactCount = sentimentSources.filter((s) => s.impact_level === 'HIGH').length;
+        let posCount = 0;
+        let negCount = 0;
+        let neuCount = 0;
+        let highImpactCount = 0;
+        for (let i = 0; i < sentimentSources.length; i++) {
+            const s = sentimentSources[i];
+            if (s.sentiment === 'Positive') posCount++;
+            else if (s.sentiment === 'Negative') negCount++;
+            else neuCount++;
+            if (s.impact_level === 'HIGH') highImpactCount++;
+        }
         const totalDirectional = posCount + negCount;
         const bullHeadlineRatio =
             totalDirectional > 0 ? Math.round((posCount / totalDirectional) * 100) : 50;
@@ -214,14 +268,18 @@ const SentimentEngine: React.FC = () => {
         setIsExportOpen(false);
     };
 
-    const handleSelectScannerOpportunity = (
+    const handleSelectScannerOpportunity = useCallback((
         symbol: string,
         exchange: string,
         _action: string
     ) => {
         setActiveExchange(exchange);
         setActivePair(symbol);
-    };
+    }, [setActiveExchange, setActivePair]);
+
+    const handleSwitchToExecution = useCallback(() => {
+        setActiveWorkspaceTab('execution');
+    }, []);
 
     const baseSymbol = useMemo(
         () => (activePair.includes('/') ? activePair.split('/')[0] : activePair),
@@ -232,6 +290,12 @@ const SentimentEngine: React.FC = () => {
         if (!Array.isArray(chartData) || chartData.length === 0) return 0;
         return Number(chartData[chartData.length - 1]?.price || 0);
     }, [chartData]);
+
+    const scoreCardData = useMemo(() => ({
+        ...currentMetrics,
+        fearGreedIndex,
+        fearGreedLabel,
+    }), [currentMetrics, fearGreedIndex, fearGreedLabel]);
 
     return (
         <div className="space-y-4 pb-8">
@@ -882,12 +946,8 @@ const SentimentEngine: React.FC = () => {
                                 <MetricsSkeleton />
                             ) : (
                                 <SentimentScoreCards
-                                    data={{
-                                        ...currentMetrics,
-                                        fearGreedIndex,
-                                        fearGreedLabel,
-                                    }}
-                                    onActionClick={() => setActiveWorkspaceTab('execution')}
+                                    data={scoreCardData}
+                                    onActionClick={handleSwitchToExecution}
                                 />
                             )}
                             <FearGreedWidget />
@@ -921,29 +981,32 @@ const SentimentEngine: React.FC = () => {
             )}
 
             {(activeWorkspaceTab === 'all' || activeWorkspaceTab === 'macro_heatmap') && (
-                <div className="space-y-6">
-                    {isHeatmapLoading && heatmapData.length === 0 ? (
-                        <HeatmapSkeleton />
-                    ) : (
-                        <SentimentHeatmap
-                            heatmapData={heatmapData}
-                            isHeatmapLoading={isHeatmapLoading}
-                            onSync={syncData}
+                <DeferredSection immediate={activeWorkspaceTab === 'macro_heatmap'} minHeightClass="min-h-[820px]">
+                    <div className="space-y-6">
+                        {isHeatmapLoading && heatmapData.length === 0 ? (
+                            <HeatmapSkeleton />
+                        ) : (
+                            <SentimentHeatmap
+                                heatmapData={heatmapData}
+                                isHeatmapLoading={isHeatmapLoading}
+                                onSync={syncData}
+                            />
+                        )}
+
+                        <MacroEconomicWidget />
+
+                        <CommunityVoting
+                            votes={pollStats}
+                            onVote={handleVote}
+                            influencers={influencers}
                         />
-                    )}
-
-                    <MacroEconomicWidget />
-
-                    <CommunityVoting
-                        votes={pollStats}
-                        onVote={handleVote}
-                        influencers={influencers}
-                    />
-                </div>
+                    </div>
+                </DeferredSection>
             )}
 
             {(activeWorkspaceTab === 'all' || activeWorkspaceTab === 'narratives') && (
-                <div className="space-y-6">
+                <DeferredSection immediate={activeWorkspaceTab === 'narratives'} minHeightClass="min-h-[960px]">
+                    <div className="space-y-6">
                     {/* Cross-Asset Social Dominance Mindshare Strip */}
                     {Array.isArray(socialDominance) && socialDominance.length > 0 && (
                         <div className="rounded-2xl bg-white dark:bg-[#070b14] border border-slate-200 dark:border-white/10 p-4 shadow-sm">
@@ -1036,7 +1099,8 @@ const SentimentEngine: React.FC = () => {
                             />
                         </div>
                     </div>
-                </div>
+                    </div>
+                </DeferredSection>
             )}
 
             {activeWorkspaceTab === 'whales' && (

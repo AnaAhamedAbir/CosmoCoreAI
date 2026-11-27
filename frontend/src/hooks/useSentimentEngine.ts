@@ -104,6 +104,9 @@ export const useSentimentEngine = () => {
         }
     };
 
+    const timeframeRef = useRef(timeframe);
+    timeframeRef.current = timeframe;
+
     const handleTopicClick = useCallback((topic: string) => {
         setSelectedTopic(prev => prev === topic ? null : topic);
     }, []);
@@ -117,6 +120,7 @@ export const useSentimentEngine = () => {
         const controller = new AbortController();
         abortControllerRef.current = controller;
         const signal = controller.signal;
+        const activeTimeframe = timeframeRef.current;
 
         setIsHeatmapLoading(true); // Using heatmap loading as global sync indicator
         try {
@@ -132,7 +136,7 @@ export const useSentimentEngine = () => {
             ] = await Promise.allSettled([
                 api.get('/sentiment/news', { params: { model: aiModel }, signal }),
                 api.get('/sentiment/fear-greed', { signal }),
-                api.get('/sentiment/correlation', { params: { symbol: activePair, period: timeframe }, signal }),
+                api.get('/sentiment/correlation', { params: { symbol: activePair, period: activeTimeframe }, signal }),
                 api.get('/sentiment/heatmap', { signal }),
                 api.get('/sentiment/poll-stats', { params: { symbol: activePair }, signal }),
                 api.get('/sentiment/influencers', { signal }),
@@ -177,7 +181,7 @@ export const useSentimentEngine = () => {
             if (chartSettled.status === 'fulfilled' && Array.isArray(chartSettled.value.data)) {
                 setChartData(chartSettled.value.data);
                 try {
-                    localStorage.setItem(`sentiment_chart_${activePair}_${timeframe}`, JSON.stringify(chartSettled.value.data));
+                    localStorage.setItem(`sentiment_chart_${activePair}_${activeTimeframe}`, JSON.stringify(chartSettled.value.data));
                 } catch {}
                 calculateCorrelation(chartSettled.value.data);
             }
@@ -212,7 +216,7 @@ export const useSentimentEngine = () => {
                 setIsHeatmapLoading(false);
             }
         }
-    }, [activePair, timeframe, aiModel, showToast]);
+    }, [activePair, aiModel, showToast]);
 
     const handleGenerateSummary = useCallback(async () => {
         showToast('Generating Summary...', 'info');
@@ -235,7 +239,7 @@ export const useSentimentEngine = () => {
         }
     }, [sentimentSources, activePair, selectedProvider, showToast]);
 
-    const handleGenerateNarratives = async () => {
+    const handleGenerateNarratives = useCallback(async () => {
         setIsNarrativeLoading(true);
         try {
             const res = await api.get('/sentiment/narratives');
@@ -251,9 +255,9 @@ export const useSentimentEngine = () => {
         } finally {
             setIsNarrativeLoading(false);
         }
-    };
+    }, [showToast]);
 
-    const handleVote = async (type: 'bullish' | 'bearish') => {
+    const handleVote = useCallback(async (type: 'bullish' | 'bearish') => {
         try {
             // user_id is now optional (Guest Mode supported by backend)
             await api.post('/sentiment/poll', { symbol: activePair, vote_type: type });
@@ -264,7 +268,7 @@ export const useSentimentEngine = () => {
             console.error("Vote error:", error);
             showToast('Failed to submit vote.', 'error');
         }
-    };
+    }, [activePair, showToast]);
 
     const fetchSmartAnalysis = useCallback(async () => {
         if (!isNerEnabled) return;
@@ -285,7 +289,7 @@ export const useSentimentEngine = () => {
     }, [activePair, isNerEnabled, aiModel, showToast]);
 
 
-    const generateMarketReport = async (language: 'en' | 'bn' = 'en') => {
+    const generateMarketReport = useCallback(async (language: 'en' | 'bn' = 'en') => {
         setIsReportLoading(true);
         try {
             // Fetch Whale Alerts (Best Effort)
@@ -293,16 +297,16 @@ export const useSentimentEngine = () => {
             try {
                 const whaleRes = await api.get('/whale-alerts/recent?limit=5');
                 const alerts = whaleRes.data || [];
-                // Simplified Net Flow Calculation (assuming + for buy, - for sell logic not present in alert schema yet, so just volume sum for now as "Activity")
                 const volume = alerts.reduce((acc: number, alert: any) => acc + (alert.volume || 0), 0);
                 whaleStats = { net_flow: volume, recent_count: alerts.length, alerts: alerts };
             } catch (e) {
                 console.warn("Whale data fetch failed", e);
             }
 
+            const lastPt = chartData[chartData.length - 1];
             const payload = {
                 headlines: sentimentSources.slice(0, 15).map(s => s.content),
-                score: currentMetrics.currentScore, // Using computed metric
+                score: lastPt?.score || 0,
                 correlation: correlation,
                 whale_stats: whaleStats,
                 language: language
@@ -317,7 +321,7 @@ export const useSentimentEngine = () => {
         } finally {
             setIsReportLoading(false);
         }
-    };
+    }, [sentimentSources, chartData, correlation, showToast]);
 
     // WebSocket Integration
     const { realTimeData } = useSentimentSocket(activePair);
@@ -344,7 +348,7 @@ export const useSentimentEngine = () => {
                 const savedSources = localStorage.getItem(`sentiment_sources_${activePair}`);
                 const savedFearGreed = localStorage.getItem('sentiment_fear_greed');
                 const savedChart =
-                    localStorage.getItem(`sentiment_chart_${activePair}_${timeframe}`) ||
+                    localStorage.getItem(`sentiment_chart_${activePair}_${timeframeRef.current}`) ||
                     localStorage.getItem(`sentiment_chart_${activePair}`);
                 const savedHeatmap = localStorage.getItem('sentiment_heatmap');
 
@@ -354,14 +358,12 @@ export const useSentimentEngine = () => {
                     setFearGreedIndex(fg.index);
                     setFearGreedLabel(fg.label);
                 }
-                if (savedChart) setChartData(JSON.parse(savedChart));
-                if (savedHeatmap) setHeatmapData(JSON.parse(savedHeatmap));
-
                 if (savedChart) {
-                    const data = JSON.parse(savedChart);
-                    calculateCorrelation(data);
+                    const parsedChart = JSON.parse(savedChart);
+                    setChartData(parsedChart);
+                    calculateCorrelation(parsedChart);
                 }
-
+                if (savedHeatmap) setHeatmapData(JSON.parse(savedHeatmap));
             } catch (e) {
                 console.error("Failed to load persistence data", e);
             }
@@ -374,7 +376,40 @@ export const useSentimentEngine = () => {
                 abortControllerRef.current.abort();
             }
         };
-    }, [activePair, aiModel, syncData]); // syncData included in dependency (memoized)
+    }, [activePair, aiModel, syncData]);
+
+    // Fetch only chart correlation when timeframe switches instead of re-syncing all 7 endpoints
+    const initialTimeframeMountRef = useRef(true);
+    useEffect(() => {
+        if (initialTimeframeMountRef.current) {
+            initialTimeframeMountRef.current = false;
+            return;
+        }
+        const controller = new AbortController();
+        const savedChart = localStorage.getItem(`sentiment_chart_${activePair}_${timeframe}`);
+        if (savedChart) {
+            try {
+                const parsed = JSON.parse(savedChart);
+                setChartData(parsed);
+                calculateCorrelation(parsed);
+            } catch {}
+        }
+        api.get('/sentiment/correlation', {
+            params: { symbol: activePair, period: timeframe },
+            signal: controller.signal,
+        })
+            .then((res) => {
+                if (!controller.signal.aborted && Array.isArray(res.data)) {
+                    setChartData(res.data);
+                    try {
+                        localStorage.setItem(`sentiment_chart_${activePair}_${timeframe}`, JSON.stringify(res.data));
+                    } catch {}
+                    calculateCorrelation(res.data);
+                }
+            })
+            .catch(() => {});
+        return () => controller.abort();
+    }, [timeframe, activePair]);
 
     // Computed Metrics
     const currentMetrics = useMemo(() => {

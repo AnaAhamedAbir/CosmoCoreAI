@@ -121,7 +121,7 @@ const Sidebar: React.FC<{
     isPhoneMobileUI?: boolean;
     isMobileOpen?: boolean;
     onCloseMobile?: () => void;
-}> = ({ onLogout, isCollapsed, onToggle, isPhoneMobileUI = false, isMobileOpen = false, onCloseMobile }) => {
+}> = React.memo(({ onLogout, isCollapsed, onToggle, isPhoneMobileUI = false, isMobileOpen = false, onCloseMobile }) => {
     const location = useLocation();
     const navigate = useNavigate();
     const currentView = getViewFromPath(location.pathname);
@@ -323,7 +323,7 @@ const Sidebar: React.FC<{
         <aside className={`${
             isPhoneMobileUI
                 ? `${isMobileOpen ? 'fixed top-0 left-0 h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)] w-[272px] max-w-[84vw] z-[90] translate-x-0 pointer-events-auto' : 'hidden'}`
-                : `${effectiveCollapsed ? 'w-20' : 'w-72'} h-full max-h-full flex-shrink-0 transition-[width] duration-300 ease-out will-change-[width] z-30 relative`
+                : `${effectiveCollapsed ? 'w-20' : 'w-72'} h-full max-h-full flex-shrink-0 z-30 relative`
         } bg-[#F8FAFC] dark:bg-[#070B14] border-r border-slate-200 dark:border-slate-800/80 flex flex-col shadow-[4px_0_24px_rgba(0,0,0,0.06)] dark:shadow-[4px_0_28px_rgba(0,0,0,0.45)] group`}>
 
             {/* Subtle Top Accent Hairline */}
@@ -661,11 +661,80 @@ const Sidebar: React.FC<{
     }
 
     return sidebarAside;
-};
+});
 
 const MODAL_VIEWS: AppView[] = [];
 
 import { BacktestProvider } from '@/context/BacktestContext';
+
+interface DashboardContentRouterProps {
+    viewToRender: AppView;
+    activeSettingsSection: string | null;
+    retrainModelIdParam: string | null;
+    onNavigate: (view: AppView, section?: string) => void;
+}
+
+/** Memoized route view container so sidebar collapse/expand never triggers active page re-renders. */
+const DashboardContentRouter: React.FC<DashboardContentRouterProps> = React.memo(({
+    viewToRender,
+    activeSettingsSection,
+    retrainModelIdParam,
+    onNavigate,
+}) => {
+    switch (viewToRender) {
+        case AppView.DASHBOARD: return <Dashboard />;
+        case AppView.PORTFOLIO: return <PortfolioTracker />;
+        case AppView.BACKTESTER: return <Backtester />;
+        case AppView.EVENT_DRIVEN: return <EventDrivenSimulator />;
+        case AppView.ARBITRAGE_BOT: return <ArbitrageBot />;
+        case AppView.GRID_BOT: return <GridBot />;
+        case AppView.LEAD_LAG_BOT: return <LeadLagBot />;
+        case AppView.BOT_LAB: return <BotLab />;
+        case AppView.ORDER_FLOW_HEATMAP: return <OrderFlowHeatmap />;
+        case AppView.AI_FOUNDRY: return <AIFoundry />;
+        case AppView.MARKET: return <Market />;
+        case AppView.SENTIMENT_ENGINE: return <SentimentEngine />;
+        case AppView.CORPORATE_FILINGS: return <CorporateFilings />;
+        case AppView.INSTITUTIONAL_HOLDINGS: return <InstitutionalHoldingsTracker />;
+        case AppView.BLOCK_TRADE_DETECTOR: return <BlockTradeDetector />;
+        case AppView.UNUSUAL_OPTIONS_ACTIVITY: return <UnusualOptionsActivity />;
+        case AppView.ON_CHAIN_ANALYZER: return <OnChainAnalyzer />;
+        case AppView.LIQUIDATION_MAP: return <LiquidationMap />;
+        case AppView.MARKET_REGIME_CLASSIFIER: return <MarketRegimeClassifier />;
+        case AppView.CORRELATION_MATRIX: return <CorrelationMatrix />;
+        case AppView.TOKEN_UNLOCK_CALENDAR: return <TokenUnlockCalendar />;
+        case AppView.ALTERNATIVE_DATA: return <AlternativeData />;
+        case AppView.REAL_TIME_DATA: return <RealTimeData />;
+        case AppView.QUANT_SCREENER: return <QuantScreener />;
+        case AppView.ALERTS_WATCHLIST: return <AlertsWatchlist />;
+        case AppView.ANALYST_RESEARCH: return <AnalystResearch />;
+        case AppView.CUSTOM_ML_MODELS: return <CustomMLModels onNavigate={onNavigate} />;
+        case AppView.MODEL_TRAINING_STUDIO: return <ModelTrainingStudio retrainModelId={retrainModelIdParam} />;
+        case AppView.ML_MODEL_MARKETPLACE: return <MLModelMarketplace />;
+        case AppView.CUSTOM_INDICATOR_STUDIO: return <CustomIndicatorStudio />;
+        case AppView.PINE_SCRIPT_STUDIO: return <PineScriptStudio />;
+        case AppView.EDUCATION_HUB: return <EducationHub />;
+        case AppView.NURAL_CORE: return <NeuralArchitecture />;
+        case AppView.TASK_MANAGER: return <TaskManager />;
+        case AppView.MARKET_DEPTH: return <MarketDepthWidget />;
+        case AppView.SETTINGS: return <Settings initialSection={activeSettingsSection} />;
+        case AppView.OWNER_ADMIN: return <OwnerAdminConsole />;
+
+        // TradFi Routes
+        case AppView.FOREX_DASHBOARD: return <ForexDashboard />;
+        case AppView.FOREX_PAIRS: return <ForexPairs />;
+        case AppView.FOREX_CALENDAR: return <ForexCalendar />;
+        case AppView.FOREX_BOT_LAB: return <ForexBotLab />;
+        case AppView.STOCKS_DASHBOARD: return <StocksDashboard />;
+        case AppView.STOCKS_SCREENER: return <PlaceholderView title="Stock Screener" />;
+        case AppView.EARNINGS_CALENDAR: return <PlaceholderView title="Earnings Calendar" />;
+        case AppView.SEC_FILINGS: return <PlaceholderView title="SEC Filings" />;
+        case AppView.COMMODITIES_DASHBOARD: return <CommoditiesDashboard />;
+        case AppView.COMMODITIES_MARKET: return <PlaceholderView title="Commodities Futures" />;
+
+        default: return <Dashboard />;
+    }
+});
 
 const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
     const location = useLocation();
@@ -789,82 +858,28 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
 
     const viewToRender = modalView ? prevViewRef.current : currentView;
 
-    const renderContent = () => {
-        switch (viewToRender) {
-            case AppView.DASHBOARD: return <Dashboard />;
+    const handleSidebarToggle = useCallback(() => {
+        userToggledSidebarRef.current = true;
+        setIsSidebarCollapsed((prev) => !prev);
+    }, []);
 
-
-
-
-            case AppView.PORTFOLIO: return <PortfolioTracker />;
-            case AppView.BACKTESTER: return <Backtester />;
-            case AppView.EVENT_DRIVEN: return <EventDrivenSimulator />;
-            case AppView.ARBITRAGE_BOT: return <ArbitrageBot />;
-            case AppView.GRID_BOT: return <GridBot />;
-            case AppView.LEAD_LAG_BOT: return <LeadLagBot />;
-            case AppView.BOT_LAB: return <BotLab />;
-            case AppView.ORDER_FLOW_HEATMAP: return <OrderFlowHeatmap />;
-            case AppView.AI_FOUNDRY: return <AIFoundry />;
-            case AppView.MARKET: return <Market />;
-            case AppView.SENTIMENT_ENGINE: return <SentimentEngine />;
-            case AppView.CORPORATE_FILINGS: return <CorporateFilings />;
-            case AppView.INSTITUTIONAL_HOLDINGS: return <InstitutionalHoldingsTracker />;
-            case AppView.BLOCK_TRADE_DETECTOR: return <BlockTradeDetector />;
-            case AppView.UNUSUAL_OPTIONS_ACTIVITY: return <UnusualOptionsActivity />;
-            case AppView.ON_CHAIN_ANALYZER: return <OnChainAnalyzer />;
-            case AppView.LIQUIDATION_MAP: return <LiquidationMap />;
-            case AppView.MARKET_REGIME_CLASSIFIER: return <MarketRegimeClassifier />;
-            case AppView.CORRELATION_MATRIX: return <CorrelationMatrix />;
-            case AppView.TOKEN_UNLOCK_CALENDAR: return <TokenUnlockCalendar />;
-            case AppView.ALTERNATIVE_DATA: return <AlternativeData />;
-            case AppView.REAL_TIME_DATA: return <RealTimeData />;
-            case AppView.QUANT_SCREENER: return <QuantScreener />;
-            case AppView.ALERTS_WATCHLIST: return <AlertsWatchlist />;
-            case AppView.ANALYST_RESEARCH: return <AnalystResearch />;
-            case AppView.CUSTOM_ML_MODELS: return <CustomMLModels onNavigate={handleNavigate} />;
-            case AppView.MODEL_TRAINING_STUDIO: return <ModelTrainingStudio retrainModelId={retrainModelIdParam} />;
-            case AppView.ML_MODEL_MARKETPLACE: return <MLModelMarketplace />;
-            case AppView.CUSTOM_INDICATOR_STUDIO: return <CustomIndicatorStudio />;
-            case AppView.PINE_SCRIPT_STUDIO: return <PineScriptStudio />;
-            case AppView.EDUCATION_HUB: return <EducationHub />;
-            case AppView.NURAL_CORE: return <NeuralArchitecture />;
-            case AppView.TASK_MANAGER: return <TaskManager />;
-            case AppView.MARKET_DEPTH: return <MarketDepthWidget />;
-            case AppView.SETTINGS: return <Settings initialSection={activeSettingsSection} />;
-            case AppView.OWNER_ADMIN: return <OwnerAdminConsole />;
-            
-            // TradFi Routes
-            case AppView.FOREX_DASHBOARD: return <ForexDashboard />;
-            case AppView.FOREX_PAIRS: return <ForexPairs />;
-            case AppView.FOREX_CALENDAR: return <ForexCalendar />;
-            case AppView.FOREX_BOT_LAB: return <ForexBotLab />;
-            case AppView.STOCKS_DASHBOARD: return <StocksDashboard />;
-            case AppView.STOCKS_SCREENER: return <PlaceholderView title="Stock Screener" />;
-            case AppView.EARNINGS_CALENDAR: return <PlaceholderView title="Earnings Calendar" />;
-            case AppView.SEC_FILINGS: return <PlaceholderView title="SEC Filings" />;
-            case AppView.COMMODITIES_DASHBOARD: return <CommoditiesDashboard />;
-            case AppView.COMMODITIES_MARKET: return <PlaceholderView title="Commodities Futures" />;
-
-            default: return <Dashboard />;
-        }
-    };
+    const handleCloseMobileSidebar = useCallback(() => {
+        setIsMobileSidebarOpen(false);
+    }, []);
 
     const showWalletConnect = [AppView.DASHBOARD, AppView.PORTFOLIO, AppView.ON_CHAIN_ANALYZER].includes(viewToRender);
 
     return (
         <LatencyGuardProvider canManageServerGuard={userProfile.is_superuser}>
         <BacktestProvider>
-            <div className={`flex h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)] w-full max-w-[100vw] overflow-hidden bg-brand-light dark:bg-[#050810] ${deviceProfile.isThermalGuardActive ? '' : 'transition-all duration-300'}`}>
+            <div className="flex h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)] w-full max-w-[100vw] overflow-hidden bg-brand-light dark:bg-[#050810]">
                 <Sidebar 
                         onLogout={onLogout} 
                         isCollapsed={isSidebarCollapsed} 
-                        onToggle={() => {
-                            userToggledSidebarRef.current = true;
-                            setIsSidebarCollapsed(!isSidebarCollapsed);
-                        }}
+                        onToggle={handleSidebarToggle}
                         isPhoneMobileUI={isPhoneMobileUI}
                         isMobileOpen={isMobileSidebarOpen}
-                        onCloseMobile={() => setIsMobileSidebarOpen(false)}
+                        onCloseMobile={handleCloseMobileSidebar}
                     />
                     <div className="flex-1 min-w-0 min-h-0 h-full flex flex-col overflow-hidden relative z-0">
                         <header className="relative z-50 flex-shrink-0 bg-white/95 dark:bg-[#070B14]/95 border-b border-slate-200 dark:border-slate-800/80">
@@ -1043,7 +1058,12 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
                         </header>
                         <main className={`flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden relative z-0 ${isPhoneMobileUI ? 'p-3' : 'p-8 laptop:p-3 laptop-h:p-2.5'}`}>
                             <Suspense fallback={<div className="flex items-center justify-center h-full min-h-[240px] text-slate-400 text-xs">Loading module...</div>}>
-                                {renderContent()}
+                                <DashboardContentRouter
+                                    viewToRender={viewToRender}
+                                    activeSettingsSection={activeSettingsSection}
+                                    retrainModelIdParam={retrainModelIdParam}
+                                    onNavigate={handleNavigate}
+                                />
                             </Suspense>
                         </main>
                     </div>

@@ -11,7 +11,7 @@ interface SmartExecutionWidgetProps {
     defaultSide?: 'buy' | 'sell';
 }
 
-const SmartExecutionWidget: React.FC<SmartExecutionWidgetProps> = ({
+const SmartExecutionWidget: React.FC<SmartExecutionWidgetProps> = React.memo(({
     symbol = 'BTC/USDT',
     referencePrice = 0,
     defaultSide = 'buy',
@@ -354,6 +354,6 @@ const SmartExecutionWidget: React.FC<SmartExecutionWidgetProps> = ({
             </div>
         </div>
     );
-};
+});
 
 export default SmartExecutionWidget;

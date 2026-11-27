@@ -14,7 +14,7 @@ interface SocialDominanceChartProps {
     data: SocialDominanceData[];
 }
 
-const SocialDominanceChart: React.FC<SocialDominanceChartProps> = ({ data }) => {
+const SocialDominanceChart: React.FC<SocialDominanceChartProps> = React.memo(({ data }) => {
     const { theme } = useTheme();
     const isDark = theme === 'dark';
 
@@ -26,7 +26,7 @@ const SocialDominanceChart: React.FC<SocialDominanceChartProps> = ({ data }) => 
         <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-md dark:shadow-lg border border-slate-200 dark:border-gray-700">
             <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-4">Social Volume Dominance</h3>
             <div className="h-72 w-full">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" debounce={150}>
                     <AreaChart
                         data={data}
                         margin={{
@@ -57,6 +57,6 @@ const SocialDominanceChart: React.FC<SocialDominanceChartProps> = ({ data }) => 
             </div>
         </div>
     );
-};
+});
 
 export default SocialDominanceChart;

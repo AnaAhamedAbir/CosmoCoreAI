@@ -11,7 +11,7 @@ interface EconomicEvent {
     status: "Published" | "Upcoming";
 }
 
-export const MacroEconomicWidget: React.FC = () => {
+export const MacroEconomicWidget: React.FC = React.memo(() => {
     const [data, setData] = useState<EconomicEvent[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
     const [error, setError] = useState<string | null>(null);
@@ -207,4 +207,4 @@ export const MacroEconomicWidget: React.FC = () => {
             </div>
         </div>
     );
-};
+});

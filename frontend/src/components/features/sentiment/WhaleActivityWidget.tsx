@@ -13,17 +13,18 @@ interface WhaleAlert {
     exchange: string;
 }
 
-export const WhaleActivityWidget: React.FC = () => {
+export const WhaleActivityWidget: React.FC = React.memo(() => {
     const [threshold, setThreshold] = useState<number>(10); // in Millions
     const [alerts, setAlerts] = useState<WhaleAlert[]>([]);
-    const [loading, setLoading] = useState(false);
     const [updating, setUpdating] = useState(false);
-
-    const API_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
     useEffect(() => {
         fetchData();
-        const interval = setInterval(fetchData, 30000);
+        const interval = setInterval(() => {
+            if (typeof document === 'undefined' || !document.hidden) {
+                fetchData();
+            }
+        }, 30000);
         return () => clearInterval(interval);
     }, []);
 
@@ -81,7 +82,6 @@ export const WhaleActivityWidget: React.FC = () => {
                 <div className="flex flex-col items-end">
                     <span className="flex items-center gap-1.5">
                         <span className="relative flex h-2 w-2">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
                             <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
                         </span>
                         <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 tracking-wider">LIVE</span>
@@ -166,4 +166,4 @@ export const WhaleActivityWidget: React.FC = () => {
             </div>
         </Card>
     );
-};
+});

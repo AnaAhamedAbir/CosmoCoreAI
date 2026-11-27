@@ -17,7 +17,7 @@ interface SentimentSignalAnalysisProps {
     onGenerateSummary: () => void;
 }
 
-export const SentimentSignalAnalysis: React.FC<SentimentSignalAnalysisProps> = ({
+export const SentimentSignalAnalysis: React.FC<SentimentSignalAnalysisProps> = React.memo(({
     sourceBreakdownData,
     sentimentSources,
     aiSummary,
@@ -35,7 +35,7 @@ export const SentimentSignalAnalysis: React.FC<SentimentSignalAnalysisProps> = (
                 <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Signal Sources</h3>
                 <div className="flex items-center justify-between h-full">
                     <div className="h-48 w-48 relative">
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" debounce={150}>
                             <PieChart>
                                 <Pie
                                     data={sourceBreakdownData}
@@ -83,12 +83,10 @@ export const SentimentSignalAnalysis: React.FC<SentimentSignalAnalysisProps> = (
             </Card>
 
             <Card className="flex flex-col bg-slate-50 dark:bg-[#050505] border-slate-200 dark:border-[#141414] relative overflow-hidden">
-                <div className="hidden dark:block absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] z-0 pointer-events-none bg-[length:100%_2px,3px_100%]"></div>
-
                 <div className="relative z-10 flex flex-col h-full">
                     <div className="flex justify-between items-center mb-4">
                         <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                            <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
+                            <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
                             AI Intelligence Stream
                         </h3>
 
@@ -135,4 +133,4 @@ export const SentimentSignalAnalysis: React.FC<SentimentSignalAnalysisProps> = (
             </Card>
         </div>
     );
-};
+});

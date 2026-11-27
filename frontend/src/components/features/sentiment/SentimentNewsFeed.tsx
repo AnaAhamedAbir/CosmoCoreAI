@@ -58,7 +58,7 @@ interface SentimentNewsFeedProps {
     availableSources: string[];
 }
 
-export const SentimentNewsFeed: React.FC<SentimentNewsFeedProps> = ({
+export const SentimentNewsFeed: React.FC<SentimentNewsFeedProps> = React.memo(({
     news,
     activeFilter,
     setActiveFilter,
@@ -201,4 +201,4 @@ export const SentimentNewsFeed: React.FC<SentimentNewsFeedProps> = ({
             )}
         </div>
     );
-};
+});

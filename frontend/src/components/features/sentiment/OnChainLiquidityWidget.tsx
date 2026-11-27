@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { OnChainMetric } from '../../../types/on_chain';
 import { isThermalGuardActive } from '@/utils/deviceProfile';
 
-const OnChainLiquidityWidget: React.FC<{ symbol: string }> = ({ symbol }) => {
+const OnChainLiquidityWidget: React.FC<{ symbol: string }> = React.memo(({ symbol }) => {
     const thermalGuard = isThermalGuardActive();
     const [data, setData] = useState<OnChainMetric | null>(null);
     const [loading, setLoading] = useState<boolean>(true);
@@ -113,6 +113,6 @@ const OnChainLiquidityWidget: React.FC<{ symbol: string }> = ({ symbol }) => {
             </div>
         </div>
     );
-};
+});
 
 export default OnChainLiquidityWidget;

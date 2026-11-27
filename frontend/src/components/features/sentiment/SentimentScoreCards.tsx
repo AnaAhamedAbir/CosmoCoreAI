@@ -1,11 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import Card from '@/components/common/Card';
 import InfoTooltip from '@/components/common/InfoTooltip';
-import { isThermalGuardActive } from '@/utils/deviceProfile';
 
 // --- Sub Component: SentimentOrb ---
 const SentimentOrb = ({ score, momentum, volume, netflow, onActionClick }: any) => {
-    const thermalGuard = isThermalGuardActive();
     // Determine State
     const mood = score > 0.2 ? "Bullish" : score < -0.2 ? "Bearish" : "Neutral";
 
@@ -65,16 +63,14 @@ const SentimentOrb = ({ score, momentum, volume, netflow, onActionClick }: any) 
     };
 
     const theme = themes[mood as keyof typeof themes];
-    const rotationSpeed = Math.max(3, 15 - Math.abs(momentum));
 
     return (
         <div className="relative w-full h-full flex flex-col items-center justify-center overflow-hidden bg-slate-50 dark:bg-[#0A0A0A] rounded-2xl border border-slate-200 dark:border-[#1F1F1F]/50">
-            {/* --- Background Cyber Grid --- */}
-            <div className="absolute inset-0 opacity-30 dark:opacity-20 pointer-events-none"
+            {/* --- Background Cyber Grid (no CSS maskImage to keep GPU scroll fast) --- */}
+            <div className="absolute inset-0 opacity-20 dark:opacity-15 pointer-events-none"
                 style={{
                     backgroundImage: `linear-gradient(${theme.hex}22 1px, transparent 1px), linear-gradient(90deg, ${theme.hex}22 1px, transparent 1px)`,
                     backgroundSize: '40px 40px',
-                    maskImage: 'radial-gradient(circle at center, black 40%, transparent 80%)'
                 }}>
             </div>
 
@@ -147,7 +143,7 @@ const SentimentOrb = ({ score, momentum, volume, netflow, onActionClick }: any) 
                             <InfoTooltip text="The total frequency of mentions across all tracked social platforms." />
                         </div>
                         <div className="flex items-center gap-1">
-                            <span className={`animate-pulse ${theme.zapText}`}>⚡</span>
+                            <span className={theme.zapText}>⚡</span>
                             <span className={`text-slate-800 dark:text-slate-300 font-bold ${theme.hoverMetric} transition-colors`}>{volume}</span>
                         </div>
                     </div>
@@ -159,7 +155,6 @@ const SentimentOrb = ({ score, momentum, volume, netflow, onActionClick }: any) 
 
 // --- Sub Component: FearGreedFlux ---
 const FearGreedFlux = ({ score, classification }: any) => {
-    const thermalGuard = isThermalGuardActive();
     const [timeLeft, setTimeLeft] = useState<string>('--h --m');
 
     // Countdown logic
@@ -280,7 +275,7 @@ interface SentimentScoreCardsProps {
     onActionClick?: () => void;
 }
 
-export const SentimentScoreCards: React.FC<SentimentScoreCardsProps> = ({ data, onActionClick }) => {
+export const SentimentScoreCards: React.FC<SentimentScoreCardsProps> = React.memo(({ data, onActionClick }) => {
     return (
         <div className="space-y-6">
             <Card className="h-[420px] !p-0 overflow-hidden relative">
@@ -300,4 +295,4 @@ export const SentimentScoreCards: React.FC<SentimentScoreCardsProps> = ({ data, 
             </Card>
         </div>
     );
-};
+});

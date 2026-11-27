@@ -104,11 +104,11 @@ interface CommunityVotingProps {
     influencers: Influencer[];
 }
 
-export const CommunityVoting: React.FC<CommunityVotingProps> = ({ votes, onVote, influencers }) => {
+export const CommunityVoting: React.FC<CommunityVotingProps> = React.memo(({ votes, onVote, influencers }) => {
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-[340px]">
             <InfluencerWatchlist influencers={influencers} />
             <CommunityPoll stats={votes} onVote={onVote} />
         </div>
     );
-};
+});

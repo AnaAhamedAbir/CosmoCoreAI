@@ -100,7 +100,7 @@ interface SharedMarketConnection {
     pendingData: Partial<MarketDepthData> | null;
     flushTimer: ReturnType<typeof setTimeout> | null;
     ws: WebSocket | null;
-    directBinanceWs: WebSocket | null;
+    directBinanceSockets: WebSocket[];
     worker: Worker | null;
     reconnectTimer: ReturnType<typeof setTimeout> | null;
     directReconnectTimer: ReturnType<typeof setTimeout> | null;
@@ -573,27 +573,36 @@ export function subscribeFeedHealth(
     };
 }
 
-function buildBinancePublicStreamUrl(symbol: string): string | null {
+function buildBinancePublicStreamUrls(symbol: string): string[] {
     const clean = symbol.trim();
-    if (!clean.includes('/')) return null;
+    if (!clean.includes('/')) return [];
     const isFutures = clean.includes(':');
     const [pairPart, settleRaw] = clean.split(':');
     const [baseRaw, quoteRaw] = pairPart.split('/');
-    if (!baseRaw || !quoteRaw) return null;
+    if (!baseRaw || !quoteRaw) return [];
     const base = baseRaw.toLowerCase();
     const quote = quoteRaw.toLowerCase();
     const settle = (settleRaw || '').toLowerCase();
 
     if (isFutures) {
         if (settle && settle === base) {
+            // COIN-M Delivery/Perp supports combined aggTrade + bookTicker + markPrice on /stream
             const streamSym = `${base}${quote}_perp`;
-            return `wss://dstream.binance.com/stream?streams=${streamSym}@aggTrade/${streamSym}@bookTicker/${streamSym}@markPrice@1s`;
+            return [
+                `wss://dstream.binance.com/stream?streams=${streamSym}@aggTrade/${streamSym}@bookTicker/${streamSym}@markPrice@1s`,
+            ];
         }
+        // USDT-M Futures enforces route separation:
+        //  - /public/stream delivers @bookTicker (silently drops @aggTrade/@markPrice)
+        //  - /market/stream delivers @aggTrade and @markPrice@1s (silently drops @bookTicker)
         const streamSym = `${base}${quote}`;
-        return `wss://fstream.binance.com/stream?streams=${streamSym}@aggTrade/${streamSym}@bookTicker/${streamSym}@markPrice@1s`;
+        return [
+            `wss://fstream.binance.com/public/stream?streams=${streamSym}@bookTicker`,
+            `wss://fstream.binance.com/market/stream?streams=${streamSym}@aggTrade/${streamSym}@markPrice@1s`,
+        ];
     }
     const streamSym = `${base}${quote}`;
-    return `wss://stream.binance.com:9443/stream?streams=${streamSym}@aggTrade/${streamSym}@bookTicker`;
+    return [`wss://stream.binance.com:9443/stream?streams=${streamSym}@aggTrade/${streamSym}@bookTicker`];
 }
 
 function closeSocketSafely(socket: WebSocket | null) {
@@ -618,7 +627,7 @@ function computeConnectionHealth(conn: SharedMarketConnection, now: number): Fee
     const lastDirect = Math.max(conn.lastDirectTradeAt, conn.lastDirectBboAt, conn.lastDirectMarkAt);
     const lastBackend = Math.max(conn.lastBackendTradeAt, conn.lastBackendBboAt, conn.lastBackendAnyAt);
     const lastEventAt = Math.max(lastDirect, lastBackend);
-    const directOpen = conn.directBinanceWs?.readyState === WebSocket.OPEN;
+    const directOpen = conn.directBinanceSockets.some((s) => s.readyState === WebSocket.OPEN);
     const backendOpen = conn.ws?.readyState === WebSocket.OPEN;
 
     // Avoid false-positive STALE flashes on quiet Spot pairs when sockets are genuinely OPEN,
@@ -659,7 +668,7 @@ function createSharedConnection(symbol: string, exchange: string): SharedMarketC
         pendingData: null,
         flushTimer: null,
         ws: null,
-        directBinanceWs: null,
+        directBinanceSockets: [],
         worker: null,
         reconnectTimer: null,
         directReconnectTimer: null,
@@ -914,134 +923,141 @@ function createSharedConnection(symbol: string, exchange: string): SharedMarketC
             clearTimeout(conn.directReconnectTimer);
             conn.directReconnectTimer = null;
         }
-        closeSocketSafely(conn.directBinanceWs);
-        conn.directBinanceWs = null;
+        conn.directBinanceSockets.forEach((s) => closeSocketSafely(s));
+        conn.directBinanceSockets = [];
 
-        const streamUrl = buildBinancePublicStreamUrl(symbol);
-        if (!streamUrl) return;
+        const streamUrls = buildBinancePublicStreamUrls(symbol);
+        if (streamUrls.length === 0) return;
 
-        try {
-            const directWs = new WebSocket(streamUrl);
-            conn.directBinanceWs = directWs;
+        const handleDirectMessage = (ev: MessageEvent) => {
+            if (conn.disposed) return;
+            try {
+                const msg = JSON.parse(ev.data);
+                const d = msg?.data || msg;
+                if (!d) return;
 
-            directWs.onmessage = (ev) => {
-                if (conn.disposed) return;
-                try {
-                    const msg = JSON.parse(ev.data);
-                    const d = msg?.data || msg;
-                    if (!d) return;
-
-                    if (d.e === 'aggTrade' || d.e === 'trade') {
-                        const price = Number(d.p || 0);
-                        const qty = Number(d.q || 0);
-                        if (price > 0) {
-                            const now = Date.now();
-                            const ts = normalizeTsMs(Number(d.T || d.E || now));
-                            const isBuyerMaker = Boolean(d.m);
-                            conn.lastDirectTradeTs = ts;
-                            conn.lastDirectTradeAt = now;
-                            const tick: TradeTickEvent = {
-                                price,
-                                volume: qty,
-                                quantity: qty,
-                                timestamp: ts,
-                                side: isBuyerMaker ? 'sell' : 'buy',
-                                isBuyerMaker,
-                            };
-                            emitLiveTradeTick(symbol, exchange, tick);
-                            conn.pendingData = {
-                                ...(conn.pendingData || {}),
-                                currentPrice: price,
-                                tradeEvent: tick,
-                            };
-                            scheduleFlush();
-                            publishHealth(now);
-                        }
-                    } else if (d.e === 'markPriceUpdate') {
-                        const markPrice = Number(d.p || 0);
-                        if (markPrice > 0) {
-                            const now = Date.now();
-                            conn.lastDirectMarkAt = now;
-                            const indexPrice = Number(d.i || 0);
-                            const fundingRate = d.r !== undefined ? Number(d.r) : undefined;
-                            const nextFundingTime = d.T !== undefined ? Number(d.T) : undefined;
-                            const ts = normalizeTsMs(Number(d.E || now));
-                            emitLiveMarkPrice(symbol, exchange, {
-                                markPrice,
-                                indexPrice: indexPrice > 0 ? indexPrice : undefined,
-                                fundingRate: Number.isFinite(fundingRate) ? fundingRate : undefined,
-                                nextFundingTime: Number.isFinite(nextFundingTime) ? nextFundingTime : undefined,
-                                timestamp: ts,
-                            });
-                            conn.pendingData = {
-                                ...(conn.pendingData || {}),
-                                markPrice,
-                            };
-                            scheduleFlush();
-                            publishHealth(now);
-                        }
-                    } else if (d.b !== undefined && d.a !== undefined) {
-                        const bestBid = Number(d.b || 0);
-                        const bestAsk = Number(d.a || 0);
-                        const bidQty = Number(d.B || 0);
-                        const askQty = Number(d.A || 0);
-                        if (bestBid > 0 && bestAsk > 0 && bestAsk >= bestBid) {
-                            const now = Date.now();
-                            conn.lastDirectBboAt = now;
-                            const bboChanged = bestBid !== conn.lastAcceptedBid || bestAsk !== conn.lastAcceptedAsk;
-                            conn.lastAcceptedBid = bestBid;
-                            conn.lastAcceptedAsk = bestAsk;
-                            const ts = normalizeTsMs(Number(d.T || d.E || now));
-                            if (!bboChanged) {
-                                // Refresh cached BBO qty silently without triggering canvas redraw storm
-                                const ch = liveMarketChannels.get(key);
-                                if (ch && ch.latestBbo) {
-                                    ch.latestBbo = {
-                                        ...ch.latestBbo,
-                                        bidQty: bidQty > 0 ? bidQty : ch.latestBbo.bidQty,
-                                        askQty: askQty > 0 ? askQty : ch.latestBbo.askQty,
-                                        timestamp: ts,
-                                    };
-                                    ch.lastBboWallAt = now;
-                                }
-                                publishHealth(now);
-                                return;
-                            }
-                            emitLiveBboTick(symbol, exchange, {
-                                bestBid,
-                                bestAsk,
-                                bidQty: bidQty > 0 ? bidQty : undefined,
-                                askQty: askQty > 0 ? askQty : undefined,
-                                timestamp: ts,
-                            });
-                            conn.pendingData = {
-                                ...(conn.pendingData || {}),
-                                bestBid,
-                                bestAsk,
-                            };
-                            scheduleFlush();
-                            publishHealth(now);
-                        }
+                if (d.e === 'aggTrade' || d.e === 'trade') {
+                    const price = Number(d.p || 0);
+                    const qty = Number(d.q || 0);
+                    if (price > 0) {
+                        const now = Date.now();
+                        const ts = normalizeTsMs(Number(d.T || d.E || now));
+                        const isBuyerMaker = Boolean(d.m);
+                        conn.lastDirectTradeTs = ts;
+                        conn.lastDirectTradeAt = now;
+                        const tick: TradeTickEvent = {
+                            price,
+                            volume: qty,
+                            quantity: qty,
+                            timestamp: ts,
+                            side: isBuyerMaker ? 'sell' : 'buy',
+                            isBuyerMaker,
+                        };
+                        emitLiveTradeTick(symbol, exchange, tick);
+                        conn.pendingData = {
+                            ...(conn.pendingData || {}),
+                            currentPrice: price,
+                            tradeEvent: tick,
+                        };
+                        scheduleFlush();
+                        publishHealth(now);
                     }
-                } catch {
-                    // ignore malformed frame
+                } else if (d.e === 'markPriceUpdate') {
+                    const markPrice = Number(d.p || 0);
+                    if (markPrice > 0) {
+                        const now = Date.now();
+                        conn.lastDirectMarkAt = now;
+                        const indexPrice = Number(d.i || 0);
+                        const fundingRate = d.r !== undefined ? Number(d.r) : undefined;
+                        const nextFundingTime = d.T !== undefined ? Number(d.T) : undefined;
+                        const ts = normalizeTsMs(Number(d.E || now));
+                        emitLiveMarkPrice(symbol, exchange, {
+                            markPrice,
+                            indexPrice: indexPrice > 0 ? indexPrice : undefined,
+                            fundingRate: Number.isFinite(fundingRate) ? fundingRate : undefined,
+                            nextFundingTime: Number.isFinite(nextFundingTime) ? nextFundingTime : undefined,
+                            timestamp: ts,
+                        });
+                        conn.pendingData = {
+                            ...(conn.pendingData || {}),
+                            markPrice,
+                        };
+                        scheduleFlush();
+                        publishHealth(now);
+                    }
+                } else if (d.b !== undefined && d.a !== undefined) {
+                    const bestBid = Number(d.b || 0);
+                    const bestAsk = Number(d.a || 0);
+                    const bidQty = Number(d.B || 0);
+                    const askQty = Number(d.A || 0);
+                    if (bestBid > 0 && bestAsk > 0 && bestAsk >= bestBid) {
+                        const now = Date.now();
+                        conn.lastDirectBboAt = now;
+                        const bboChanged = bestBid !== conn.lastAcceptedBid || bestAsk !== conn.lastAcceptedAsk;
+                        conn.lastAcceptedBid = bestBid;
+                        conn.lastAcceptedAsk = bestAsk;
+                        const ts = normalizeTsMs(Number(d.T || d.E || now));
+                        if (!bboChanged) {
+                            const ch = liveMarketChannels.get(key);
+                            if (ch && ch.latestBbo) {
+                                ch.latestBbo = {
+                                    ...ch.latestBbo,
+                                    bidQty: bidQty > 0 ? bidQty : ch.latestBbo.bidQty,
+                                    askQty: askQty > 0 ? askQty : ch.latestBbo.askQty,
+                                    timestamp: ts,
+                                };
+                                ch.lastBboWallAt = now;
+                            }
+                            publishHealth(now);
+                            return;
+                        }
+                        emitLiveBboTick(symbol, exchange, {
+                            bestBid,
+                            bestAsk,
+                            bidQty: bidQty > 0 ? bidQty : undefined,
+                            askQty: askQty > 0 ? askQty : undefined,
+                            timestamp: ts,
+                        });
+                        conn.pendingData = {
+                            ...(conn.pendingData || {}),
+                            bestBid,
+                            bestAsk,
+                        };
+                        scheduleFlush();
+                        publishHealth(now);
+                    }
                 }
-            };
+            } catch {
+                // ignore malformed frame
+            }
+        };
 
-            directWs.onerror = () => {
-                try {
-                    directWs.close();
-                } catch {}
-            };
+        const openRoutedSocket = (url: string, slotIndex: number) => {
+            if (conn.disposed) return;
+            try {
+                const directWs = new WebSocket(url);
+                conn.directBinanceSockets[slotIndex] = directWs;
+                directWs.onmessage = handleDirectMessage;
+                directWs.onerror = () => {
+                    try {
+                        directWs.close();
+                    } catch {}
+                };
+                directWs.onclose = () => {
+                    if (conn.disposed) return;
+                    // Reconnect only this individual routed socket cleanly after 4s
+                    setTimeout(() => {
+                        if (!conn.disposed && conn.directBinanceSockets[slotIndex] === directWs) {
+                            openRoutedSocket(url, slotIndex);
+                        }
+                    }, 4000);
+                };
+            } catch {
+                // Backend stream serves as automatic seamless fallback
+            }
+        };
 
-            directWs.onclose = () => {
-                if (!conn.disposed) {
-                    conn.directReconnectTimer = setTimeout(conn.connectDirectBinance, 4000);
-                }
-            };
-        } catch {
-            // Backend stream serves as automatic seamless fallback
-        }
+        streamUrls.forEach((url, idx) => openRoutedSocket(url, idx));
     };
 
     conn.forceReconnect = () => {
@@ -1114,8 +1130,8 @@ function disposeSharedConnection(conn: SharedMarketConnection) {
         conn.healthTimer = null;
     }
 
-    closeSocketSafely(conn.directBinanceWs);
-    conn.directBinanceWs = null;
+    conn.directBinanceSockets.forEach((s) => closeSocketSafely(s));
+    conn.directBinanceSockets = [];
     closeSocketSafely(conn.ws);
     conn.ws = null;
 

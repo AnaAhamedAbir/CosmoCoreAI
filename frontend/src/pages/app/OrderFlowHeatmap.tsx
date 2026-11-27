@@ -2387,8 +2387,9 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
     const lastTradeSideRef = useRef<'buy' | 'sell'>('buy');
     const lastTickPriceRef = useRef<number>(0);
 
-    // Smart Y-axis collision avoidance: keeps BID/ASK/MARK lines & spread corridor crisp
-    // while automatically collapsing overlapping right-axis pills when zoomed out or on tight spreads.
+    // Smart Y-axis collision helper: ALWAYS keeps right-axis price pills visible (axisLabelVisible: true)
+    // on BID, ASK, and MARK lines, while compacting the inline title text ('BID'->'B', 'ASK'->'A', 'MARK'->'M')
+    // when lines sit close together on zoomed-out / tight-spread charts so nothing looks cluttered.
     const reconcileAxisLabelCollisions = useCallback(() => {
         const series = candlestickSeriesRef.current;
         if (!series) return;
@@ -2410,32 +2411,41 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         const bidHitsLast = yBid !== null && yLast !== null && Math.abs(yBid - yLast) < MIN_LABEL_GAP_PX;
         const askHitsLast = yAsk !== null && yLast !== null && Math.abs(yAsk - yLast) < MIN_LABEL_GAP_PX;
 
-        const nextBidLabelVisible = !(bidHitsLast || spreadTooTight);
-        const nextAskLabelVisible = !(askHitsLast || spreadTooTight);
+        const useFullBidTitle = !(bidHitsLast || spreadTooTight);
+        const useFullAskTitle = !(askHitsLast || spreadTooTight);
 
-        if (bidLineRef.current && lastBidLabelVisibleRef.current !== nextBidLabelVisible) {
+        if (bidLineRef.current && lastBidLabelVisibleRef.current !== useFullBidTitle) {
             try {
-                bidLineRef.current.applyOptions({ axisLabelVisible: nextBidLabelVisible });
-                lastBidLabelVisibleRef.current = nextBidLabelVisible;
+                bidLineRef.current.applyOptions({
+                    axisLabelVisible: true,
+                    title: useFullBidTitle ? 'BID' : 'B',
+                });
+                lastBidLabelVisibleRef.current = useFullBidTitle;
             } catch {}
         }
 
-        if (askLineRef.current && lastAskLabelVisibleRef.current !== nextAskLabelVisible) {
+        if (askLineRef.current && lastAskLabelVisibleRef.current !== useFullAskTitle) {
             try {
-                askLineRef.current.applyOptions({ axisLabelVisible: nextAskLabelVisible });
-                lastAskLabelVisibleRef.current = nextAskLabelVisible;
+                askLineRef.current.applyOptions({
+                    axisLabelVisible: true,
+                    title: useFullAskTitle ? 'ASK' : 'A',
+                });
+                lastAskLabelVisibleRef.current = useFullAskTitle;
             } catch {}
         }
 
         if (markLineRef.current && yMark !== null) {
             const markHitsLast = yLast !== null && Math.abs(yMark - yLast) < MIN_LABEL_GAP_PX;
-            const markHitsBid = nextBidLabelVisible && yBid !== null && Math.abs(yMark - yBid) < MIN_LABEL_GAP_PX;
-            const markHitsAsk = nextAskLabelVisible && yAsk !== null && Math.abs(yMark - yAsk) < MIN_LABEL_GAP_PX;
-            const nextMarkLabelVisible = !(markHitsLast || markHitsBid || markHitsAsk);
-            if (lastMarkLabelVisibleRef.current !== nextMarkLabelVisible) {
+            const markHitsBid = yBid !== null && Math.abs(yMark - yBid) < MIN_LABEL_GAP_PX;
+            const markHitsAsk = yAsk !== null && Math.abs(yMark - yAsk) < MIN_LABEL_GAP_PX;
+            const useFullMarkTitle = !(markHitsLast || markHitsBid || markHitsAsk);
+            if (lastMarkLabelVisibleRef.current !== useFullMarkTitle) {
                 try {
-                    markLineRef.current.applyOptions({ axisLabelVisible: nextMarkLabelVisible });
-                    lastMarkLabelVisibleRef.current = nextMarkLabelVisible;
+                    markLineRef.current.applyOptions({
+                        axisLabelVisible: true,
+                        title: useFullMarkTitle ? 'MARK' : 'M',
+                    });
+                    lastMarkLabelVisibleRef.current = useFullMarkTitle;
                 } catch {}
             }
         }
@@ -4026,7 +4036,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                 });
                 lastRenderedRef.current = price;
             } else if (lastRenderedRef.current !== price) {
-                ref.current.applyOptions({ price, title });
+                ref.current.applyOptions({ price });
                 lastRenderedRef.current = price;
             }
         } catch {
@@ -4135,10 +4145,10 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                         price: markPrice,
                         color: '#a855f7',
                         lineWidth: 1,
-                        lineStyle: LineStyle.LargeDashed,
+                        lineStyle: LineStyle.Dashed,
                         axisLabelVisible: true,
                         title: 'MARK',
-                        axisLabelColor: '#7e22ce',
+                        axisLabelColor: '#9333ea',
                         axisLabelTextColor: '#ffffff',
                     });
                     lastMarkPriceRenderedRef.current = markPrice;

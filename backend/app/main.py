@@ -900,6 +900,13 @@ async def startup_event():
     oanda_task = asyncio.create_task(oanda_streamer.start())
     running_tasks.add(oanda_task)
     oanda_task.add_done_callback(running_tasks.discard)
+
+    # Task N2: Background 1s Sub-Minute Candle Recorder (Top Binance Futures + live trade ring buffer)
+    try:
+        from app.services.subminute_candle_recorder import subminute_candle_recorder
+        subminute_candle_recorder.start()
+    except Exception as sre:
+        logger.warning(f"Could not start SubminuteCandleRecorder: {sre}")
     
     # Task D: Active Bot PnL Broadcast
     async def broadcast_active_bot_pnl():
@@ -1074,6 +1081,13 @@ async def shutdown_event():
 
     # Stop Oanda Streamer
     await oanda_streamer.stop()
+
+    # Stop Sub-Minute 1s Candle Recorder
+    try:
+        from app.services.subminute_candle_recorder import subminute_candle_recorder
+        await subminute_candle_recorder.stop()
+    except Exception as sre:
+        logger.warning(f"[Shutdown] subminute_candle_recorder.stop() failed (non-fatal): {sre}")
 
     print("✅ All background tasks stopped.")
 

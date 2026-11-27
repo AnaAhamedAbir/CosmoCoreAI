@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from app.core.redis import redis_manager
 from app.helpers.orderbook_math import calculate_dynamic_wall_threshold
 from app.services.liquidity_absorption_service import liquidity_absorption_service
+from app.services.subminute_candle_recorder import subminute_candle_recorder
 
 logger = logging.getLogger(__name__)
 
@@ -499,6 +500,15 @@ class MarketDataStreamer:
                         pipe.expire(trade_key, 3600)
                     pipe.publish(channel, json.dumps(payload, separators=(",", ":")))
                     await pipe.execute()
+
+            try:
+                await subminute_candle_recorder.record_trades(
+                    exchange_id=exchange_id,
+                    symbol=symbol,
+                    trades=batch_raw,
+                )
+            except Exception as rec_err:
+                logger.debug(f"SubminuteRecorder trades hook err: {rec_err}")
 
             try:
                 await liquidity_absorption_service.process_trades(

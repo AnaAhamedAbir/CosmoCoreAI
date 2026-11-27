@@ -8,6 +8,7 @@ from typing import Set, Dict, Any
 
 from app.services.websocket_manager import manager
 from app.core.redis import redis_manager
+from app.services.subminute_candle_recorder import subminute_candle_recorder
 
 logger = logging.getLogger(__name__)
 
@@ -258,6 +259,19 @@ class OandaStreamer:
                 }
                 await redis.publish(channel, json.dumps(ob_payload))
                 await redis.publish(channel, json.dumps(trade_payload))
+
+            try:
+                await subminute_candle_recorder.record_trades(
+                    exchange_id="oanda",
+                    symbol=self._to_ui_symbol(symbol),
+                    trades=[{
+                        "timestamp": int(dt.timestamp() * 1000),
+                        "price": round(mid_price, 5),
+                        "amount": 1.0,
+                    }],
+                )
+            except Exception as rec_err:
+                logger.debug(f"OANDA SubminuteRecorder err: {rec_err}")
 
         except Exception as e:
             logger.error(f"Error processing OANDA price: {e}")

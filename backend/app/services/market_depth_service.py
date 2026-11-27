@@ -526,7 +526,11 @@ class MarketDepthService:
         timeframe: str,
         fetch_limit: int,
     ) -> List[List[float]]:
-        """Fetches native OHLCV candles from CCXT with safe pagination above 1000 candles."""
+        """
+        Fetches native OHLCV candles from CCXT.
+        For >1000 candles (e.g. 5,000 Binance Spot 1s candles for 5s/15s/30s resampling),
+        uses bounded parallel batching via asyncio.gather (~300ms instead of sequential multi-second stalls).
+        """
         import time as _time
 
         BATCH_SIZE = 1000
@@ -538,21 +542,28 @@ class MarketDepthService:
             tf_ms: int = self._timeframe_to_seconds(timeframe) * 1000
             now_ms: int = int(_time.time() * 1000)
             since_ms: int = now_ms - (fetch_limit * tf_ms)
-            remaining: int = fetch_limit
 
-            while remaining > 0:
+            # Build non-overlapping time windows (up to 5 parallel batches = 5,000 candles)
+            batch_specs: List[tuple[int, int]] = []
+            cursor = since_ms
+            remaining = fetch_limit
+            while remaining > 0 and len(batch_specs) < 5:
                 batch = min(remaining, BATCH_SIZE)
-                chunk = await exchange.fetch_ohlcv(symbol, timeframe, since=since_ms, limit=batch)
-                if not chunk:
-                    break
-                all_ohlcv.extend(chunk)
-                remaining -= len(chunk)
-                next_since = int(chunk[-1][0]) + tf_ms
-                if next_since <= since_ms:
-                    break
-                since_ms = next_since
-                if remaining > 0:
-                    await asyncio.sleep(0.35)
+                batch_specs.append((cursor, batch))
+                cursor += batch * tf_ms
+                remaining -= batch
+
+            async def _fetch_chunk(start_ms: int, lim: int) -> List[List[float]]:
+                try:
+                    return await exchange.fetch_ohlcv(symbol, timeframe, since=start_ms, limit=lim) or []
+                except Exception as chunk_err:
+                    logger.debug(f"[OHLCV] Parallel chunk fetch skipped ({symbol} {timeframe} since={start_ms}): {chunk_err}")
+                    return []
+
+            chunks = await asyncio.gather(*[_fetch_chunk(s, b) for s, b in batch_specs])
+            for chunk in chunks:
+                if chunk:
+                    all_ohlcv.extend(chunk)
 
         seen: Dict[int, List[float]] = {}
         for candle in all_ohlcv:
@@ -571,13 +582,27 @@ class MarketDepthService:
         redis: Any,
     ) -> List[List[float]]:
         """
-        Synthesizes 1s/5s/15s/30s OHLCV candles from Redis live trades + exchange public trades
-        for venues/markets that do not expose sub-minute REST klines (e.g. Binance Futures, Bybit, OKX, etc.).
+        Builds deep 1s/5s/15s/30s OHLCV history for venues/markets without sub-minute REST klines
+        (Binance Futures, Bybit, OKX, KuCoin, Kraken, Coinbase, Gate, Bitfinex, HTX, MEXC):
+        1. First reads 24/7 recorded 1s candles from SubminuteCandleRecorder (in-memory + Redis Hash, <5ms, 0 REST calls).
+        2. When recorded history is cold/short, supplements with Redis `recent_trades` + public `fetch_trades`
+           (with up to 5 backward `fromId` pages on Binance Futures = up to 6,000 aggTrades),
+           merges into 1s bars, seeds the recorder for future instant reads, and resamples into `target_sec`.
         """
-        target_ms = target_sec * 1000
-        trades: List[Dict[str, Any]] = []
+        from app.services.subminute_candle_recorder import subminute_candle_recorder
 
-        # 1. Read live trades already buffered by MarketDataStreamer in Redis
+        target_ms = target_sec * 1000
+        recorded_1s = await subminute_candle_recorder.get_1s_candles(internal_ex, symbol)
+
+        # Target candle threshold above which recorded 1s history is already rich enough to skip REST calls
+        sufficient_target_candles = min(limit, 300 if target_sec <= 5 else (180 if target_sec <= 15 else 100))
+        if recorded_1s:
+            resampled_rec = recorded_1s if target_sec == 1 else self._resample_ohlcv(recorded_1s, target_ms)
+            if len(resampled_rec) >= sufficient_target_candles:
+                return resampled_rec[-limit:]
+
+        # Cold or partial recorder: supplement with Redis recent_trades + public REST trades
+        trades: List[Dict[str, Any]] = []
         if redis:
             try:
                 raw_cached = await redis.lrange(f"recent_trades:{internal_ex}:{symbol}", -1000, -1)
@@ -591,8 +616,7 @@ class MarketDepthService:
             except Exception as redis_err:
                 logger.debug(f"[OHLCV] Redis recent_trades read skipped for {internal_ex}:{symbol}: {redis_err}")
 
-        # Determine how much time span our cached trades already cover
-        desired_span_ms = min(max(target_sec * 30, 60), 600) * 1000
+        desired_span_ms = min(max(target_sec * 45, 90), 900) * 1000
         cached_timestamps = [
             int(float(t["timestamp"])) * (1000 if int(float(t["timestamp"])) < 10_000_000_000 else 1)
             for t in trades
@@ -600,7 +624,6 @@ class MarketDepthService:
         ]
         cached_span_ms = (max(cached_timestamps) - min(cached_timestamps)) if len(cached_timestamps) >= 2 else 0
 
-        # 2. Supplement with public exchange trades if Redis doesn't have enough history yet
         if len(trades) < 300 or cached_span_ms < desired_span_ms:
             try:
                 if internal_ex == 'krakenfutures' or base_ex == 'okx':
@@ -613,12 +636,13 @@ class MarketDepthService:
                 if rest_trades:
                     trades.extend(rest_trades)
 
-                    # On high-volume Binance Futures pairs (e.g. BTC/USDT:USDT), 1000 aggTrades may span <20s.
-                    # Do up to 2 lightweight backward aggTrade pages via fromId so 1s-30s charts look populated.
+                    # On cold-start Binance Futures pairs, fetch up to 5 backward aggTrade pages (6,000 trades)
+                    # so even immediately after server boot users see deep sub-minute history.
                     if base_ex == 'binance' and ':' in symbol:
                         try:
                             cur_batch = rest_trades
-                            for _ in range(2):
+                            max_pages = 5 if len(recorded_1s) < 120 else 2
+                            for _ in range(max_pages):
                                 ts_list = [
                                     int(float(t["timestamp"])) * (1000 if int(float(t["timestamp"])) < 10_000_000_000 else 1)
                                     for t in trades
@@ -652,7 +676,25 @@ class MarketDepthService:
             except Exception as trade_err:
                 logger.warning(f"[OHLCV] Trade synthesis REST fallback failed for {base_ex}:{symbol}: {trade_err}")
 
-        return self._aggregate_trades_to_ohlcv(trades, target_ms=target_ms, limit=limit)
+        # Build 1s bars from trades, merge with recorded 1s bars, and seed recorder so subsequent reads are 0ms
+        trade_1s = self._aggregate_trades_to_ohlcv(trades, target_ms=1000, limit=7200) if trades else []
+        if trade_1s:
+            await subminute_candle_recorder.seed_1s_candles(internal_ex, symbol, trade_1s)
+
+        merged_1s_map: Dict[int, List[float]] = {}
+        for row in trade_1s:
+            merged_1s_map[int(row[0])] = row
+        # Prefer continuously recorded live 1s bars where timestamps overlap
+        for row in recorded_1s:
+            merged_1s_map[int(row[0])] = row
+
+        merged_1s = [merged_1s_map[k] for k in sorted(merged_1s_map.keys())]
+        if not merged_1s:
+            return []
+
+        if target_sec == 1:
+            return merged_1s[-limit:]
+        return self._resample_ohlcv(merged_1s, target_ms)[-limit:]
 
     async def fetch_ohlcv(self, symbol: str, exchange_id: str, timeframe: str = '1h', limit: int = 100) -> List[Dict[str, Any]]:
         """
@@ -712,9 +754,21 @@ class MarketDepthService:
                     '45m': ('M15', 3),
                 }
 
-                # OANDA does not offer 1s REST candles; return empty gracefully so live stream ticks build 1s candles
+                # OANDA does not offer 1s REST candles; serve recorded 1s live bars from SubminuteCandleRecorder
                 if timeframe == '1s':
-                    return []
+                    from app.services.subminute_candle_recorder import subminute_candle_recorder
+                    rec_oanda_1s = await subminute_candle_recorder.get_1s_candles("oanda", symbol, max_candles=limit)
+                    return [
+                        {
+                            "time": int(r[0] / 1000),
+                            "open": float(r[1]),
+                            "high": float(r[2]),
+                            "low": float(r[3]),
+                            "close": float(r[4]),
+                            "volume": float(r[5]),
+                        }
+                        for r in rec_oanda_1s
+                    ]
 
                 resample_factor = 1
                 if timeframe in oanda_native_map:
@@ -850,16 +904,27 @@ class MarketDepthService:
                     all_ohlcv = await self._fetch_native_ohlcv(exchange, symbol, timeframe, fetch_limit)
                 else:
                     # ── Tier 2: Resample from a smaller native timeframe ───────────
-                    # e.g., Binance Spot 1s -> 5s/15s/30s; Any exchange 15m -> 45m, 1m -> 3m, 1h -> 2h/4h/6h/12h
+                    # e.g., Binance Spot 1s -> 5s/15s/30s (up to 5,000 parallel 1s bars = 1000 5s / 333 15s / 166 30s);
+                    # Any exchange 15m -> 45m, 1m -> 3m, 1h -> 2h/4h/6h/12h
                     source_tf = self._find_resample_source_tf(supported_tfs, timeframe)
                     if source_tf:
                         src_sec = self._timeframe_to_seconds(source_tf)
                         factor = max(1, target_sec // src_sec)
-                        src_limit = min(max(fetch_limit * factor, 200), 2000)
+                        max_src_cap = 5000 if src_sec < 60 else 2000
+                        src_limit = min(max(fetch_limit * factor, 200), max_src_cap)
                         logger.info(
                             f"[OHLCV] Resampling {base_ex}:{symbol} {timeframe} from native {source_tf} (src_limit={src_limit})"
                         )
                         raw_src = await self._fetch_native_ohlcv(exchange, symbol, source_tf, src_limit)
+                        # Also merge any live 1s bars recorded in memory/Redis for sub-minute accuracy
+                        if src_sec == 1:
+                            from app.services.subminute_candle_recorder import subminute_candle_recorder
+                            rec_spot_1s = await subminute_candle_recorder.get_1s_candles(internal_ex, symbol)
+                            if rec_spot_1s:
+                                merged_map = {int(r[0]): r for r in raw_src}
+                                for r in rec_spot_1s:
+                                    merged_map[int(r[0])] = r
+                                raw_src = [merged_map[k] for k in sorted(merged_map.keys())]
                         all_ohlcv = self._resample_ohlcv(raw_src, target_ms)[-fetch_limit:]
                     elif target_sec < 60:
                         # ── Tier 3: Sub-minute trade-tick OHLCV synthesis ──────────

@@ -294,7 +294,12 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
     useIcebergEvents(symbol);
     const mlSetup = useMLSetupEvents(symbol);
     const showGodMode = Boolean(indicatorSettings.showLiquidationHeatmap);
-    const godModeData = useGodModeData(symbol, showGodMode, exchange);
+    const godModeData = useGodModeData(
+        symbol,
+        showGodMode,
+        exchange,
+        indicatorSettings.liquidationPoolHorizon || '24h'
+    );
     const [sessionsData, setSessionsData] = useState<{ a: SessionData[]; b: SessionData[]; c: SessionData[]; d: SessionData[]; }>({
         a: [], b: [], c: [], d: []
     });
@@ -3967,6 +3972,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                             showGEX={indicatorSettings.liquidationShowGEX}
                             showBookmap={indicatorSettings.liquidationShowBookmap}
                             bookmapIntensity={indicatorSettings.liquidationBookmapIntensity}
+                            bookmapHistoryMinutes={indicatorSettings.liquidationBookmapHistoryMin || 120}
                             spoofingThreshold={indicatorSettings.liquidationSpoofingThreshold}
                             smartMoneyBias={indicatorSettings.liquidationSmartMoneyBias}
                             showMagnetZones={indicatorSettings.liquidationShowMagnetZones !== false}

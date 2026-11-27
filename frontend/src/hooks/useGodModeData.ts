@@ -1,9 +1,34 @@
 import { useState, useEffect, useRef } from 'react';
 import { isThermalGuardActive, subscribeThermalProfile } from '@/utils/deviceProfile';
 
+export type LiquidationPoolHorizon = '24h' | '3d' | '7d';
+
+export interface LiquidationPoolSummary {
+    horizon: LiquidationPoolHorizon;
+    total_short_liq_usd: number;
+    total_long_liq_usd: number;
+    imbalance_ratio: number;
+    dominant_side: 'ABOVE' | 'BELOW' | 'BALANCED';
+    nearest_short_pool?: {
+        price: number;
+        estimated_usd: number;
+        leverage: string;
+        dist_pct: number;
+    } | null;
+    nearest_long_pool?: {
+        price: number;
+        estimated_usd: number;
+        leverage: string;
+        dist_pct: number;
+    } | null;
+    oi_weighted: boolean;
+    swept_count_filtered: number;
+}
+
 export interface GodModeState {
     symbol: string;
     exchange?: string;
+    pool_horizon?: LiquidationPoolHorizon;
     vulnerability: any[];
     arbitrage: any[];
     pain_threshold: { level: number, status: string, value: number };
@@ -35,11 +60,19 @@ export interface GodModeState {
     liquidation_pools?: {
         price: number;
         intensity: number;
+        base_intensity?: number;
         estimated_usd?: number;
+        depleted_usd?: number;
+        is_sweeping?: boolean;
         side: 'SHORT_LIQ' | 'LONG_LIQ';
         leverage: string;
+        tier_breakdown?: string;
+        dist_pct?: number;
+        horizon?: LiquidationPoolHorizon;
+        oi_weighted?: boolean;
         source?: string;
     }[];
+    liquidation_pool_summary?: LiquidationPoolSummary;
     orderbook_depth?: { price: number, volume: number, type: 'bid' | 'ask' }[];
     spoofed_zones?: { price: number, volume: number, timestamp: number, type: string }[];
     cascade_probs: { price: number, prob: number, volume?: number }[];
@@ -62,6 +95,7 @@ export interface GodModeState {
     iceberg_events?: any[];
     history?: {
         bookmap?: { time: number; depth: { price: number; volume: number }[] }[];
+        bookmap_coverage_min?: number;
         bubbles?: any[];
         icebergs?: any[];
         spoofs?: any[];
@@ -71,12 +105,16 @@ export interface GodModeState {
 export const useGodModeData = (
     symbol: string,
     enabled: boolean = true,
-    exchange: string = 'binance'
+    exchange: string = 'binance',
+    poolHorizon: LiquidationPoolHorizon = '24h'
 ) => {
     const [godModeData, setGodModeData] = useState<GodModeState | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const thermalGuardRef = useRef<boolean>(isThermalGuardActive());
     const lastEmitAtRef = useRef<number>(0);
+    const poolHorizonRef = useRef<LiquidationPoolHorizon>(poolHorizon || '24h');
+    const lastPayloadHorizonRef = useRef<string>('');
+    poolHorizonRef.current = poolHorizon || '24h';
 
     useEffect(() => {
         thermalGuardRef.current = isThermalGuardActive();
@@ -84,6 +122,17 @@ export const useGodModeData = (
             thermalGuardRef.current = profile.isThermalGuardActive;
         });
     }, []);
+
+    // Dynamically switch liquidation pool horizon over the existing open WebSocket (zero reconnect lag)
+    useEffect(() => {
+        const ws = wsRef.current;
+        if (!enabled || !ws || ws.readyState !== WebSocket.OPEN) return;
+        try {
+            ws.send(JSON.stringify({ type: 'set_horizon', horizon: poolHorizon || '24h' }));
+        } catch {
+            // Ignore transient send errors while reconnecting
+        }
+    }, [poolHorizon, enabled]);
 
     useEffect(() => {
         if (!symbol || !enabled) {
@@ -94,10 +143,10 @@ export const useGodModeData = (
         // Clear previous symbol's stale zones/HUD immediately on symbol or exchange switch
         setGodModeData(null);
         lastEmitAtRef.current = 0;
+        lastPayloadHorizonRef.current = '';
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const baseUrl = `${protocol}//${window.location.host}`;
-        const wsUrl = `${baseUrl}/api/v1/advanced_liquidation/ws/god-mode?symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(exchange || 'binance')}`;
 
         let ws: WebSocket | null = null;
         let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -106,11 +155,21 @@ export const useGodModeData = (
 
         const connect = () => {
             if (!isSubscribed) return;
+            const connectHorizon = poolHorizonRef.current;
+            const wsUrl = `${baseUrl}/api/v1/advanced_liquidation/ws/god-mode?symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(exchange || 'binance')}&horizon=${encodeURIComponent(connectHorizon)}`;
             ws = new WebSocket(wsUrl);
             wsRef.current = ws;
 
             ws.onopen = () => {
-                console.log(`📡 Connected to God Mode Stream: ${symbol} (${exchange})`);
+                console.log(`📡 Connected to God Mode Stream: ${symbol} (${exchange}, ${connectHorizon})`);
+                // If user changed horizon while WebSocket was still CONNECTING, sync immediately
+                if (poolHorizonRef.current !== connectHorizon && ws && ws.readyState === WebSocket.OPEN) {
+                    try {
+                        ws.send(JSON.stringify({ type: 'set_horizon', horizon: poolHorizonRef.current }));
+                    } catch {
+                        // Ignore transient send error
+                    }
+                }
             };
 
             ws.onmessage = (event) => {
@@ -127,14 +186,19 @@ export const useGodModeData = (
                         return;
                     }
 
-                    // Always accept initial history hydration immediately; throttle steady ticks on mobile/tablet
+                    // Always accept initial history hydration or horizon switches immediately; throttle steady ticks on mobile/tablet
                     const now = Date.now();
                     const minIntervalMs = thermalGuardRef.current ? 1000 : 0;
                     const hasHistory = Boolean(payload.history);
-                    if (!hasHistory && minIntervalMs > 0 && now - lastEmitAtRef.current < minIntervalMs) {
+                    const incomingHorizon = String(payload.pool_horizon || '');
+                    const horizonChanged = Boolean(incomingHorizon && incomingHorizon !== lastPayloadHorizonRef.current);
+                    if (!hasHistory && !horizonChanged && minIntervalMs > 0 && now - lastEmitAtRef.current < minIntervalMs) {
                         return;
                     }
                     lastEmitAtRef.current = now;
+                    if (incomingHorizon) {
+                        lastPayloadHorizonRef.current = incomingHorizon;
+                    }
                     setGodModeData(payload);
                 } catch {
                     // silently fail on parse error to avoid spam

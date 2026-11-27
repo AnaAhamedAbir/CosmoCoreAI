@@ -149,6 +149,77 @@ export const GodModeHUD: React.FC<GodModeHUDProps> = ({ data, visible }) => {
                     </span>
                 </div>
 
+                {/* UNTAPPED LIQUIDATION POOLS IMBALANCE (OI-DELTA + SWEPT-FILTERED) */}
+                {data.liquidation_pool_summary &&
+                    (data.liquidation_pool_summary.total_short_liq_usd > 0 ||
+                        data.liquidation_pool_summary.total_long_liq_usd > 0) && (() => {
+                        const s = data.liquidation_pool_summary;
+                        const fmtUsd = (v: number) =>
+                            v >= 1_000_000_000
+                                ? `$${(v / 1_000_000_000).toFixed(2)}B`
+                                : v >= 1_000_000
+                                ? `$${(v / 1_000_000).toFixed(1)}M`
+                                : v >= 1_000
+                                ? `$${(v / 1_000).toFixed(0)}k`
+                                : `$${v}`;
+                        const abovePct = Math.round((s.imbalance_ratio ?? 0.5) * 100);
+                        const domBadge =
+                            s.dominant_side === 'ABOVE'
+                                ? { text: 'MAGNET ↑', cls: 'bg-amber-500/20 text-amber-600 dark:text-amber-400' }
+                                : s.dominant_side === 'BELOW'
+                                ? { text: 'MAGNET ↓', cls: 'bg-cyan-500/20 text-cyan-600 dark:text-cyan-400' }
+                                : { text: 'BALANCED', cls: 'bg-gray-200 dark:bg-white/10 text-gray-600 dark:text-gray-300' };
+                        return (
+                            <div className="mt-2.5 pt-2 border-t border-gray-200/70 dark:border-white/5">
+                                <div className="flex items-center justify-between mb-1">
+                                    <span className="text-[9.5px] font-bold uppercase text-gray-600 dark:text-gray-400 flex items-center gap-1">
+                                        ⚡ Pools ({String(s.horizon || '24h').toUpperCase()})
+                                        {s.oi_weighted && (
+                                            <span className="px-1 py-[1px] rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-[8px] font-mono">
+                                                OI-Δ
+                                            </span>
+                                        )}
+                                    </span>
+                                    <span className={`text-[8.5px] font-mono font-bold px-1.5 py-0.5 rounded ${domBadge.cls}`}>
+                                        {domBadge.text}
+                                    </span>
+                                </div>
+                                <div className="w-full bg-gray-200 dark:bg-gray-800 rounded-full h-1.5 overflow-hidden flex">
+                                    <div
+                                        className="h-full bg-gradient-to-r from-amber-500 to-rose-500 transition-all duration-700"
+                                        style={{ width: `${abovePct}%` }}
+                                    />
+                                    <div
+                                        className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 transition-all duration-700"
+                                        style={{ width: `${100 - abovePct}%` }}
+                                    />
+                                </div>
+                                <div className="flex justify-between mt-1 text-[9px] font-mono">
+                                    <span className="text-amber-600 dark:text-amber-400 font-bold">
+                                        ↑ {fmtUsd(s.total_short_liq_usd)}
+                                    </span>
+                                    <span className="text-cyan-600 dark:text-cyan-400 font-bold">
+                                        ↓ {fmtUsd(s.total_long_liq_usd)}
+                                    </span>
+                                </div>
+                                {(s.nearest_short_pool || s.nearest_long_pool) && (
+                                    <div className="mt-1 flex justify-between text-[8.5px] font-mono text-gray-500 dark:text-gray-400">
+                                        <span>
+                                            {s.nearest_short_pool
+                                                ? `Near ↑ ${s.nearest_short_pool.leverage} +${s.nearest_short_pool.dist_pct}%`
+                                                : 'Near ↑ --'}
+                                        </span>
+                                        <span>
+                                            {s.nearest_long_pool
+                                                ? `Near ↓ ${s.nearest_long_pool.leverage} -${s.nearest_long_pool.dist_pct}%`
+                                                : 'Near ↓ --'}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })()}
+
                 {/* OPEN INTEREST & ADAPTIVE THRESHOLD INFO */}
                 {(Boolean(data.open_interest_usd) || Boolean(data.adaptive_thresholds?.whale_usd)) && (
                     <div className="mt-2 pt-2 border-t border-gray-200/70 dark:border-white/5 flex justify-between items-center text-[9px] font-mono text-gray-500 dark:text-gray-400">

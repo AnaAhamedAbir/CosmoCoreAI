@@ -217,9 +217,11 @@ export interface IndicatorSettings {
     liquidationShowGEX: boolean;
     liquidationShowBookmap: boolean;
     liquidationBookmapIntensity: number;
+    liquidationBookmapHistoryMin?: 15 | 60 | 120;
     liquidationSpoofingThreshold: number;
     liquidationShowMagnetZones?: boolean;
     liquidationShowLeveragePools?: boolean;
+    liquidationPoolHorizon?: '24h' | '3d' | '7d';
     liquidationShowTrajectory?: boolean;
     // MSB-OB Settings
     showMsbOb: boolean;
@@ -2131,9 +2133,35 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
                                     </div>
                                     <div className="flex flex-col gap-1.5 mt-2">
                                         <label className="flex items-center justify-between cursor-pointer group">
-                                            <span className="text-amber-600 dark:text-amber-400 font-semibold group-hover:text-amber-700 dark:group-hover:text-amber-300 transition-colors">Leverage Liq Pools (10x-100x) ⚡</span>
+                                            <span className="text-amber-600 dark:text-amber-400 font-semibold group-hover:text-amber-700 dark:group-hover:text-amber-300 transition-colors">Leverage Liq Pools (5x-100x) ⚡</span>
                                             <input type="checkbox" checked={settings.liquidationShowLeveragePools !== false} onChange={() => onSettingsChange({ ...settings, liquidationShowLeveragePools: settings.liquidationShowLeveragePools === false ? true : false })} className="w-3 h-3 rounded text-amber-500 focus:ring-amber-500" />
                                         </label>
+                                        {settings.liquidationShowLeveragePools !== false && (
+                                            <div className="flex items-center justify-between gap-2 mt-1 ml-2 px-2 py-1.5 bg-gray-50 dark:bg-white/5 rounded-lg border border-amber-500/20">
+                                                <span className="text-[9.5px] text-gray-600 dark:text-gray-400 font-semibold uppercase tracking-wide">
+                                                    Pool Horizon (OI-Δ)
+                                                </span>
+                                                <div className="flex rounded overflow-hidden border border-gray-200 dark:border-white/10 text-[9px]">
+                                                    {(['24h', '3d', '7d'] as const).map((h) => {
+                                                        const active = (settings.liquidationPoolHorizon || '24h') === h;
+                                                        return (
+                                                            <button
+                                                                key={h}
+                                                                type="button"
+                                                                onClick={() => onSettingsChange({ ...settings, liquidationPoolHorizon: h })}
+                                                                className={`px-2 py-0.5 font-mono font-bold uppercase transition-all ${
+                                                                    active
+                                                                        ? 'bg-amber-500 text-white shadow-sm'
+                                                                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white bg-gray-100 dark:bg-white/5'
+                                                                }`}
+                                                            >
+                                                                {h}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="flex flex-col gap-1.5 mt-2">
                                         <label className="flex items-center justify-between cursor-pointer group">
@@ -2220,19 +2248,49 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
                                         </label>
                                         
                                         {(settings.liquidationShowBookmap ?? true) && (
-                                            <div className="flex flex-col gap-1.5 mt-2 ml-2 p-2 bg-gray-50 dark:bg-white/5 rounded-lg border border-orange-500/20">
-                                                <div className="flex justify-between items-center">
-                                                    <span className="text-[10px] text-gray-500 dark:text-gray-400 font-semibold uppercase">Heatmap Intensity</span>
-                                                    <span className="text-[10px] text-orange-600 dark:text-orange-400 font-semibold">{settings.liquidationBookmapIntensity || 50}%</span>
+                                            <div className="flex flex-col gap-2 mt-2 ml-2 p-2 bg-gray-50 dark:bg-white/5 rounded-lg border border-orange-500/20">
+                                                <div className="flex flex-col gap-1.5">
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="text-[10px] text-gray-500 dark:text-gray-400 font-semibold uppercase">Heatmap Intensity</span>
+                                                        <span className="text-[10px] text-orange-600 dark:text-orange-400 font-semibold">{settings.liquidationBookmapIntensity || 50}%</span>
+                                                    </div>
+                                                    <input 
+                                                        type="range" 
+                                                        min="10" 
+                                                        max="100" 
+                                                        value={settings.liquidationBookmapIntensity || 50} 
+                                                        onChange={(e) => updateSetting('liquidationBookmapIntensity', Number(e.target.value))}
+                                                        className="w-full accent-orange-500 h-1 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                                                    />
                                                 </div>
-                                                <input 
-                                                    type="range" 
-                                                    min="10" 
-                                                    max="100" 
-                                                    value={settings.liquidationBookmapIntensity || 50} 
-                                                    onChange={(e) => updateSetting('liquidationBookmapIntensity', Number(e.target.value))}
-                                                    className="w-full accent-orange-500 h-1 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
-                                                />
+                                                <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-gray-200/70 dark:border-white/10">
+                                                    <span className="text-[9.5px] text-gray-500 dark:text-gray-400 font-semibold uppercase tracking-wide">
+                                                        History Buffer
+                                                    </span>
+                                                    <div className="flex rounded overflow-hidden border border-gray-200 dark:border-white/10 text-[9px]">
+                                                        {([
+                                                            { v: 15 as const, label: '15M' },
+                                                            { v: 60 as const, label: '1H' },
+                                                            { v: 120 as const, label: '2H' },
+                                                        ]).map((opt) => {
+                                                            const active = (settings.liquidationBookmapHistoryMin || 120) === opt.v;
+                                                            return (
+                                                                <button
+                                                                    key={opt.v}
+                                                                    type="button"
+                                                                    onClick={() => onSettingsChange({ ...settings, liquidationBookmapHistoryMin: opt.v })}
+                                                                    className={`px-2 py-0.5 font-mono font-bold transition-all ${
+                                                                        active
+                                                                            ? 'bg-orange-500 text-white shadow-sm'
+                                                                            : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white bg-gray-100 dark:bg-white/5'
+                                                                    }`}
+                                                                >
+                                                                    {opt.label}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
                                             </div>
                                         )}
                                     </div>

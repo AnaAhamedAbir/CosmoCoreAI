@@ -5,15 +5,16 @@ import time
 from collections import deque
 from typing import Dict, Any, Callable, Awaitable, List, Optional, Tuple
 
-import aiohttp
 import ccxt.pro as ccxtpro
 from ccxt.base.errors import NetworkError
 
 from app.services.true_cvd_service import TrueCVDService
 from app.services.gex_options_service import GEXOptionsService
 from app.services.bookmap_heatmap_service import bookmap_heatmap_service
-from app.services.derivatives_service import derivatives_service, _normalize_futures_symbol
+from app.services.bookmap_history_store import BookmapHistoryStore
+from app.services.derivatives_service import derivatives_service
 from app.services.smart_money_trajectory_service import SmartMoneyTrajectoryService
+from app.services.liquidation_pool_engine import LiquidationPoolEngine, normalize_pool_horizon
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,9 @@ class GodModeRunner:
         self.true_cvd_service = TrueCVDService()
         self.gex_options_service = GEXOptionsService()
         self.smart_trajectory_service = SmartMoneyTrajectoryService()
+        self.pool_engine = LiquidationPoolEngine(self.symbol)
+        self.pool_horizon = "24h"
+        self._active_horizons: set = {"24h"}
 
         self.state = self._initial_state(self.symbol, self.primary_exchange)
         self._last_prices = {"binance": 0.0, "bybit": 0.0, "okx": 0.0, "bitget": 0.0}
@@ -65,9 +69,8 @@ class GodModeRunner:
         self._thresholds = self._compute_adaptive_thresholds(0.0)
         self.state["adaptive_thresholds"] = dict(self._thresholds)
 
-        # Bounded ring buffers for historical hydration on reconnect / page load
-        self._bookmap_history: deque = deque(maxlen=240)  # ~8 min @ 2s interval
-        self._last_bookmap_hist_ts = 0.0
+        # Persistent 2-hour Bookmap history (Redis ZSET + DB fallback) & bounded ring buffers
+        self.bookmap_store = BookmapHistoryStore(self.symbol, self.primary_exchange)
         self._bubble_history: deque = deque(maxlen=50)
         self._iceberg_history: deque = deque(maxlen=25)
         self._spoof_history: deque = deque(maxlen=30)
@@ -86,6 +89,8 @@ class GodModeRunner:
             "magnet_zones": [],
             "smoothed_zones": [],
             "liquidation_pools": [],
+            "liquidation_pool_summary": LiquidationPoolEngine._empty_summary("24h"),
+            "pool_horizon": "24h",
             "spoofed_zones": [],
             "cascade_probs": [],
             "orderbook_depth": [],
@@ -129,17 +134,55 @@ class GodModeRunner:
             "twls_prune_usd": float(max(500, round(5_000 * scale))),
         }
 
-    def get_initial_snapshot(self) -> Dict[str, Any]:
-        """Returns current state plus bounded ring-buffer history for first-connect hydration."""
-        snapshot = dict(self.state)
+    def get_initial_snapshot(self, horizon: Optional[str] = None) -> Dict[str, Any]:
+        """Returns current state plus persistent 2-hour Bookmap & bounded ring-buffer history."""
+        snapshot = self.get_state_for_horizon(horizon)
         now = time.time()
         snapshot["history"] = {
-            "bookmap": list(self._bookmap_history),
+            "bookmap": self.bookmap_store.get_hydrated_history(window_minutes=120, max_points=420),
+            "bookmap_coverage_min": self.bookmap_store.get_coverage_minutes(),
             "bubbles": [b for b in self._bubble_history if (now * 1000 - b.get("timestamp", 0)) < 900_000],
             "icebergs": [ev for ev in self._iceberg_history if (now * 1000 - ev.get("timestamp", 0)) < 900_000],
             "spoofs": [sp for sp in self._spoof_history if (now - sp.get("timestamp", 0)) < 900],
         }
         return snapshot
+
+    def get_state_for_horizon(self, horizon: Optional[str] = None) -> Dict[str, Any]:
+        """Returns a state copy with pools/summary strictly matched to the requested lookback horizon."""
+        h = normalize_pool_horizon(horizon or self.pool_horizon)
+        snapshot = dict(self.state)
+        snapshot["pool_horizon"] = h
+        if self.pool_engine.has_cached(h):
+            pools, summary = self.pool_engine.get_cached(h)
+            snapshot["liquidation_pools"] = pools
+            snapshot["liquidation_pool_summary"] = summary
+        else:
+            # Never leak another horizon's pools under a mismatched horizon label while fetching
+            snapshot["liquidation_pools"] = []
+            snapshot["liquidation_pool_summary"] = LiquidationPoolEngine._empty_summary(h)
+        return snapshot
+
+    async def ensure_pool_horizon(self, horizon: str = "24h", force: bool = False) -> Dict[str, Any]:
+        """Ensures pools for the given horizon (24h/3d/7d) are computed and cached without restarting WS streams."""
+        h = normalize_pool_horizon(horizon)
+        self.pool_horizon = h
+        self._active_horizons.add(h)
+        # Hydrate live OI/volume before first pool calculation on cold start so USD estimates are accurate immediately
+        if self._open_interest_usd <= 0 or self._quote_volume_24h <= 0:
+            try:
+                stats = await derivatives_service.get_market_stats(self.symbol)
+                if stats.get("open_interest_usd", 0) > 0:
+                    self._open_interest_usd = float(stats["open_interest_usd"])
+                    self.state["open_interest_usd"] = self._open_interest_usd
+                if stats.get("quote_volume_24h", 0) > 0:
+                    self._quote_volume_24h = float(stats["quote_volume_24h"])
+                    self.state["quote_volume_24h"] = self._quote_volume_24h
+                if self.state.get("current_price", 0) <= 0 and stats.get("mark_price", 0) > 0:
+                    self.state["current_price"] = float(stats["mark_price"])
+            except Exception:
+                pass
+        await self._update_liquidation_pools(horizon=h, force=force)
+        return self.get_state_for_horizon(h)
 
     def register_callback(self, callback: Callable[[Dict[str, Any]], Awaitable[None]]):
         self.last_active_at = time.time()
@@ -254,112 +297,30 @@ class GodModeRunner:
                 self.state["adaptive_thresholds"] = dict(new_thresholds)
                 self.true_cvd_service.absorption_threshold_usd = new_thresholds["absorption_usd"]
 
-                await self._update_liquidation_pools()
+                await self._update_liquidation_pools(force=True)
             except Exception as e:
                 logger.debug(f"GodMode derivatives/pools err ({self.symbol}): {e}")
             await asyncio.sleep(30)
 
-    async def _update_liquidation_pools(self):
+    async def _update_liquidation_pools(self, horizon: Optional[str] = None, force: bool = False):
         """
-        Estimates 100x/50x/25x/10x leveraged liquidation clusters around recent 15m swing/volume pivots.
+        Delegates to the modular LiquidationPoolEngine (OI-Delta weighted + strict swept-pool
+        invalidation + multi-horizon 24h/3d/7d caching).
         """
-        norm_sym = _normalize_futures_symbol(self.symbol)
-        klines: List[Any] = []
-        timeout = aiohttp.ClientTimeout(total=6.0)
-        try:
-            url = f"https://fapi.binance.com/fapi/v1/klines?symbol={norm_sym}&interval=15m&limit=96"
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(url) as resp:
-                    if resp.status == 200:
-                        klines = await resp.json()
-        except Exception as e:
-            logger.debug(f"Liquidation pool kline fetch err ({norm_sym}): {e}")
-
-        if not klines or len(klines) < 10:
-            return
-
-        cp = self.state["current_price"] or float(klines[-1][4])
-        if cp <= 0:
-            return
-
-        highs = [float(k[2]) for k in klines]
-        lows = [float(k[3]) for k in klines]
-        quote_vols = [float(k[7]) for k in klines]
-        avg_vol = max(1.0, sum(quote_vols) / len(quote_vols))
-
-        # Detect swing/high-volume entry anchors (5-bar pivot window)
-        anchors: List[Tuple[str, float, float]] = []
-        for i in range(2, len(klines) - 2):
-            vol_weight = min(3.0, quote_vols[i] / avg_vol)
-            if lows[i] <= min(lows[i - 2 : i + 3]):
-                anchors.append(("LONG", lows[i], vol_weight))
-            if highs[i] >= max(highs[i - 2 : i + 3]):
-                anchors.append(("SHORT", highs[i], vol_weight))
-
-        if not anchors:
-            return
-
-        # Leverage tiers & maintenance margin buffer (~0.4%)
-        tiers = [(100, 0.25), (50, 0.35), (25, 0.25), (10, 0.15)]
-        mmr = 0.004
-        bin_size = max(1e-9, cp * 0.0015)
-        pools_by_bin: Dict[Tuple[str, int], Dict[str, Any]] = {}
-        oi_ref = self._open_interest_usd if self._open_interest_usd > 0 else max(1_000_000.0, self._quote_volume_24h * 0.15)
-
-        for side, anchor_price, vol_weight in anchors:
-            for lev, lev_weight in tiers:
-                offset = (1.0 / lev) - mmr
-                if side == "LONG":
-                    liq_price = anchor_price * (1.0 - offset)
-                    pool_side = "LONG_LIQ"
-                    if liq_price >= cp * 0.998 or liq_price < cp * 0.88:
-                        continue
-                else:
-                    liq_price = anchor_price * (1.0 + offset)
-                    pool_side = "SHORT_LIQ"
-                    if liq_price <= cp * 1.002 or liq_price > cp * 1.12:
-                        continue
-
-                bin_idx = int(round(liq_price / bin_size))
-                key = (pool_side, bin_idx)
-                score = vol_weight * lev_weight
-                if key not in pools_by_bin:
-                    pools_by_bin[key] = {
-                        "price": bin_idx * bin_size,
-                        "side": pool_side,
-                        "leverage": f"{lev}x",
-                        "score": score,
-                        "dominant_lev_score": score,
-                    }
-                else:
-                    entry = pools_by_bin[key]
-                    entry["score"] += score
-                    if score > entry["dominant_lev_score"]:
-                        entry["dominant_lev_score"] = score
-                        entry["leverage"] = f"{lev}x"
-
-        if not pools_by_bin:
-            self.state["liquidation_pools"] = []
-            return
-
-        max_score = max(p["score"] for p in pools_by_bin.values()) or 1.0
-        total_score = sum(p["score"] for p in pools_by_bin.values()) or 1.0
-        sorted_pools = sorted(pools_by_bin.values(), key=lambda x: x["score"], reverse=True)[:12]
-
-        formatted_pools = []
-        for p in sorted_pools:
-            intensity = min(100, max(15, int((p["score"] / max_score) * 100)))
-            est_usd = round((p["score"] / total_score) * oi_ref * 0.25)
-            formatted_pools.append({
-                "price": p["price"],
-                "intensity": intensity,
-                "estimated_usd": est_usd,
-                "side": p["side"],
-                "leverage": p["leverage"],
-                "source": "LEVERAGE_POOL",
-            })
-
-        self.state["liquidation_pools"] = formatted_pools
+        target_horizons = [normalize_pool_horizon(horizon)] if horizon else list(self._active_horizons or {self.pool_horizon})
+        cp = float(self.state.get("current_price") or 0.0)
+        for h in target_horizons:
+            pools, summary = await self.pool_engine.compute_pools(
+                horizon=h,
+                current_price=cp,
+                open_interest_usd=self._open_interest_usd,
+                quote_volume_24h=self._quote_volume_24h,
+                force=force,
+            )
+            if h == self.pool_horizon:
+                self.state["liquidation_pools"] = pools
+                self.state["liquidation_pool_summary"] = summary
+                self.state["pool_horizon"] = h
 
     async def _watch_liquidations(self, ex_id: str):
         exchange = await self._init_exchange(ex_id)
@@ -388,9 +349,14 @@ class GodModeRunner:
                 ticker = await exchange.watch_ticker(ex_symbol)
                 price = getattr(ticker, "last", ticker.get("last"))
                 if price:
-                    self._last_prices[ex_id] = float(price)
+                    p_float = float(price)
+                    self._last_prices[ex_id] = p_float
                     if ex_id == self.primary_exchange or self.state["current_price"] <= 0:
-                        self.state["current_price"] = float(price)
+                        self.state["current_price"] = p_float
+                        if self.pool_engine.prune_swept_by_live_price(p_float):
+                            pools, summary = self.pool_engine.get_cached(self.pool_horizon)
+                            self.state["liquidation_pools"] = pools
+                            self.state["liquidation_pool_summary"] = summary
             except Exception:
                 await asyncio.sleep(5)
 
@@ -406,6 +372,15 @@ class GodModeRunner:
 
         self.state["current_price"] = price
         now = time.time()
+
+        # Real-time multi-exchange liquidation pool depletion
+        pool_side = "LONG_LIQ" if side == "sell" else "SHORT_LIQ"
+        self.pool_engine.record_live_liquidation(price, usd_value, pool_side)
+        self.pool_engine.prune_swept_by_live_price(price)
+        pools, summary = self.pool_engine.get_cached(self.pool_horizon)
+        if pools or self.state.get("liquidation_pools"):
+            self.state["liquidation_pools"] = pools
+            self.state["liquidation_pool_summary"] = summary
 
         is_smart = usd_value > self._thresholds["smart_usd"]
         self._liq_history_1m.append({"time": now, "value": usd_value, "is_smart": is_smart})
@@ -651,12 +626,8 @@ class GodModeRunner:
                     ]
 
                     orderbook_depth = bookmap_heatmap_service.process_orderbook(bids, asks, cp)
-                    if orderbook_depth and (now_ts - self._last_bookmap_hist_ts >= 2.0):
-                        self._last_bookmap_hist_ts = now_ts
-                        self._bookmap_history.append({
-                            "time": int(now_ts * 1000),
-                            "depth": [{"price": d["price"], "volume": d["volume"]} for d in orderbook_depth],
-                        })
+                    if orderbook_depth:
+                        self.bookmap_store.record_snapshot(orderbook_depth, now_ts)
 
                     self.state["magnet_zones"] = magnet_zones
                     self.state["smoothed_zones"] = smoothed_zones
@@ -739,6 +710,9 @@ class GodModeRunner:
             self.last_active_at = time.time()
             logger.info(f"GodModeRunner initializing for {self.symbol} ({self.primary_exchange})")
 
+            # Pre-hydrate up to 2h persisted Bookmap history in background so startup stays instant
+            self._active_tasks.append(asyncio.create_task(self.bookmap_store.hydrate_from_persistence()))
+
             self._active_tasks.append(asyncio.create_task(self._broadcast_loop()))
             self._active_tasks.append(asyncio.create_task(self._calculate_heuristics_loop()))
             self._active_tasks.append(asyncio.create_task(self._scan_global_vulnerabilities()))
@@ -793,7 +767,14 @@ class GodModeRunner:
                 pass
             self.gex_options_service.remove_callback(self._handle_gex_event)
 
+            try:
+                await self.bookmap_store.flush_latest()
+            except Exception:
+                pass
+
             self.smart_trajectory_service.reset()
+            self.pool_engine.reset()
+            self._active_horizons = {self.pool_horizon}
             self._liq_history_1m = []
             self._smoothed_zones_dict = {}
             self._max_volumes = {}
@@ -863,9 +844,69 @@ class GodModeService:
             for r in list(self._runners.values()):
                 r.remove_callback(callback)
 
-    def get_initial_snapshot(self, symbol: str = "BTC/USDT", exchange: Optional[str] = None) -> Dict[str, Any]:
+    def get_initial_snapshot(
+        self,
+        symbol: str = "BTC/USDT",
+        exchange: Optional[str] = None,
+        horizon: Optional[str] = None,
+    ) -> Dict[str, Any]:
         runner = self.get_or_create_runner(symbol, exchange)
-        return runner.get_initial_snapshot()
+        return runner.get_initial_snapshot(horizon=horizon)
+
+    def get_state_for_horizon(
+        self,
+        symbol: str = "BTC/USDT",
+        exchange: Optional[str] = None,
+        horizon: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        runner = self.get_or_create_runner(symbol, exchange)
+        return runner.get_state_for_horizon(horizon=horizon)
+
+    async def ensure_horizon(
+        self,
+        symbol: str = "BTC/USDT",
+        exchange: Optional[str] = None,
+        horizon: str = "24h",
+        force: bool = False,
+    ) -> Dict[str, Any]:
+        runner = self.get_or_create_runner(symbol, exchange)
+        return await runner.ensure_pool_horizon(horizon=horizon, force=force)
+
+    async def ensure_bookmap_hydrated(
+        self,
+        symbol: str = "BTC/USDT",
+        exchange: Optional[str] = None,
+    ) -> int:
+        runner = self.get_or_create_runner(symbol, exchange)
+        return await runner.bookmap_store.hydrate_from_persistence()
+
+    async def get_bookmap_history(
+        self,
+        symbol: str = "BTC/USDT",
+        exchange: Optional[str] = None,
+        minutes: int = 120,
+    ) -> Dict[str, Any]:
+        """
+        Returns up to 2h of Bookmap history without creating/evicting idle runners or mutating _active_key.
+        Uses the live runner's store if active, otherwise reads directly from a temporary BookmapHistoryStore.
+        """
+        key = self._make_key(symbol, exchange)
+        safe_min = max(5, min(120, int(minutes or 120)))
+        runner = self._runners.get(key)
+        if runner is not None:
+            store = runner.bookmap_store
+        else:
+            store = BookmapHistoryStore(key[0], key[1])
+        await store.hydrate_from_persistence()
+        snapshots = store.get_hydrated_history(window_minutes=safe_min, max_points=600)
+        return {
+            "symbol": key[0],
+            "exchange": key[1],
+            "minutes": safe_min,
+            "coverage_min": store.get_coverage_minutes(),
+            "count": len(snapshots),
+            "snapshots": snapshots,
+        }
 
     async def start(self, symbol: str, exchange: Optional[str] = None):
         async with self._pool_lock:

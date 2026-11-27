@@ -112,10 +112,16 @@ export const sanitizeIndicatorSettings = (settings: IndicatorSettings): Indicato
             Number.isFinite(Number(settings.liquidationBookmapIntensity)) && Number(settings.liquidationBookmapIntensity) >= 10
                 ? Math.min(100, Number(settings.liquidationBookmapIntensity))
                 : 50,
+        liquidationBookmapHistoryMin: ([15, 60, 120].includes(Number(settings.liquidationBookmapHistoryMin))
+            ? Number(settings.liquidationBookmapHistoryMin)
+            : 120) as 15 | 60 | 120,
         liquidationSpoofingThreshold:
             Number.isFinite(Number(settings.liquidationSpoofingThreshold)) && Number(settings.liquidationSpoofingThreshold) >= 100000
                 ? Number(settings.liquidationSpoofingThreshold)
                 : 500000,
+        liquidationPoolHorizon: (['24h', '3d', '7d'].includes(String(settings.liquidationPoolHorizon))
+            ? settings.liquidationPoolHorizon
+            : '24h') as '24h' | '3d' | '7d',
     };
 };
 
@@ -316,9 +322,11 @@ export const DEFAULT_INDICATOR_SETTINGS: IndicatorSettings = {
         liquidationShowGEX: true,
         liquidationShowBookmap: true,
         liquidationBookmapIntensity: 50,
+        liquidationBookmapHistoryMin: 120,
         liquidationSpoofingThreshold: 500000,
         liquidationShowMagnetZones: true,
         liquidationShowLeveragePools: true,
+        liquidationPoolHorizon: '24h',
         liquidationShowTrajectory: true,
         // Supertrend Defaults
         showSupertrend: true,

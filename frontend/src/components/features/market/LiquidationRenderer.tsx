@@ -24,6 +24,7 @@ interface LiquidationRendererProps {
     showGEX?: boolean;
     showBookmap?: boolean;
     bookmapIntensity?: number;
+    bookmapHistoryMinutes?: number;
     spoofingThreshold?: number;
     smartMoneyBias?: boolean;
     showMagnetZones?: boolean;
@@ -53,6 +54,12 @@ interface MergedZone {
     volume?: number;
     prob?: number;
     leverage?: string;
+    tierBreakdown?: string;
+    distPct?: number;
+    horizon?: string;
+    oiWeighted?: boolean;
+    depletedUsd?: number;
+    isSweeping?: boolean;
     estimatedUsd?: number;
     kind: 'magnet' | 'pool';
     side?: 'SHORT_LIQ' | 'LONG_LIQ';
@@ -74,6 +81,60 @@ function snapToNearestCandleTime(targetSec: number, candleTimes: number[]): numb
         else hi = mid - 1;
     }
     return candleTimes[Math.max(0, hi)];
+}
+
+function findCandleIndex(targetSec: number, candleTimes: number[]): number {
+    let lo = 0;
+    let hi = candleTimes.length - 1;
+    while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        const val = candleTimes[mid];
+        if (val === targetSec) return mid;
+        if (val < targetSec) lo = mid + 1;
+        else hi = mid - 1;
+    }
+    return Math.max(0, Math.min(candleTimes.length - 1, hi));
+}
+
+function compactBookmapHistory(
+    snapshots: BookmapSnapshot[],
+    maxSnapshots: number,
+    retentionMs: number,
+    nowMs: number
+): BookmapSnapshot[] {
+    const cutoff = nowMs - retentionMs;
+    let filtered = snapshots.filter((s) => s.time >= cutoff);
+    if (filtered.length <= maxSnapshots) return filtered;
+
+    // Two-tier compaction: preserve crisp high-res recent 10 minutes, downsample only older archive
+    const recentSplit = nowMs - 10 * 60 * 1000;
+    const older: BookmapSnapshot[] = [];
+    const recent: BookmapSnapshot[] = [];
+    for (let i = 0; i < filtered.length; i++) {
+        if (filtered[i].time < recentSplit) older.push(filtered[i]);
+        else recent.push(filtered[i]);
+    }
+
+    const recentBudget = Math.min(recent.length, Math.max(120, Math.floor(maxSnapshots * 0.45)));
+    const olderBudget = Math.max(40, maxSnapshots - recentBudget);
+
+    const downsample = (arr: BookmapSnapshot[], target: number): BookmapSnapshot[] => {
+        if (arr.length <= target || target <= 0) return arr;
+        if (target === 1) return [arr[arr.length - 1]];
+        const step = (arr.length - 1) / (target - 1);
+        const out: BookmapSnapshot[] = [];
+        let lastIdx = -1;
+        for (let k = 0; k < target; k++) {
+            const idx = Math.min(arr.length - 1, Math.round(k * step));
+            if (idx !== lastIdx) {
+                out.push(arr[idx]);
+                lastIdx = idx;
+            }
+        }
+        return out;
+    };
+
+    return [...downsample(older, olderBudget), ...downsample(recent, recentBudget)];
 }
 
 function formatPriceLabel(price: number): string {
@@ -118,6 +179,7 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
             showGEX,
             showBookmap,
             bookmapIntensity,
+            bookmapHistoryMinutes,
             spoofingThreshold,
             smartMoneyBias,
             showMagnetZones,
@@ -283,17 +345,23 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
             });
         }
 
-        // 1.25 Draw Estimated Leveraged Liquidation Pools (10x / 25x / 50x / 100x)
+        // 1.25 Draw Estimated Leveraged Liquidation Pools (5x / 10x / 25x / 50x / 100x — OI-Delta & Unswept)
         if (showLeveragePools && data.liquidation_pools && data.liquidation_pools.length > 0) {
             data.liquidation_pools.forEach((pool) => {
                 const p = Number(pool.price);
                 const intensity = Number(pool.intensity);
-                if (!Number.isFinite(p) || !Number.isFinite(intensity) || intensity < 15) return;
+                if (!Number.isFinite(p) || !Number.isFinite(intensity) || intensity < 12) return;
 
                 allInteractiveZones.push({
                     price: p,
                     intensity,
                     leverage: pool.leverage,
+                    tierBreakdown: pool.tier_breakdown,
+                    distPct: pool.dist_pct,
+                    horizon: pool.horizon,
+                    oiWeighted: pool.oi_weighted,
+                    depletedUsd: pool.depleted_usd,
+                    isSweeping: pool.is_sweeping,
                     estimatedUsd: pool.estimated_usd,
                     kind: 'pool',
                     side: pool.side,
@@ -304,15 +372,24 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
 
                 const isShortPool = pool.side === 'SHORT_LIQ' || (currentPrice > 0 && p > currentPrice);
                 const barHeight = Math.max(3, Math.min(12, (intensity / 100) * 12));
-                const alpha = Math.min(0.65, (intensity / 100) * (effectiveIntensityScale / 100) * 0.55);
+                const alpha = Math.min(0.68, (intensity / 100) * (effectiveIntensityScale / 100) * 0.58);
                 const rgb = isShortPool ? '245, 158, 11' : '6, 182, 212'; // Amber for Short Liq Pools, Cyan for Long Liq Pools
 
                 const grad = ctx.createLinearGradient(0, 0, W, 0);
                 grad.addColorStop(0, `rgba(${rgb}, ${alpha * 0.15})`);
                 grad.addColorStop(0.65, `rgba(${rgb}, ${alpha * 0.35})`);
-                grad.addColorStop(1, `rgba(${rgb}, ${alpha * 0.75})`);
+                grad.addColorStop(1, `rgba(${rgb}, ${alpha * 0.78})`);
                 ctx.fillStyle = grad;
                 ctx.fillRect(0, yCenter - barHeight / 2, W, barHeight);
+
+                if (pool.is_sweeping) {
+                    ctx.beginPath();
+                    ctx.strokeStyle = `rgba(${rgb}, 0.9)`;
+                    ctx.setLineDash([6, 3]);
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(0, yCenter - barHeight / 2, W, barHeight);
+                    ctx.setLineDash([]);
+                }
 
                 let textY = yCenter;
                 for (let i = 0; i < 10; i++) {
@@ -333,8 +410,10 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
                     ctx.textAlign = 'right';
                     ctx.textBaseline = 'middle';
                     const usdTag = pool.estimated_usd ? ` ${formatCompactUsd(pool.estimated_usd)}` : '';
+                    const horizonTag = pool.horizon && pool.horizon !== '24h' ? ` · ${pool.horizon.toUpperCase()}` : '';
+                    const sweepTag = pool.is_sweeping ? ' [SWEEPING]' : '';
                     ctx.fillText(
-                        `⚡ ${pool.leverage} POOL${usdTag} @ ${formatPriceLabel(p)}`,
+                        `⚡ ${pool.leverage} POOL${usdTag}${horizonTag}${sweepTag} @ ${formatPriceLabel(p)}`,
                         W - 8,
                         textY
                     );
@@ -403,26 +482,48 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
             }
         }
 
-        // 1.6 Draw Bookmap Style Continuous Clouds & Liquidity Lines (Anchored to Latest Candle + Zoom)
+        // 1.6 Draw Bookmap Style Continuous Clouds & Liquidity Lines (True Candle-Time Aligned, 2H Scrollback)
         if (showBookmap && bookmapHistoryRef.current.length > 0 && effectiveCandleTimes.length >= 2) {
-            const snapshots = bookmapHistoryRef.current;
-            const lastIdx = effectiveCandleTimes.length - 1;
-            const lastBarTime = effectiveCandleTimes[lastIdx];
-            const prevBarTime = effectiveCandleTimes[lastIdx - 1];
+            const windowMs = Math.max(15, Math.min(120, Number(bookmapHistoryMinutes) || 120)) * 60 * 1000;
+            const windowCutoff = now - windowMs;
+            const allSnapshots = bookmapHistoryRef.current;
+            const snapshots =
+                allSnapshots[0].time >= windowCutoff
+                    ? allSnapshots
+                    : allSnapshots.filter((s) => s.time >= windowCutoff);
 
-            let anchorX: number | null =
-                typeof (timeScale as any).logicalToCoordinate === 'function'
-                    ? ((timeScale as any).logicalToCoordinate(lastIdx) as number | null)
-                    : (timeScale.timeToCoordinate(lastBarTime as any) as number | null);
+            if (snapshots.length > 0) {
+                const lastIdx = effectiveCandleTimes.length - 1;
+                const lastBarTime = effectiveCandleTimes[lastIdx];
+                // Compute robust median bar interval over recent bars (immune to duplicate ticks/gaps)
+                const recentDiffs: number[] = [];
+                for (let idx = Math.max(1, lastIdx - 5); idx <= lastIdx; idx++) {
+                    const diff = effectiveCandleTimes[idx] - effectiveCandleTimes[idx - 1];
+                    if (diff > 0) recentDiffs.push(diff);
+                }
+                recentDiffs.sort((a, b) => a - b);
+                const barIntervalSec =
+                    recentDiffs.length > 0
+                        ? recentDiffs[Math.floor(recentDiffs.length / 2)]
+                        : Math.max(1, lastBarTime - effectiveCandleTimes[lastIdx - 1]);
 
-            if (anchorX === null) {
-                anchorX = timeScale.timeToCoordinate(lastBarTime as any) as number | null;
-            }
+                const hasLogicalToCoord = typeof (timeScale as any).logicalToCoordinate === 'function';
+                const coordForIndex = (idx: number): number | null => {
+                    try {
+                        if (hasLogicalToCoord) {
+                            const c = (timeScale as any).logicalToCoordinate(idx) as number | null;
+                            if (c !== null && Number.isFinite(c)) return c;
+                        }
+                        const tc = timeScale.timeToCoordinate(effectiveCandleTimes[idx] as any) as number | null;
+                        return tc !== null && Number.isFinite(tc) ? tc : null;
+                    } catch {
+                        return null;
+                    }
+                };
 
-            if (anchorX !== null) {
                 let barSpacingPx = 8;
-                const xLast = timeScale.timeToCoordinate(lastBarTime as any) as number | null;
-                const xPrev = timeScale.timeToCoordinate(prevBarTime as any) as number | null;
+                const xLast = coordForIndex(lastIdx);
+                const xPrev = coordForIndex(lastIdx - 1);
                 if (xLast !== null && xPrev !== null && xLast > xPrev) {
                     barSpacingPx = xLast - xPrev;
                 } else {
@@ -432,18 +533,55 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
                     }
                 }
 
-                // Scale horizontal time-flow speed with chart zoom while keeping snapshots anchored to anchorX
-                const zoomFactor = Math.max(0.5, Math.min(2.5, barSpacingPx / 10));
-                const pxPerSec = 14 * zoomFactor;
-                const newestTimeMs = snapshots[snapshots.length - 1].time;
+                const firstBarTime = effectiveCandleTimes[0];
+                const firstX = coordForIndex(0);
+                const toTimeX = (timeMs: number): number | null => {
+                    const tSec = timeMs / 1000;
+                    if (tSec >= lastBarTime) {
+                        if (xLast === null) return null;
+                        const frac = Math.max(0, Math.min(2.0, (tSec - lastBarTime) / barIntervalSec));
+                        return xLast + (frac - 0.5) * barSpacingPx;
+                    }
+                    if (tSec <= firstBarTime) {
+                        if (firstX === null) return null;
+                        const barsBack = (firstBarTime - tSec) / barIntervalSec;
+                        return firstX - (barsBack + 0.5) * barSpacingPx;
+                    }
+                    const k = findCandleIndex(tSec, effectiveCandleTimes);
+                    const xK = coordForIndex(k);
+                    if (xK === null) return null;
+                    const nextT = k + 1 <= lastIdx ? effectiveCandleTimes[k + 1] : effectiveCandleTimes[k] + barIntervalSec;
+                    const stepSec = Math.max(1, nextT - effectiveCandleTimes[k]);
+                    const frac = Math.max(0, Math.min(1, (tSec - effectiveCandleTimes[k]) / stepSec));
+                    return xK + (frac - 0.5) * barSpacingPx;
+                };
 
-                let maxVol = 1;
-                const recentSnapshots = snapshots.slice(-15);
-                recentSnapshots.forEach((h) => {
-                    h.depth.forEach((d) => {
-                        if (d.volume > maxVol) maxVol = d.volume;
-                    });
-                });
+                const xPositions: (number | null)[] = snapshots.map((s) => toTimeX(s.time));
+                const maxGapSec = Math.max(90, barIntervalSec * 1.5);
+
+                // Viewport-aware contrast normalization so scrolling back 1-2h stays crisp and readable
+                let maxVol = 0;
+                for (let i = 0; i < snapshots.length; i++) {
+                    const xs = xPositions[i];
+                    if (xs === null) continue;
+                    const nextXs = i < snapshots.length - 1 ? xPositions[i + 1] : xs + barSpacingPx * 2;
+                    const xe = nextXs !== null ? nextXs : xs + barSpacingPx;
+                    if (xe < -20 || xs > W + 20) continue;
+                    const d = snapshots[i].depth;
+                    for (let j = 0; j < d.length; j++) {
+                        if (d[j].volume > maxVol) maxVol = d[j].volume;
+                    }
+                }
+                if (maxVol <= 0) {
+                    const recentSlice = snapshots.slice(-15);
+                    for (let i = 0; i < recentSlice.length; i++) {
+                        const d = recentSlice[i].depth;
+                        for (let j = 0; j < d.length; j++) {
+                            if (d[j].volume > maxVol) maxVol = d[j].volume;
+                        }
+                    }
+                }
+                if (maxVol <= 0) maxVol = 1;
 
                 // Match BookmapHeatmapService bucket size (0.05 / 50 = 0.1% of price) so levels blend smoothly
                 const refPrice = currentPrice > 0 ? currentPrice : 1;
@@ -457,22 +595,30 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
                 const intensityMultiplier = (bookmapIntensity || 50) / 50;
                 const minCellThreshold = isThermalGuard ? 0.14 : 0.08;
 
-                // Pre-compute continuous edge-to-edge X bounds for every snapshot
-                const xPositions = snapshots.map(
-                    (s) => anchorX! - ((newestTimeMs - s.time) / 1000) * pxPerSec
-                );
-
                 for (let i = 0; i < snapshots.length; i++) {
                     const xStart = xPositions[i];
-                    const xEnd =
-                        i < snapshots.length - 1
-                            ? xPositions[i + 1]
-                            : Math.min(W, anchorX + Math.max(36, barSpacingPx * 2.5));
+                    if (xStart === null) continue;
+
+                    let xEnd: number;
+                    if (i < snapshots.length - 1) {
+                        const nextX = xPositions[i + 1];
+                        const gapSec = (snapshots[i + 1].time - snapshots[i].time) / 1000;
+                        if (nextX !== null && gapSec <= maxGapSec) {
+                            xEnd = nextX;
+                        } else {
+                            // Cap strip width cleanly across offline/disconnected gaps instead of smearing
+                            const capPx = Math.max(2, Math.min(barSpacingPx * 1.2, (maxGapSec / barIntervalSec) * barSpacingPx));
+                            xEnd = xStart + capPx;
+                        }
+                    } else {
+                        xEnd = Math.min(W, xStart + Math.max(24, barSpacingPx * 2.0));
+                    }
 
                     if (xEnd < 0 || xStart > W) continue;
                     const stripWidth = Math.max(1.5, xEnd - xStart + 0.6);
-                    const distFromAnchor = Math.max(0, anchorX - xStart);
-                    const ageFade = Math.max(0.2, 1 - distFromAnchor / Math.max(250, W * 0.95));
+                    // Gentle age fade across the 2h window while keeping scrolled history clearly legible (min 0.45)
+                    const ageFrac = Math.max(0, Math.min(1, (now - snapshots[i].time) / windowMs));
+                    const ageFade = Math.max(0.45, 1 - ageFrac * 0.45);
 
                     const depth = snapshots[i].depth;
                     for (let j = 0; j < depth.length; j++) {
@@ -725,11 +871,51 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
                 (z) => Math.abs(z.price - crosshairRef.current.price) < currentPrice * 0.0035
             );
             if (hoveredZone) {
-                const boxW = hasZoneClickHandler ? 138 : 124;
-                const boxH = hasZoneClickHandler ? 62 : 50;
+                const isShortZone = hoveredZone.price > currentPrice;
+
+                const depTag =
+                    hoveredZone.depletedUsd && hoveredZone.depletedUsd > 0
+                        ? ` (-${formatCompactUsd(hoveredZone.depletedUsd)})`
+                        : '';
+                const volText = hoveredZone.estimatedUsd
+                    ? `Untapped: ${formatCompactUsd(hoveredZone.estimatedUsd)}${depTag}`
+                    : hoveredZone.volume
+                    ? `Vol: ${formatCompactUsd(hoveredZone.volume)}`
+                    : `Int: ${Math.round(hoveredZone.intensity)}%`;
+                const oiTag = hoveredZone.kind === 'pool' && hoveredZone.oiWeighted ? ' [OI-Δ]' : '';
+                const typeText =
+                    hoveredZone.kind === 'pool'
+                        ? isShortZone
+                            ? `Short Lev. Pool${oiTag}`
+                            : `Long Lev. Pool${oiTag}`
+                        : isShortZone
+                        ? 'Short Liq. Zone'
+                        : 'Long Liq. Zone';
+
+                const distancePct = Math.abs(currentPrice - hoveredZone.price) / currentPrice;
+                const distLabel = `${(distancePct * 100).toFixed(2)}%`;
+                let levText = hoveredZone.leverage
+                    ? `Tier: ${hoveredZone.tierBreakdown || hoveredZone.leverage} · ${distLabel}`
+                    : 'Est. Lev: ';
+                if (!hoveredZone.leverage) {
+                    if (distancePct <= 0.015) levText += '100x';
+                    else if (distancePct <= 0.03) levText += '50x';
+                    else if (distancePct <= 0.055) levText += '20x-25x';
+                    else if (distancePct <= 0.11) levText += '10x';
+                    else levText += '<10x';
+                }
+
+                // Measure rendered text so tooltip box never clips long USD/depletion strings
+                ctx.font = 'bold 10px Inter, sans-serif';
+                const wType = ctx.measureText(typeText).width;
+                ctx.font = '9px Inter, sans-serif';
+                const wVol = ctx.measureText(volText).width;
+                const wLev = ctx.measureText(levText).width;
+                const minBoxW = hasZoneClickHandler ? 138 : 124;
+                const boxW = Math.ceil(Math.max(minBoxW, wType, wVol, wLev) + 16);
+                const boxH = hasZoneClickHandler ? 64 : 52;
                 const ttX = Math.max(8, Math.min(W - boxW - 8, crosshairRef.current.x + 15));
                 const ttY = Math.max(boxH + 8, Math.min(H - 8, crosshairRef.current.y - 10));
-                const isShortZone = hoveredZone.price > currentPrice;
 
                 ctx.fillStyle = isDark ? 'rgba(15, 23, 42, 0.92)' : 'rgba(255, 255, 255, 0.96)';
                 ctx.strokeStyle =
@@ -741,30 +927,6 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
                         ? 'rgba(244, 63, 94, 0.65)'
                         : 'rgba(16, 185, 129, 0.65)';
                 ctx.lineWidth = 1;
-
-                const volText = hoveredZone.estimatedUsd
-                    ? `Pool: ${formatCompactUsd(hoveredZone.estimatedUsd)}`
-                    : hoveredZone.volume
-                    ? `Vol: ${formatCompactUsd(hoveredZone.volume)}`
-                    : `Int: ${Math.round(hoveredZone.intensity)}%`;
-                const typeText =
-                    hoveredZone.kind === 'pool'
-                        ? isShortZone
-                            ? 'Short Lev. Pool'
-                            : 'Long Lev. Pool'
-                        : isShortZone
-                        ? 'Short Liq. Zone'
-                        : 'Long Liq. Zone';
-
-                const distancePct = Math.abs(currentPrice - hoveredZone.price) / currentPrice;
-                let levText = hoveredZone.leverage ? `Tier: ${hoveredZone.leverage}` : 'Est. Lev: ';
-                if (!hoveredZone.leverage) {
-                    if (distancePct <= 0.015) levText += '100x';
-                    else if (distancePct <= 0.03) levText += '50x';
-                    else if (distancePct <= 0.055) levText += '20x-25x';
-                    else if (distancePct <= 0.11) levText += '10x';
-                    else levText += '<10x';
-                }
 
                 ctx.beginPath();
                 if (typeof ctx.roundRect === 'function') {
@@ -895,6 +1057,7 @@ class LiquidationPrimitive implements ISeriesPrimitive<any> {
     public showGEX = true;
     public showBookmap = true;
     public bookmapIntensity = 50;
+    public bookmapHistoryMinutes = 120;
     public spoofingThreshold = 500000;
     public smartMoneyBias = false;
     public showMagnetZones = true;
@@ -1007,6 +1170,7 @@ class LiquidationPrimitive implements ISeriesPrimitive<any> {
         showGEX: boolean;
         showBookmap: boolean;
         bookmapIntensity: number;
+        bookmapHistoryMinutes: number;
         spoofingThreshold: number;
         smartMoneyBias: boolean;
         showMagnetZones: boolean;
@@ -1028,6 +1192,7 @@ class LiquidationPrimitive implements ISeriesPrimitive<any> {
         this.showGEX = params.showGEX;
         this.showBookmap = params.showBookmap;
         this.bookmapIntensity = params.bookmapIntensity;
+        this.bookmapHistoryMinutes = params.bookmapHistoryMinutes;
         this.spoofingThreshold = params.spoofingThreshold;
         this.smartMoneyBias = params.smartMoneyBias;
         this.showMagnetZones = params.showMagnetZones;
@@ -1065,6 +1230,7 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
     showGEX = true,
     showBookmap = true,
     bookmapIntensity = 50,
+    bookmapHistoryMinutes = 120,
     spoofingThreshold = 500000,
     smartMoneyBias = false,
     showMagnetZones = true,
@@ -1079,6 +1245,7 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
     const animRafIdRef = useRef<number | null>(null);
     const scheduleAnimationRef = useRef<() => void>(() => {});
     const lastSymbolRef = useRef<string | null>(null);
+    const lastStreamKeyRef = useRef<string | null>(null);
     const hydratedKeyRef = useRef<string | null>(null);
 
     const [isThermalGuard, setIsThermalGuard] = useState<boolean>(() => isThermalGuardActive());
@@ -1138,6 +1305,7 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
             showGEX,
             showBookmap,
             bookmapIntensity,
+            bookmapHistoryMinutes,
             spoofingThreshold,
             smartMoneyBias,
             showMagnetZones,
@@ -1293,35 +1461,39 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
             bubblesRef.current = [];
             icebergsRef.current = [];
             hydratedKeyRef.current = null;
+            lastStreamKeyRef.current = null;
             setActiveIcebergsCount(0);
             return;
         }
 
-        if (data.symbol && lastSymbolRef.current && lastSymbolRef.current !== data.symbol) {
+        const hydrateKey = `${data.symbol || 'active'}:${data.exchange || 'binance'}`;
+        if (lastStreamKeyRef.current && lastStreamKeyRef.current !== hydrateKey) {
             bookmapHistoryRef.current = [];
             bubblesRef.current = [];
             icebergsRef.current = [];
             hydratedKeyRef.current = null;
             setActiveIcebergsCount(0);
         }
+        lastStreamKeyRef.current = hydrateKey;
         if (data.symbol) {
             lastSymbolRef.current = data.symbol;
         }
 
         const now = Date.now();
-        const maxBookmapSnapshots = thermalGuardRef.current ? 120 : 480;
+        const maxBookmapSnapshots = thermalGuardRef.current ? 360 : 1000;
+        const retentionMs = 120 * 60 * 1000; // Always retain up to 2h locally so 15M/1H/2H toggle is instant
 
-        // One-time historical ring-buffer hydration on connect
-        if (data.history && hydratedKeyRef.current !== data.symbol) {
-            hydratedKeyRef.current = data.symbol || 'active';
+        // One-time historical ring-buffer + persisted 2h Bookmap hydration on connect
+        if (data.history && hydratedKeyRef.current !== hydrateKey) {
+            hydratedKeyRef.current = hydrateKey;
 
-            if (showBookmap && Array.isArray(data.history.bookmap) && data.history.bookmap.length > 0) {
+            if (Array.isArray(data.history.bookmap) && data.history.bookmap.length > 0) {
                 const existingTimes = new Set(bookmapHistoryRef.current.map((s) => s.time));
                 const merged = [
                     ...data.history.bookmap.filter((s) => !existingTimes.has(s.time)),
                     ...bookmapHistoryRef.current,
                 ].sort((a, b) => a.time - b.time);
-                bookmapHistoryRef.current = merged.slice(-maxBookmapSnapshots);
+                bookmapHistoryRef.current = compactBookmapHistory(merged, maxBookmapSnapshots, retentionMs, now);
             }
 
             if (showBubbles && Array.isArray(data.history.bubbles)) {
@@ -1351,16 +1523,32 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
             }
         }
 
-        if (showBookmap && data.orderbook_depth && data.orderbook_depth.length > 0) {
+        if (data.orderbook_depth && data.orderbook_depth.length > 0) {
             const lastSnapshot = bookmapHistoryRef.current[bookmapHistoryRef.current.length - 1];
-            const minSnapGap = thermalGuardRef.current ? 500 : 250;
+            // Record live ticks (2.5s when hidden/mobile, 1.5s when visible on PC) & filter <3% dust to cut RAM/draw cost
+            const minSnapGap = !showBookmap || thermalGuardRef.current ? 2500 : 1500;
             if (!lastSnapshot || now - lastSnapshot.time >= minSnapGap) {
-                bookmapHistoryRef.current.push({
-                    time: now,
-                    depth: data.orderbook_depth.map((d) => ({ price: d.price, volume: d.volume })),
-                });
-                if (bookmapHistoryRef.current.length > maxBookmapSnapshots) {
-                    bookmapHistoryRef.current = bookmapHistoryRef.current.slice(-maxBookmapSnapshots);
+                let snapPeak = 0;
+                for (let i = 0; i < data.orderbook_depth.length; i++) {
+                    if (data.orderbook_depth[i].volume > snapPeak) snapPeak = data.orderbook_depth[i].volume;
+                }
+                const dustCutoff = snapPeak * 0.03;
+                const compactDepth = data.orderbook_depth
+                    .filter((d) => d.volume >= dustCutoff)
+                    .map((d) => ({ price: d.price, volume: d.volume }));
+                if (compactDepth.length > 0) {
+                    bookmapHistoryRef.current.push({
+                        time: now,
+                        depth: compactDepth,
+                    });
+                    if (bookmapHistoryRef.current.length > maxBookmapSnapshots) {
+                        bookmapHistoryRef.current = compactBookmapHistory(
+                            bookmapHistoryRef.current,
+                            maxBookmapSnapshots,
+                            retentionMs,
+                            now
+                        );
+                    }
                 }
             }
         }
@@ -1425,6 +1613,7 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
             showGEX,
             showBookmap,
             bookmapIntensity,
+            bookmapHistoryMinutes,
             spoofingThreshold,
             smartMoneyBias,
             showMagnetZones,
@@ -1448,6 +1637,7 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
         showGEX,
         showBookmap,
         bookmapIntensity,
+        bookmapHistoryMinutes,
         spoofingThreshold,
         smartMoneyBias,
         showMagnetZones,

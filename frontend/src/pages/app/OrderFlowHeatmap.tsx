@@ -4,7 +4,7 @@ import { createChart, ISeriesApi, CandlestickData, CandlestickSeries, LineSeries
 import { WickSRRenderer } from '../../components/features/market/WickSRRenderer';
 import { LiquiditySweepAbsorptionRenderer } from '../../components/features/market/LiquiditySweepAbsorptionRenderer';
 import { useLiquiditySweepAbsorption } from '../../hooks/useLiquiditySweepAbsorption';
-import { useLevel2MarketData, subscribeLiveTradeTicks, subscribeLiveBbo } from '@/hooks/useLevel2MarketData';
+import { useLevel2MarketData, subscribeLiveTradeTicks, subscribeLiveBbo, getLatestLiveBbo, getLatestLiveTick } from '@/hooks/useLevel2MarketData';
 import { useDeviceProfile } from '@/hooks/useDeviceProfile';
 import { useOrderFlowData } from '../../hooks/useOrderFlowData';
 import { useHeatmapData } from '../../hooks/useHeatmapData';
@@ -250,6 +250,14 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
     const liquidationLineRef = useRef<any>(null);
     const bidLineRef = useRef<any>(null);
     const askLineRef = useRef<any>(null);
+    const lastPriceLineRenderedRef = useRef<{ price: number; side: 'buy' | 'sell' | null }>({ price: 0, side: null });
+    const lastBidPriceRenderedRef = useRef<number>(0);
+    const lastAskPriceRenderedRef = useRef<number>(0);
+    const hasLiveBboRef = useRef<boolean>(false);
+    const bestBidPropRef = useRef<number>(bestBid);
+    const bestAskPropRef = useRef<number>(bestAsk);
+    bestBidPropRef.current = bestBid;
+    bestAskPropRef.current = bestAsk;
     const mlEntryLineRef = useRef<any>(null);
     const mlSlLineRef = useRef<any>(null);
     const mlTpLineRef = useRef<any>(null);
@@ -622,6 +630,51 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                     candlesVersionRef.current += 1;
                     if (candles.length > 0) {
                         lastCandleRef.current = { ...candles[candles.length - 1] };
+                        // Reconcile stale REST history against the freshest live WS trade tick immediately
+                        // so initial load / timeframe switch never snaps the last candle or price line backwards.
+                        const liveTick = getLatestLiveTick(symbol, exchange);
+                        if (liveTick && liveTick.price > 0) {
+                            const lastC = lastCandleRef.current as any;
+                            let candleTimeMs = Number(lastC.time);
+                            const isSec = candleTimeMs < 10000000000;
+                            if (isSec) candleTimeMs *= 1000;
+                            const rawTs = liveTick.timestamp || Date.now();
+                            const tickMs = rawTs < 10000000000 ? rawTs * 1000 : rawTs;
+                            const intervalMs = parseIntervalToMs(interval);
+                            if (tickMs >= candleTimeMs) {
+                                const side: 'buy' | 'sell' = liveTick.side || (liveTick.isBuyerMaker ? 'sell' : 'buy');
+                                lastTradeSideRef.current = side;
+                                lastTickPriceRef.current = liveTick.price;
+                                let reconciled: any;
+                                if (tickMs >= candleTimeMs + intervalMs) {
+                                    const nextMs = Math.floor(tickMs / intervalMs) * intervalMs;
+                                    const nextTime = isSec ? Math.floor(nextMs / 1000) : nextMs;
+                                    reconciled = {
+                                        time: nextTime,
+                                        open: lastC.close,
+                                        high: Math.max(lastC.close, liveTick.price, liveTick.high ?? liveTick.price),
+                                        low: Math.min(lastC.close, liveTick.price, liveTick.low ?? liveTick.price),
+                                        close: liveTick.price,
+                                        volume: liveTick.volume || 0,
+                                    };
+                                    allCandlesRef.current.push(reconciled);
+                                } else {
+                                    reconciled = {
+                                        ...lastC,
+                                        close: liveTick.price,
+                                        high: Math.max(lastC.high, liveTick.price, liveTick.high ?? liveTick.price),
+                                        low: Math.min(lastC.low, liveTick.price, liveTick.low ?? liveTick.price),
+                                    };
+                                    allCandlesRef.current[allCandlesRef.current.length - 1] = reconciled;
+                                }
+                                candlestickSeriesRef.current.update(reconciled);
+                                lastCandleRef.current = reconciled;
+                                syncCurrentPriceLineRef.current(reconciled.close, side);
+                                lastDirectTickTimestampRef.current = Math.max(lastDirectTickTimestampRef.current, tickMs);
+                                hasDirectTicksRef.current = true;
+                                lastDirectTickAtRef.current = Date.now();
+                            }
+                        }
                     }
 
                     // Format and set volume data
@@ -1020,6 +1073,10 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             liquidationLineRef.current = null;
             bidLineRef.current = null;
             askLineRef.current = null;
+            lastPriceLineRenderedRef.current = { price: 0, side: null };
+            lastBidPriceRenderedRef.current = 0;
+            lastAskPriceRenderedRef.current = 0;
+            hasLiveBboRef.current = false;
             mlEntryLineRef.current = null;
             mlSlLineRef.current = null;
             mlTpLineRef.current = null;
@@ -2277,12 +2334,54 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
     const lastTradeSideRef = useRef<'buy' | 'sell'>('buy');
     const lastTickPriceRef = useRef<number>(0);
 
+    const syncCurrentPriceLineRef = useRef<(price: number, side: 'buy' | 'sell') => void>(() => {});
+    const syncCurrentPriceLine = useCallback((price: number, side: 'buy' | 'sell') => {
+        const series = candlestickSeriesRef.current;
+        if (!series || !Number.isFinite(price) || price <= 0) return;
+
+        const prev = lastPriceLineRenderedRef.current;
+        if (currentPriceLineRef.current && prev.price === price && prev.side === side) {
+            return;
+        }
+
+        const isBuy = side === 'buy';
+        const lineColor = isBuy ? '#16a34a' : '#dc2626';
+        const arrow = isBuy ? '▲' : '▼';
+
+        try {
+            if (!currentPriceLineRef.current) {
+                currentPriceLineRef.current = series.createPriceLine({
+                    price,
+                    color: lineColor,
+                    lineWidth: 1,
+                    lineStyle: 1, // Dotted
+                    axisLabelVisible: true,
+                    title: arrow,
+                    axisLabelColor: lineColor,
+                    axisLabelTextColor: '#ffffff',
+                });
+            } else {
+                currentPriceLineRef.current.applyOptions({
+                    price,
+                    color: lineColor,
+                    axisLabelColor: lineColor,
+                    title: arrow,
+                });
+            }
+            lastPriceLineRenderedRef.current = { price, side };
+        } catch {
+            currentPriceLineRef.current = null;
+            lastPriceLineRenderedRef.current = { price: 0, side: null };
+        }
+    }, []);
+    syncCurrentPriceLineRef.current = syncCurrentPriceLine;
+
     // Light-Speed Realtime Candle & Price Line Update (Synchronous 0ms execution)
     const applyLivePriceTick = useCallback((
         livePrice: number,
         trade?: { price: number; high?: number; low?: number; volume?: number; timestamp?: number; side?: 'buy' | 'sell' | null } | null
     ) => {
-        if (!candlestickSeriesRef.current || !lastCandleRef.current || !livePrice || livePrice <= 0 || isNaN(livePrice)) return;
+        if (!candlestickSeriesRef.current || !livePrice || livePrice <= 0 || isNaN(livePrice)) return;
 
         // Resolve last trade side: exchange-provided side first, else tick rule (uptick = buy, downtick = sell)
         if (trade?.side === 'buy' || trade?.side === 'sell') {
@@ -2291,6 +2390,12 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             lastTradeSideRef.current = livePrice > lastTickPriceRef.current ? 'buy' : 'sell';
         }
         lastTickPriceRef.current = livePrice;
+
+        // Even while REST klines are still loading, keep the horizontal price line live and in lockstep with BBO
+        if (!lastCandleRef.current) {
+            syncCurrentPriceLine(livePrice, lastTradeSideRef.current);
+            return;
+        }
 
         const lastCandle = lastCandleRef.current as any;
         const intervalMs = parseIntervalToMs(interval);
@@ -2376,21 +2481,12 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                 candlesVersionRef.current += 1;
             }
 
-            // Sync horizontal live price line with exact candle close at zero lag
-            if (currentPriceLineRef.current) {
-                const isBuy = lastTradeSideRef.current === 'buy';
-                const sideColor = isBuy ? '#16a34a' : '#dc2626';
-                currentPriceLineRef.current.applyOptions({
-                    price: updatedCandle.close,
-                    color: sideColor,
-                    axisLabelColor: sideColor,
-                    title: isBuy ? '▲' : '▼',
-                });
-            }
+            // Sync (or create on-the-fly) horizontal live price line with exact candle close at zero lag
+            syncCurrentPriceLine(updatedCandle.close, lastTradeSideRef.current);
         } catch {
             // Safe guard against unmount
         }
-    }, [interval]);
+    }, [interval, syncCurrentPriceLine]);
 
     // Reset tracker refs when symbol or interval changes
     useEffect(() => {
@@ -2403,23 +2499,27 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         lastSessionsKeyRef.current = '';
     }, [symbol, interval, exchange]);
 
-    // Direct canvas live trade tick subscription (~25 FPS throttled on mobile/tablet, instant on PC)
-    // bypasses full React page re-renders for smooth live candlestick updates.
+    // Direct canvas live trade tick subscription (synced frame cadence with BBO on mobile/tablet, 0ms on PC)
+    // bypasses full React page re-renders for smooth live candlestick & price line updates.
     useEffect(() => {
         if (!symbol || !exchange) return;
         const unsubscribe = subscribeLiveTradeTicks(symbol, exchange, (tick) => {
             if (!tick || !tick.price || tick.price <= 0 || Number.isNaN(tick.price)) return;
             const rawTs = tick.timestamp || Date.now();
             const ts = rawTs < 10000000000 ? rawTs * 1000 : rawTs;
-            if (ts < lastDirectTickTimestampRef.current) return;
+            const now = Date.now();
+            const streamSilent = lastDirectTickAtRef.current > 0 && (now - lastDirectTickAtRef.current) > 2500;
+            if (!streamSilent && ts < lastDirectTickTimestampRef.current) return;
             hasDirectTicksRef.current = true;
-            lastDirectTickAtRef.current = Date.now();
+            lastDirectTickAtRef.current = now;
             lastDirectTickTimestampRef.current = ts;
             applyLivePriceTick(tick.price, {
                 price: tick.price,
-                volume: tick.quantity,
+                high: tick.high,
+                low: tick.low,
+                volume: tick.quantity ?? tick.volume,
                 timestamp: ts,
-                side: tick.isBuyerMaker ? 'sell' : 'buy',
+                side: tick.side || (tick.isBuyerMaker ? 'sell' : 'buy'),
             });
         });
         return () => {
@@ -2427,9 +2527,10 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         };
     }, [symbol, exchange, applyLivePriceTick]);
 
-    // Fallback reaction on React tradeEvent/currentPrice when direct live ticks are not actively streaming
+    // Fallback reaction on React tradeEvent/currentPrice ONLY before direct live ticks are active
+    // or if the live trade channel has been silent > 2.5s (e.g. illiquid pair with only OB snapshots).
     useEffect(() => {
-        const directStreamActive = hasDirectTicksRef.current && (Date.now() - lastDirectTickAtRef.current) < 2000;
+        const directStreamActive = hasDirectTicksRef.current && (Date.now() - lastDirectTickAtRef.current) < 2500;
         if (directStreamActive) return;
 
         if (tradeEvent && tradeEvent.price > 0 && !isNaN(tradeEvent.price) && tradeEvent !== lastAppliedTradeRef.current) {
@@ -2439,7 +2540,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             lastAppliedTradeRef.current = tradeEvent;
             lastAppliedPriceRef.current = tradeEvent.price;
             applyLivePriceTick(tradeEvent.price, tradeEvent);
-        } else if (currentPrice && currentPrice > 0 && !isNaN(currentPrice) && currentPrice !== lastAppliedPriceRef.current) {
+        } else if (!hasDirectTicksRef.current && currentPrice && currentPrice > 0 && !isNaN(currentPrice) && currentPrice !== lastAppliedPriceRef.current) {
             lastAppliedPriceRef.current = currentPrice;
             applyLivePriceTick(currentPrice, null);
         }
@@ -3720,85 +3821,115 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
 
 
 
-    // Custom Current Price Line (side-colored label: green ▲ = last trade buy, red ▼ = last trade sell)
+    // Custom Current Price Line (seed/recreate on mount, symbol/timeframe change, or when live ticks aren't active).
+    // While live trade ticks are actively streaming, applyLivePriceTick updates this line directly at 0-lag
+    // so 200ms-throttled React currentPrice flushes can never overwrite or snap the line backwards.
     useEffect(() => {
-        if (!candlestickSeriesRef.current || currentPrice <= 0) return;
+        if (!candlestickSeriesRef.current) return;
+        const directStreamActive =
+            Boolean(currentPriceLineRef.current) &&
+            hasDirectTicksRef.current &&
+            (Date.now() - lastDirectTickAtRef.current) < 2500;
+        if (directStreamActive) return;
 
         const lastCandle = lastCandleRef.current;
-        const targetPrice = (lastCandle && lastCandle.close > 0) ? lastCandle.close : currentPrice;
-        const isBuy = lastTradeSideRef.current === 'buy';
-        const lineColor = isBuy ? '#16a34a' : '#dc2626';
-        const arrow = isBuy ? '▲' : '▼';
+        const liveTick = getLatestLiveTick(symbol, exchange);
+        const targetPrice =
+            (lastCandle && lastCandle.close > 0)
+                ? lastCandle.close
+                : (liveTick && liveTick.price > 0 ? liveTick.price : currentPrice);
+        if (!targetPrice || targetPrice <= 0) return;
 
-        if (!currentPriceLineRef.current) {
-            currentPriceLineRef.current = candlestickSeriesRef.current.createPriceLine({
-                price: targetPrice,
-                color: lineColor,
-                lineWidth: 1,
-                lineStyle: 1, // Dotted
-                axisLabelVisible: true,
-                title: arrow,
-                axisLabelColor: lineColor,
-                axisLabelTextColor: '#ffffff', // White text
-            });
-        } else {
-            currentPriceLineRef.current.applyOptions({ 
-                price: targetPrice,
-                color: lineColor,
-                axisLabelColor: lineColor,
-                title: arrow
-            });
-        }
-    }, [currentPrice]);
+        syncCurrentPriceLine(targetPrice, lastTradeSideRef.current);
+    }, [currentPrice, symbol, exchange, interval, candlesReadyTick, syncCurrentPriceLine]);
 
-    // Best Bid / Best Ask lines (light colored, toggleable)
-    useEffect(() => {
+    const syncBidAskLine = useCallback((
+        ref: React.MutableRefObject<any>,
+        lastRenderedRef: React.MutableRefObject<number>,
+        price: number,
+        color: string,
+        title: string,
+        visible: boolean
+    ) => {
         const series = candlestickSeriesRef.current;
         if (!series) return;
-
-        const sync = (
-            ref: React.MutableRefObject<any>,
-            price: number,
-            color: string,
-            title: string
-        ) => {
-            try {
-                if (!showBidAsk || !price || price <= 0) {
-                    if (ref.current) {
-                        series.removePriceLine(ref.current);
-                        ref.current = null;
-                    }
-                    return;
+        try {
+            if (!visible || !Number.isFinite(price) || price <= 0) {
+                if (ref.current) {
+                    series.removePriceLine(ref.current);
+                    ref.current = null;
+                    lastRenderedRef.current = 0;
                 }
-                if (!ref.current) {
-                    ref.current = series.createPriceLine({
-                        price,
-                        color,
-                        lineWidth: 1,
-                        lineStyle: 2, // Dashed
-                        axisLabelVisible: true,
-                        title, // Shows 'BID' or 'ASK'
-                        axisLabelColor: color,
-                        axisLabelTextColor: '#ffffff',
-                    });
-                } else {
-                    ref.current.applyOptions({ price, title });
-                }
-            } catch {
-                ref.current = null;
+                return;
             }
-        };
+            if (!ref.current) {
+                ref.current = series.createPriceLine({
+                    price,
+                    color,
+                    lineWidth: 1,
+                    lineStyle: 2, // Dashed
+                    axisLabelVisible: true,
+                    title, // Shows 'BID' or 'ASK'
+                    axisLabelColor: color,
+                    axisLabelTextColor: '#ffffff',
+                });
+                lastRenderedRef.current = price;
+            } else if (lastRenderedRef.current !== price) {
+                ref.current.applyOptions({ price, title });
+                lastRenderedRef.current = price;
+            }
+        } catch {
+            ref.current = null;
+            lastRenderedRef.current = 0;
+        }
+    }, []);
 
-        sync(bidLineRef, bestBid, '#16a34a', 'BID');
-        sync(askLineRef, bestAsk, '#dc2626', 'ASK');
+    // Best Bid / Best Ask lines — driven continuously by subscribeLiveBbo (same unified frame cadence as live trade ticks).
+    // Intentionally excludes bestBid/bestAsk/currentPrice from deps so throttled React flushes NEVER tear down
+    // the BBO subscription or overwrite live lines with stale 200ms-old React props.
+    useEffect(() => {
+        if (!candlestickSeriesRef.current) return;
 
-        if (!showBidAsk) return;
+        if (!showBidAsk) {
+            hasLiveBboRef.current = false;
+            syncBidAskLine(bidLineRef, lastBidPriceRenderedRef, 0, '#16a34a', 'BID', false);
+            syncBidAskLine(askLineRef, lastAskPriceRenderedRef, 0, '#dc2626', 'ASK', false);
+            return;
+        }
+
+        hasLiveBboRef.current = false;
+        const cachedBbo = getLatestLiveBbo(symbol, exchange);
+        if (cachedBbo && cachedBbo.bestBid > 0 && cachedBbo.bestAsk > 0) {
+            hasLiveBboRef.current = true;
+            syncBidAskLine(bidLineRef, lastBidPriceRenderedRef, cachedBbo.bestBid, '#16a34a', 'BID', true);
+            syncBidAskLine(askLineRef, lastAskPriceRenderedRef, cachedBbo.bestAsk, '#dc2626', 'ASK', true);
+        } else {
+            if (bestBidPropRef.current > 0) {
+                syncBidAskLine(bidLineRef, lastBidPriceRenderedRef, bestBidPropRef.current, '#16a34a', 'BID', true);
+            }
+            if (bestAskPropRef.current > 0) {
+                syncBidAskLine(askLineRef, lastAskPriceRenderedRef, bestAskPropRef.current, '#dc2626', 'ASK', true);
+            }
+        }
+
         const unsubBbo = subscribeLiveBbo(symbol, exchange, ({ bestBid: liveB, bestAsk: liveA }) => {
-            sync(bidLineRef, liveB, '#16a34a', 'BID');
-            sync(askLineRef, liveA, '#dc2626', 'ASK');
+            hasLiveBboRef.current = true;
+            syncBidAskLine(bidLineRef, lastBidPriceRenderedRef, liveB, '#16a34a', 'BID', true);
+            syncBidAskLine(askLineRef, lastAskPriceRenderedRef, liveA, '#dc2626', 'ASK', true);
         });
         return () => unsubBbo();
-    }, [showBidAsk, bestBid, bestAsk, symbol, exchange, interval, currentPrice]);
+    }, [showBidAsk, symbol, exchange, interval, candlesReadyTick, syncBidAskLine]);
+
+    // One-time initial seed from React bestBid/bestAsk props ONLY while waiting for the very first live WS BBO frame
+    useEffect(() => {
+        if (!showBidAsk || hasLiveBboRef.current || !candlestickSeriesRef.current) return;
+        if (bestBid > 0) {
+            syncBidAskLine(bidLineRef, lastBidPriceRenderedRef, bestBid, '#16a34a', 'BID', true);
+        }
+        if (bestAsk > 0) {
+            syncBidAskLine(askLineRef, lastAskPriceRenderedRef, bestAsk, '#dc2626', 'ASK', true);
+        }
+    }, [showBidAsk, bestBid, bestAsk, syncBidAskLine]);
 
     // Update Trade & Absorption Markers
     useEffect(() => {

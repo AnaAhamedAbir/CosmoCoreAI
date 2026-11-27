@@ -2188,8 +2188,8 @@ export const TrueCVDDraggableHUD: React.FC<TrueCVDDraggableHUDProps> = ({
             const saved = localStorage.getItem('true_cvd_hud_pos');
             if (saved) {
                 const parsed = JSON.parse(saved);
-                if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
-                    return parsed;
+                if (Number.isFinite(Number(parsed?.x)) && Number.isFinite(Number(parsed?.y))) {
+                    return { x: Number(parsed.x), y: Number(parsed.y) };
                 }
             }
         } catch {}
@@ -2197,53 +2197,158 @@ export const TrueCVDDraggableHUD: React.FC<TrueCVDDraggableHUDProps> = ({
     });
 
     const [isDragging, setIsDragging] = useState(false);
-    const [isCollapsed, setIsCollapsed] = useState(false);
-    const dragRef = useRef<{ startX: number; startY: number; initX: number; initY: number } | null>(null);
-
-    const onPointerDown = (e: React.PointerEvent) => {
-        if (e.button !== 0) return;
-        setIsDragging(true);
-        dragRef.current = {
-            startX: e.clientX,
-            startY: e.clientY,
-            initX: position.x,
-            initY: position.y,
-        };
-        e.currentTarget.setPointerCapture(e.pointerId);
-    };
-
-    const onPointerMove = (e: React.PointerEvent) => {
-        if (!isDragging || !dragRef.current) return;
-        const dx = e.clientX - dragRef.current.startX;
-        const dy = e.clientY - dragRef.current.startY;
-        setPosition({
-            x: dragRef.current.initX + dx,
-            y: dragRef.current.initY + dy,
+    const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+        try {
+            return localStorage.getItem('true_cvd_hud_collapsed') === '1';
+        } catch {
+            return false;
+        }
+    });
+    const toggleCollapsed = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        setIsCollapsed((prev) => {
+            const next = !prev;
+            try {
+                localStorage.setItem('true_cvd_hud_collapsed', next ? '1' : '0');
+            } catch {}
+            return next;
         });
     };
+    const hudRef = useRef<HTMLDivElement | null>(null);
+    const latestPosRef = useRef(position);
+    const dragRef = useRef<{
+        pointerId: number;
+        startX: number;
+        startY: number;
+        initX: number;
+        initY: number;
+    } | null>(null);
 
-    const onPointerUp = (e: React.PointerEvent) => {
-        if (isDragging && dragRef.current) {
-            const dx = e.clientX - dragRef.current.startX;
-            const dy = e.clientY - dragRef.current.startY;
-            const finalPos = {
-                x: dragRef.current.initX + dx,
-                y: dragRef.current.initY + dy,
-            };
-            try {
-                localStorage.setItem('true_cvd_hud_pos', JSON.stringify(finalPos));
-            } catch {}
+    const BASE_LEFT = 16;
+    const BASE_BOTTOM = 46;
+    const MARGIN = 8;
+
+    const clampOffset = (x: number, y: number): { x: number; y: number } => {
+        if (typeof window === 'undefined' || !hudRef.current) return { x, y };
+        const el = hudRef.current;
+        const parent = el.offsetParent as HTMLElement | null;
+        const hudW = el.offsetWidth || 385;
+        const hudH = el.offsetHeight || 185;
+
+        if (!parent) {
+            return { x, y };
         }
-        setIsDragging(false);
+        const pRect = parent.getBoundingClientRect();
+        const parentW = parent.clientWidth || pRect.width || window.innerWidth;
+        const parentH = parent.clientHeight || pRect.height || window.innerHeight;
+        const baseTop = parentH - BASE_BOTTOM - hudH;
+
+        // Bound strictly inside BOTH the chart container and the visible browser viewport
+        const minXContainer = MARGIN - BASE_LEFT;
+        const maxXContainer = Math.max(minXContainer, parentW - hudW - MARGIN - BASE_LEFT);
+        const minXViewport = MARGIN - (pRect.left + BASE_LEFT);
+        const maxXViewport = Math.max(minXViewport, window.innerWidth - hudW - MARGIN - (pRect.left + BASE_LEFT));
+        const minX = Math.max(minXContainer, minXViewport);
+        const maxX = Math.max(minX, Math.min(maxXContainer, maxXViewport));
+
+        const minYContainer = MARGIN - baseTop;
+        const maxYContainer = Math.max(minYContainer, parentH - hudH - MARGIN - baseTop);
+        const minYViewport = MARGIN - (pRect.top + baseTop);
+        const maxYViewport = Math.max(minYViewport, window.innerHeight - hudH - MARGIN - (pRect.top + baseTop));
+        const minY = Math.max(minYContainer, minYViewport);
+        const maxY = Math.max(minY, Math.min(maxYContainer, maxYViewport));
+
+        return {
+            x: Math.round(Math.max(minX, Math.min(maxX, x))),
+            y: Math.round(Math.max(minY, Math.min(maxY, y))),
+        };
+    };
+
+    const applyTransform = (x: number, y: number) => {
+        latestPosRef.current = { x, y };
+        if (hudRef.current) {
+            hudRef.current.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+        }
+    };
+
+    // Keep HUD strictly inside screen/chart on mount, resize, or collapse/expand
+    useEffect(() => {
+        const syncBounds = () => {
+            if (dragRef.current) return;
+            const clamped = clampOffset(latestPosRef.current.x, latestPosRef.current.y);
+            if (clamped.x !== latestPosRef.current.x || clamped.y !== latestPosRef.current.y) {
+                applyTransform(clamped.x, clamped.y);
+                setPosition(clamped);
+            }
+        };
+        const rafId = window.requestAnimationFrame(syncBounds);
+        window.addEventListener('resize', syncBounds);
+        let ro: ResizeObserver | null = null;
+        if (typeof ResizeObserver !== 'undefined' && hudRef.current) {
+            ro = new ResizeObserver(syncBounds);
+            ro.observe(hudRef.current);
+            const parent = hudRef.current.offsetParent as HTMLElement | null;
+            if (parent) ro.observe(parent);
+        }
+        return () => {
+            window.cancelAnimationFrame(rafId);
+            window.removeEventListener('resize', syncBounds);
+            ro?.disconnect();
+        };
+    }, [isCollapsed]);
+
+    const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        try {
+            e.currentTarget.setPointerCapture(e.pointerId);
+        } catch {}
+        dragRef.current = {
+            pointerId: e.pointerId,
+            startX: e.clientX,
+            startY: e.clientY,
+            initX: latestPosRef.current.x,
+            initY: latestPosRef.current.y,
+        };
+        setIsDragging(true);
+    };
+
+    const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+        const drag = dragRef.current;
+        if (!drag || drag.pointerId !== e.pointerId) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const clamped = clampOffset(
+            drag.initX + (e.clientX - drag.startX),
+            drag.initY + (e.clientY - drag.startY)
+        );
+        applyTransform(clamped.x, clamped.y);
+    };
+
+    const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+        const drag = dragRef.current;
+        if (!drag || drag.pointerId !== e.pointerId) return;
         dragRef.current = null;
         try {
-            e.currentTarget.releasePointerCapture(e.pointerId);
+            if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                e.currentTarget.releasePointerCapture(e.pointerId);
+            }
+        } catch {}
+        setIsDragging(false);
+        const finalPos = clampOffset(latestPosRef.current.x, latestPosRef.current.y);
+        applyTransform(finalPos.x, finalPos.y);
+        setPosition(finalPos);
+        try {
+            localStorage.setItem('true_cvd_hud_pos', JSON.stringify(finalPos));
         } catch {}
     };
 
     const resetPosition = (e: React.MouseEvent) => {
         e.stopPropagation();
-        setPosition({ x: 0, y: 0 });
+        const clamped = clampOffset(0, 0);
+        applyTransform(clamped.x, clamped.y);
+        setPosition(clamped);
         try {
             localStorage.removeItem('true_cvd_hud_pos');
         } catch {}
@@ -2293,83 +2398,100 @@ export const TrueCVDDraggableHUD: React.FC<TrueCVDDraggableHUDProps> = ({
 
     return (
         <div
-            className={`absolute z-[25] pointer-events-auto select-none ${isThermalGuard ? '' : 'transition-all'} ${
-                isDragging
-                    ? 'cursor-grabbing scale-[1.03] shadow-[0_0_25px_rgba(168,85,247,0.45)]'
-                    : 'cursor-grab hover:shadow-[0_0_15px_rgba(168,85,247,0.22)]'
+            ref={hudRef}
+            className={`absolute z-[25] pointer-events-auto select-none ${
+                isDragging ? 'cursor-grabbing' : 'cursor-grab'
             }`}
             style={{
-                left: '16px',
-                bottom: '46px',
-                transform: `translate(${position.x}px, ${position.y}px)`,
+                left: `${BASE_LEFT}px`,
+                bottom: `${BASE_BOTTOM}px`,
+                transform: `translate3d(${position.x}px, ${position.y}px, 0)`,
                 touchAction: 'none',
+                willChange: isDragging ? 'transform' : undefined,
             }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerUp}
+            onMouseDown={(e) => e.stopPropagation()}
             onDoubleClick={resetPosition}
-            title="Drag to reposition • Double-click to reset position"
+            title="Drag to reposition within chart • Double-click to reset position"
         >
             <div
-                className={`${isCollapsed ? 'w-auto' : 'w-[258px]'} ${
+                className={`${isCollapsed ? 'w-auto max-w-[calc(100vw-24px)]' : 'w-[385px] max-w-[calc(100vw-24px)]'} ${
                     isThermalGuard ? 'bg-white/95 dark:bg-slate-950/95' : 'bg-white/90 dark:bg-slate-950/90 backdrop-blur-md'
-                } border ${borderGlow} rounded-xl px-2.5 py-2 shadow-xl dark:shadow-2xl transition-colors font-mono`}
+                } border ${borderGlow} ${
+                    isDragging
+                        ? 'shadow-[0_0_28px_rgba(168,85,247,0.48)]'
+                        : 'shadow-2xl hover:shadow-[0_0_18px_rgba(168,85,247,0.24)]'
+                } rounded-2xl ${isCollapsed ? 'px-3.5 py-2' : 'px-4 py-3.5'} transition-colors font-mono`}
             >
-                {/* Header Row: Title + Live 1m Countdown + Close-Bias Badge + Collapse */}
-                <div className="flex items-center justify-between gap-1.5">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="text-xs leading-none">🛡️</span>
-                        <span className="text-[9.5px] font-bold tracking-wider text-purple-700 dark:text-purple-300 uppercase leading-none truncate">
+                {/* Header Row: Title + Live 1m Countdown + Close-Bias Badge + Minimize/Expand Button */}
+                <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-base leading-none">🛡️</span>
+                        <span className="text-[13px] font-bold tracking-wider text-purple-700 dark:text-purple-300 uppercase leading-none truncate">
                             {isCollapsed ? '1M' : '1M ORDERFLOW'}
                         </span>
                         {cof && (
                             <span
-                                className={`text-[9px] font-bold px-1 py-[1px] rounded leading-none ${
+                                className={`text-xs font-bold px-2 py-0.5 rounded-md leading-none shrink-0 ${
                                     isClosingPush
                                         ? 'bg-amber-500/20 text-amber-600 dark:text-amber-300 border border-amber-500/40'
-                                        : 'bg-slate-200/70 dark:bg-white/10 text-slate-600 dark:text-slate-300'
+                                        : 'bg-slate-200/75 dark:bg-white/10 text-slate-600 dark:text-slate-300'
                                 }`}
                             >
                                 ⏱{String(secLeft).padStart(2, '0')}s
                             </span>
                         )}
                     </div>
-                    <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex items-center gap-1.5 shrink-0">
                         {cof && (
-                            <span className={`text-[9px] font-black px-1.5 py-[2px] rounded border leading-none ${biasBadge.cls}`}>
+                            <span className={`text-xs font-black px-2 py-0.5 rounded-md border leading-none ${biasBadge.cls}`}>
                                 {biasBadge.text}
+                            </span>
+                        )}
+                        {isCollapsed && (
+                            <span
+                                className={`text-xs font-black leading-none ${
+                                    barDelta > 0
+                                        ? 'text-emerald-600 dark:text-emerald-400'
+                                        : barDelta < 0
+                                        ? 'text-rose-600 dark:text-rose-400'
+                                        : 'text-slate-500 dark:text-slate-300'
+                                }`}
+                            >
+                                {fmtSignedUsd(barDelta)}
                             </span>
                         )}
                         <button
                             type="button"
                             onPointerDown={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
                             onDoubleClick={(e) => e.stopPropagation()}
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setIsCollapsed((prev) => !prev);
-                            }}
-                            className="text-[9px] text-slate-400 hover:text-slate-700 dark:hover:text-white px-1 py-0.5 rounded hover:bg-slate-200/60 dark:hover:bg-white/10 leading-none"
+                            onClick={toggleCollapsed}
+                            className="w-6 h-6 flex items-center justify-center text-sm font-bold text-slate-500 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white rounded-md bg-slate-200/60 dark:bg-white/10 hover:bg-slate-300/80 dark:hover:bg-white/20 transition-colors leading-none cursor-pointer"
+                            title={isCollapsed ? 'Expand 1M Orderflow Cockpit' : 'Minimize 1M Orderflow Cockpit'}
                             aria-label={isCollapsed ? 'Expand 1M Orderflow Cockpit' : 'Minimize 1M Orderflow Cockpit'}
                         >
-                            {isCollapsed ? '▲' : '▼'}
+                            {isCollapsed ? '+' : '−'}
                         </button>
                     </div>
                 </div>
 
                 {!isCollapsed && (
-                    <div className="mt-2 space-y-1.5">
+                    <div className="mt-3 space-y-2.5">
                         {/* Aggressive Buy vs Sell Pressure Split Bar */}
                         {cof && (
                             <div>
-                                <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden flex">
+                                <div className="w-full h-2.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden flex shadow-inner">
                                     <div
                                         className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-[width] duration-300"
                                         style={{ width: `${buyPct}%` }}
                                     />
                                     <div className="h-full bg-gradient-to-r from-rose-500 to-pink-500 flex-1" />
                                 </div>
-                                <div className="flex justify-between mt-1 text-[9px] font-bold">
+                                <div className="flex justify-between mt-1.5 text-xs font-bold">
                                     <span className="text-emerald-600 dark:text-emerald-400">BUY {buyPct.toFixed(0)}%</span>
                                     <span className="text-rose-600 dark:text-rose-400">SELL {(100 - buyPct).toFixed(0)}%</span>
                                 </div>
@@ -2377,9 +2499,9 @@ export const TrueCVDDraggableHUD: React.FC<TrueCVDDraggableHUDProps> = ({
                         )}
 
                         {/* 1M Bar Delta + 60s True CVD Row */}
-                        <div className="flex items-center justify-between text-[10px] pt-1 border-t border-slate-200/70 dark:border-white/5">
-                            <div className="flex items-center gap-1">
-                                <span className="text-[9px] text-slate-500 dark:text-slate-400">1mΔ</span>
+                        <div className="flex items-center justify-between text-sm pt-2 border-t border-slate-200/75 dark:border-white/10">
+                            <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">1m Δ</span>
                                 <span
                                     className={`font-black ${
                                         barDelta > 0
@@ -2392,17 +2514,17 @@ export const TrueCVDDraggableHUD: React.FC<TrueCVDDraggableHUDProps> = ({
                                     {fmtSignedUsd(barDelta)}
                                 </span>
                             </div>
-                            <div className="flex items-center gap-1">
-                                <span className="text-[9px] text-slate-500 dark:text-slate-400">60s</span>
+                            <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">60s CVD</span>
                                 <span className={`font-black ${cvdColor}`}>{fmtSignedUsd(cvd)}</span>
                             </div>
                         </div>
 
                         {/* Whale vs Retail Trade Segmentation Row */}
                         {cof && (
-                            <div className="flex items-center justify-between text-[9.5px] pt-1 border-t border-slate-200/70 dark:border-white/5">
-                                <span className="flex items-center gap-1">
-                                    <span>🐋</span>
+                            <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-200/75 dark:border-white/10">
+                                <span className="flex items-center gap-1.5" title="Whale Print Delta">
+                                    <span className="text-sm">🐋</span>
                                     <span
                                         className={`font-bold ${
                                             whaleDelta > 0
@@ -2415,8 +2537,8 @@ export const TrueCVDDraggableHUD: React.FC<TrueCVDDraggableHUDProps> = ({
                                         {fmtSignedUsd(whaleDelta)}
                                     </span>
                                 </span>
-                                <span className="flex items-center gap-1">
-                                    <span>🐟</span>
+                                <span className="flex items-center gap-1.5" title="Retail Print Delta">
+                                    <span className="text-sm">🐟</span>
                                     <span
                                         className={`font-bold ${
                                             retailDelta > 0
@@ -2429,7 +2551,7 @@ export const TrueCVDDraggableHUD: React.FC<TrueCVDDraggableHUDProps> = ({
                                         {fmtSignedUsd(retailDelta)}
                                     </span>
                                 </span>
-                                <span className="flex items-center gap-0.5 text-[8.5px] text-slate-500 dark:text-slate-400" title="Last 10s Closing Tape Velocity">
+                                <span className="flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title="Last 10s Closing Tape Velocity">
                                     <span>10s</span>
                                     <span
                                         className={`font-bold ${
@@ -2447,18 +2569,18 @@ export const TrueCVDDraggableHUD: React.FC<TrueCVDDraggableHUDProps> = ({
                         )}
 
                         {/* Live Microstructure Reason + Active Iceberg Badge */}
-                        <div className="flex items-center justify-between gap-1.5 pt-1 border-t border-slate-200/70 dark:border-white/5">
-                            <span className="text-[8.5px] font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300 truncate">
+                        <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200/75 dark:border-white/10">
+                            <span className="text-[11px] font-bold uppercase tracking-wide text-slate-700 dark:text-slate-200 truncate">
                                 ⚡ {cof?.reason || 'LIVE TAPE'}
                                 {cof?.divergence ? ` · ${cof.divergence === 'BULL_DIV' ? 'DIV ↑' : 'DIV ↓'}` : ''}
                             </span>
                             {activeWalls > 0 && (
                                 <span
-                                    className={`flex items-center gap-0.5 bg-purple-500/20 border border-purple-500/40 rounded px-1.5 py-[1px] text-[8.5px] font-bold text-purple-700 dark:text-purple-300 shrink-0 ${
+                                    className={`flex items-center gap-1 bg-purple-500/20 border border-purple-500/40 rounded-md px-2 py-0.5 text-[11px] font-bold text-purple-700 dark:text-purple-300 shrink-0 ${
                                         isThermalGuard ? '' : 'animate-pulse'
                                     }`}
                                 >
-                                    🧊 {activeWalls}
+                                    🧊 {activeWalls} Wall
                                 </span>
                             )}
                         </div>

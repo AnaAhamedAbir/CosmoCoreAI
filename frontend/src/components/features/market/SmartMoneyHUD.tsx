@@ -161,7 +161,9 @@ export const SmartMoneyHUD: React.FC<SmartMoneyHUDProps> = React.memo(({
     }, [visible, mounted, isMinimized, clampToViewport, applyTransform]);
 
     const handleDragPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-        if (!hudRef.current) return;
+        if (e.button !== 0 || !hudRef.current) return;
+        e.preventDefault();
+        e.stopPropagation();
         try {
             e.currentTarget.setPointerCapture(e.pointerId);
         } catch {

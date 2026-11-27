@@ -1490,7 +1490,7 @@ html.mobile-thermal-guard .animate-marquee-slow:not(.landing-ticker-marquee) {
   will-change: transform;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
-  contain: layout style paint;
+  contain: layout style;
 }
 
 .cosmo-gpu-fade {

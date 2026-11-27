@@ -310,8 +310,8 @@ const GodModeLiquidationView: React.FC = () => {
                              <div className="flex-1 relative bg-slate-50/70 dark:bg-black/50">
                                   <div ref={chartContainerRef} className="absolute inset-0"></div>
                                   <LiquidationRenderer chart={chartRef.current} series={seriesRef.current} data={state as any} symbol={activePair} showBubbles={indicatorSettings.liquidationShowBubbles} intensityScale={100} useTrailingLiquidity={trailingLiquidityEnabled} showTrueCVD={true} showSpoofing={true} showGEX={true} showBookmap={true} bookmapIntensity={50} spoofingThreshold={500000} smartMoneyBias={indicatorSettings.liquidationSmartMoneyBias} showMagnetZones={indicatorSettings.liquidationShowMagnetZones !== false} showLeveragePools={indicatorSettings.liquidationShowLeveragePools !== false} showTrajectory={indicatorSettings.liquidationShowTrajectory !== false} isDark={theme === 'dark'} candlesRef={candlesRef} />
-                                  {indicatorSettings.liquidationShowSmartMoneyHUD !== false && state.smart_trajectory && (
-                                      <SmartMoneyHUD symbol={activePair} data={state.smart_trajectory as any} currentPrice={state.current_price} icebergEvents={state.iceberg_events} magnetZones={state.magnet_zones} visible={true} />
+                                  {indicatorSettings.liquidationShowSmartMoneyHUD !== false && (state.smart_trajectory || state.pain_threshold) && (
+                                      <SmartMoneyHUD symbol={activePair} data={state.smart_trajectory as any} godModeData={state as any} currentPrice={state.current_price} icebergEvents={state.iceberg_events} magnetZones={state.magnet_zones} visible={true} />
                                   )}
                              </div>
                              

@@ -347,7 +347,7 @@ const Sidebar: React.FC<{
             ? {
                   transform: isOpenDrawer
                       ? 'translate3d(0, 0, 0)'
-                      : 'translate3d(calc(-100% - 18px), 0, 0)',
+                      : 'translate3d(calc(-100% - 20px), 0, 0)',
               }
             : undefined;
 

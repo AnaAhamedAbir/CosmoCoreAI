@@ -19,7 +19,6 @@ import { LiquidityHeatmapRenderer, HeatmapDataPoint } from '../../components/fea
 import { VolumeProfileWidget, VPVRData } from '../../components/features/market/VolumeProfileWidget';
 import { CVDChart, CVDDataPoint } from '../../components/features/market/CVDChart';
 import { FootprintRenderer, FootprintCandleData, FootprintDataTick } from '../../components/features/market/FootprintRenderer';
-import { GodModeHUD } from '../../components/features/market/GodModeHUD';
 import { LiquidationRenderer } from '../../components/features/market/LiquidationRenderer';
 import { SmartMoneyHUD } from '../../components/features/market/SmartMoneyHUD';
 import { useGodModeData } from '../../hooks/useGodModeData';
@@ -3906,7 +3905,6 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                     />
                 </div>
                 <div className="absolute inset-0 z-10 pointer-events-none overflow-hidden" style={{ right: 60, bottom: 26 }}>
-                    <GodModeHUD data={godModeData} visible={Boolean(indicatorSettings.showLiquidationHeatmap && isActiveChart)} />
                     {indicatorSettings.showDualEngine && <DualEngineDashboard settings={indicatorSettings} candles={allCandlesRef.current} currentPrice={currentPrice} />}
                     {indicatorSettings.showWatchlistScanner && <WatchlistScanner settings={indicatorSettings} exchange={exchange} interval={interval} />}
                     {/* ── Advanced Metrics ── */}
@@ -3979,8 +3977,16 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                             candlesRef={allCandlesRef}
                         />
                     )}
-                    {indicatorSettings.showLiquidationHeatmap && isActiveChart && indicatorSettings.liquidationShowSmartMoneyHUD && godModeData?.smart_trajectory && (
-                        <SmartMoneyHUD symbol={symbol} data={godModeData.smart_trajectory as any} currentPrice={godModeData.current_price} icebergEvents={godModeData.iceberg_events} magnetZones={godModeData.magnet_zones} visible={true} />
+                    {indicatorSettings.showLiquidationHeatmap && isActiveChart && indicatorSettings.liquidationShowSmartMoneyHUD !== false && godModeData && (godModeData.smart_trajectory || godModeData.pain_threshold) && (
+                        <SmartMoneyHUD
+                            symbol={symbol}
+                            data={godModeData.smart_trajectory as any}
+                            godModeData={godModeData}
+                            currentPrice={godModeData.current_price}
+                            icebergEvents={godModeData.iceberg_events}
+                            magnetZones={godModeData.magnet_zones}
+                            visible={true}
+                        />
                     )}
                     {indicatorSettings.showSessions && (
                         <SessionsRenderer

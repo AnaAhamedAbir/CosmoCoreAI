@@ -36,7 +36,7 @@ export const canonicalPairLabel = (sym?: string): string => {
     return sym.split(':')[0].trim().toUpperCase();
 };
 
-export const useLiquidationWebSocket = (activeExchange: string, activePair: string) => {
+export const useLiquidationWebSocket = (activeExchange: string, activePair: string, enabled: boolean = true) => {
     const [isConnected, setIsConnected] = useState(false);
     const [liveFeed, setLiveFeed] = useState<LiquidationEvent[]>([]);
     const [cldData, setCldData] = useState<CldData[]>([]);
@@ -200,6 +200,10 @@ export const useLiquidationWebSocket = (activeExchange: string, activePair: stri
     }, [activeExchange, activePair]);
 
     useEffect(() => {
+        if (!enabled) {
+            setIsConnected(false);
+            return;
+        }
         connect();
         return () => {
             if (wsRef.current) {
@@ -217,7 +221,7 @@ export const useLiquidationWebSocket = (activeExchange: string, activePair: stri
                 priceStatusTimeoutRef.current = null;
             }
         };
-    }, [connect]);
+    }, [connect, enabled]);
 
     return {
         isConnected,

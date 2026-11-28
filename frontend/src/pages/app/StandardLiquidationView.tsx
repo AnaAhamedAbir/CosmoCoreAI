@@ -1,17 +1,24 @@
-﻿import React, { useState, useEffect, useRef, useCallback, FormEvent } from 'react';
-import { ResponsiveContainer, AreaChart, Area, Tooltip } from 'recharts';
-import { ReferenceLine } from 'recharts';
+import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Area, AreaChart, ReferenceLine, ResponsiveContainer, Tooltip } from 'recharts';
+import { Bell, BellOff, Crosshair, Download, Layers, Magnet } from 'lucide-react';
 import Card from '@/components/common/Card';
 import { useTheme } from '@/context/ThemeContext';
-import { ExpandIcon, CollapseIcon } from '@/constants';
-import ComboBox from '@/components/common/ComboBox';
-import { useLiquidationWebSocket, LiquidationEvent, CldData, AggregatedStats, normalizePairSymbol } from '../../hooks/useLiquidationWebSocket';
-import { useCCXTMarkets } from '../../hooks/useCCXTMarkets';
+import { CollapseIcon, ExpandIcon } from '@/constants';
+import {
+    AggregatedStats,
+    CldData,
+    LiquidationEvent,
+    normalizePairSymbol,
+    useLiquidationWebSocket,
+} from '../../hooks/useLiquidationWebSocket';
+import { GodModeState, LiquidationPoolHorizon, useGodModeStream } from '../../hooks/useGodModeData';
 import LiquidationBubbleChart from '@/components/features/trading/LiquidationBubbleChart';
+import LiveLiquidityPoolChart from '@/components/features/market/LiveLiquidityPoolChart';
+import PoolLadderPanel from '@/components/features/market/PoolLadderPanel';
+import { formatCompactUsd, formatPairPrice } from '@/components/features/market/LiquidationCommandBar';
 import { useUIStore } from '@/store/uiStore';
-
-// --- ICONS ---
-
+import { useBotStore } from '@/store/botStore';
+import { useMarketStore } from '@/store/marketStore';
 
 const SkullIcon = ({ className }: { className?: string }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="currentColor">
@@ -22,80 +29,114 @@ const SkullIcon = ({ className }: { className?: string }) => (
 
 const FireIcon = ({ className }: { className?: string }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="currentColor">
-        <path fillRule="evenodd" d="M12.963 2.286a.75.75 0 0 0-1.071-.136 9.742 9.742 0 0 0-3.539 6.177 7.547 7.547 0 0 1-1.705-1.715.75.75 0 0 0-1.152.082A9 9 0 1 0 15.68 4.534a7.46 7.46 0 0 1-2.717-2.248ZM15.75 14.25a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" clipRule="evenodd" />
+        <path
+            fillRule="evenodd"
+            d="M12.963 2.286a.75.75 0 0 0-1.071-.136 9.742 9.742 0 0 0-3.539 6.177 7.547 7.547 0 0 1-1.705-1.715.75.75 0 0 0-1.152.082A9 9 0 1 0 15.68 4.534a7.46 7.46 0 0 1-2.717-2.248ZM15.75 14.25a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z"
+            clipRule="evenodd"
+        />
     </svg>
 );
 
-// Custom component for the "Kill Feed" items
-const KillFeedItem: React.FC<{ event: LiquidationEvent; activePair: string }> = ({ event, activePair }) => {
+const KillFeedItem: React.FC<{
+    event: LiquidationEvent;
+    activePair: string;
+    onTrackPrice: (price: number) => void;
+}> = ({ event, activePair, onTrackPrice }) => {
     const isLong = event.type === 'Long';
     const bgColor = isLong ? 'bg-rose-500/5' : 'bg-emerald-500/5';
     const borderColor = isLong ? 'border-rose-500/20' : 'border-emerald-500/20';
     const textColor = isLong ? 'text-rose-500' : 'text-emerald-500';
     const iconWrapperBg = isLong ? 'bg-rose-500/10' : 'bg-emerald-500/10';
-    const glowColor = isLong ? 'rgba(244,63,94,0.3)' : 'rgba(16,185,129,0.3)';
     const pairSource = event.symbol || activePair;
     const baseToken = pairSource ? pairSource.split(':')[0].split('/')[0] : '';
     const label = `${baseToken} ${isLong ? 'Long Rekt' : 'Short Rekt'}`;
     const priceDigits = event.price > 0 && event.price < 1 ? 4 : 2;
 
     return (
-        <div className={`relative flex items-center justify-between p-3 mb-2 rounded-xl border ${borderColor} ${bgColor} ${event.isNew ? 'animate-fade-in-right' : ''} group overflow-hidden transition-colors hover:bg-slate-100/80 dark:hover:bg-white/5`}>
-            {/* Flash effect overlay */}
-            {event.isNew && <div className={`absolute inset-0 opacity-20 ${isLong ? 'bg-rose-500' : 'bg-emerald-500'} animate-ping rounded-xl pointer-events-none`}></div>}
-            {/* Hover Glow */}
-            <div className={`absolute -left-10 w-20 h-full blur-[20px] transition-opacity duration-300 opacity-0 group-hover:opacity-100 ${isLong ? 'bg-rose-500/20' : 'bg-emerald-500/20'}`}></div>
-
-            <div className="flex items-center gap-3 relative z-10">
-                <div className={`p-2 rounded-lg ${iconWrapperBg} border ${borderColor} relative shadow-[0_0_10px_var(--glow)]`} style={{ '--glow': glowColor } as any}>
-                     {event.isNew && <div className={`absolute inset-0 ${isLong ? 'bg-rose-500/20' : 'bg-emerald-500/20'} animate-ping rounded-lg`}></div>}
+        <div
+            onClick={() => onTrackPrice(Number(event.price.toFixed(priceDigits)))}
+            className={`relative flex items-center justify-between p-2.5 mb-2 rounded-xl border ${borderColor} ${bgColor} ${
+                event.isNew ? 'animate-fade-in-right' : ''
+            } group overflow-hidden transition-colors hover:bg-slate-100/80 dark:hover:bg-white/5 cursor-pointer`}
+            title="Click to pin this liquidation price on chart"
+        >
+            <div className="flex items-center gap-2.5 relative z-10">
+                <div className={`p-1.5 rounded-lg ${iconWrapperBg} border ${borderColor}`}>
                     {event.isWhale ? <SkullIcon className={`w-4 h-4 ${textColor}`} /> : <FireIcon className={`w-4 h-4 ${textColor}`} />}
                 </div>
-                <div className="flex flex-col gap-0.5">
-                    <div className="flex items-center gap-2">
+                <div className="flex flex-col">
+                    <div className="flex items-center gap-1.5">
                         <span className={`text-[10px] font-bold uppercase tracking-wider ${textColor}`}>{label}</span>
-                        <span className="text-[9px] text-slate-500 dark:text-gray-500 font-mono bg-slate-100 dark:bg-black/30 px-1 py-0.5 rounded border border-slate-200 dark:border-white/5">{event.time}</span>
+                        <span className="text-[9px] text-slate-500 dark:text-gray-400 font-mono bg-slate-100 dark:bg-black/30 px-1 rounded">
+                            {event.time}
+                        </span>
                     </div>
-                    <div className="text-sm font-mono font-bold text-slate-900 dark:text-white tracking-tight dark:drop-shadow-[0_0_5px_rgba(255,255,255,0.2)]">
+                    <div className="text-xs font-mono font-bold text-slate-900 dark:text-white">
                         ${event.price.toLocaleString(undefined, { minimumFractionDigits: priceDigits, maximumFractionDigits: priceDigits })}
                     </div>
                 </div>
             </div>
 
-            <div className="text-right relative z-10 flex flex-col items-end gap-1">
-                <div className={`font-bold font-mono ${event.isWhale ? 'text-lg drop-shadow-[0_0_8px_var(--glow)]' : 'text-sm'} ${textColor}`} style={{ '--glow': glowColor } as any}>
-                    ${(event.amount).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+            <div className="text-right relative z-10 flex flex-col items-end gap-0.5">
+                <div className={`font-bold font-mono ${event.isWhale ? 'text-sm' : 'text-xs'} ${textColor}`}>
+                    ${event.amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                 </div>
-                {event.isWhale && <span className="text-[8px] bg-yellow-500/10 text-yellow-500 px-1.5 py-0.5 rounded uppercase font-bold border border-yellow-500/20 tracking-widest shadow-[0_0_5px_rgba(234,179,8,0.3)] animate-pulse">Whale</span>}
+                {event.isWhale && (
+                    <span className="text-[8px] bg-yellow-500/15 text-yellow-600 dark:text-yellow-400 px-1.5 py-0.5 rounded uppercase font-bold border border-yellow-500/30">
+                        Whale
+                    </span>
+                )}
             </div>
         </div>
     );
 };
 
-const StandardLiquidationView: React.FC = () => {
+export interface StandardLiquidationViewProps {
+    sharedExchange?: string;
+    sharedPair?: string;
+    sharedTimeframe?: string;
+    sharedHorizon?: LiquidationPoolHorizon;
+    sharedGodModeState?: GodModeState | null;
+    sharedLiqStream?: {
+        liveFeed: LiquidationEvent[];
+        aggregatedStats: AggregatedStats;
+        cldData: CldData[];
+        currentPrice: number;
+        priceUpdateStatus: 'up' | 'down' | 'none';
+        isConnected: boolean;
+    };
+}
+
+const StandardLiquidationView: React.FC<StandardLiquidationViewProps> = ({
+    sharedExchange,
+    sharedPair,
+    sharedTimeframe,
+    sharedHorizon,
+    sharedGodModeState,
+    sharedLiqStream,
+}) => {
     const { theme } = useTheme();
+    const isDark = theme === 'dark';
     const widgetRef = useRef<any>(null);
     const chartApiRef = useRef<any>(null);
     const drawnLinesRef = useRef<any[]>([]);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const lastAlertEventIdRef = useRef<number | null>(null);
+
     const [isChartFullScreen, setIsChartFullScreen] = useState(false);
     const [widgetKey, setWidgetKey] = useState(Date.now());
     const [tvChartReady, setTvChartReady] = useState(false);
-
-    const { exchanges, selectedExchange, setSelectedExchange, availablePairs, selectedPair, setSelectedPair, isLoading: isPairsLoading } = useCCXTMarkets();
-    const activePair = selectedPair || 'BTC/USDT';
-
-    // --- REAL DATA INTEGRATION ---
-    const {
-        liveFeed,
-        aggregatedStats,
-        cldData,
-        currentPrice: wsPrice,
-        priceUpdateStatus,
-        isConnected
-    } = useLiquidationWebSocket(selectedExchange, activePair);
-
-    // Resize & Layout State
+    const [feedFilter, setFeedFilter] = useState<'all' | 'long' | 'short' | 'whale'>('all');
+    const [soundAlert, setSoundAlert] = useState(false);
     const [isResizing, setIsResizing] = useState(false);
+    const [highlightLevelInput, setHighlightLevelInput] = useState('');
+
+    // Fallback store values only if rendered standalone without LiquidationMap parent props
+    const { globalExchange, globalSymbol } = useMarketStore();
+    const selectedExchange = sharedExchange || globalExchange || 'binance';
+    const activePair = sharedPair || globalSymbol || 'BTC/USDT';
+
+    const { indicatorSettings } = useBotStore();
     const {
         liquidationChartWidth: chartWidth,
         setLiquidationChartWidth: setChartWidth,
@@ -106,43 +147,125 @@ const StandardLiquidationView: React.FC = () => {
         liquidationMinThreshold: minLiquidationThreshold,
         setLiquidationMinThreshold: setMinLiquidationThreshold,
         liquidationChartView: chartView,
-        setLiquidationChartView: setChartView
+        setLiquidationChartView: setChartView,
+        liquidationTimeframe,
     } = useUIStore();
-    const containerRef = useRef<HTMLDivElement>(null);
 
-    const [highlightLevelInput, setHighlightLevelInput] = useState('');
+    const activeTimeframe = sharedTimeframe || liquidationTimeframe || '15m';
+    const activeHorizon: LiquidationPoolHorizon = sharedHorizon || indicatorSettings.liquidationPoolHorizon || '24h';
 
-    const toggleFullScreen = () => { setIsChartFullScreen(prev => !prev); setWidgetKey(Date.now()); };
-    useEffect(() => { document.body.classList.toggle('body-no-scroll', isChartFullScreen); }, [isChartFullScreen]);
-    const handleMouseDown = useCallback((e: React.MouseEvent) => { e.preventDefault(); setIsResizing(true); }, []);
-    const handleMouseUp = useCallback(() => { setIsResizing(false); }, []);
-    const handleMouseMove = useCallback((e: MouseEvent) => {
-        if (isResizing && containerRef.current) {
-            const bounds = containerRef.current.getBoundingClientRect();
-            const newWidth = ((e.clientX - bounds.left) / bounds.width) * 100;
-            if (newWidth > 50 && newWidth < 90) setChartWidth(newWidth);
-        }
-    }, [isResizing]);
+    const fallbackLiq = useLiquidationWebSocket(
+        selectedExchange,
+        activePair,
+        !sharedLiqStream,
+    );
+    const liq = sharedLiqStream || fallbackLiq;
+    const { liveFeed, aggregatedStats, cldData, currentPrice: wsPrice, priceUpdateStatus, isConnected } = liq;
+
+    const fallbackGodMode = useGodModeStream(
+        activePair.split(':')[0],
+        !sharedGodModeState,
+        selectedExchange.toLowerCase(),
+        activeHorizon,
+    );
+    const godModeState = sharedGodModeState !== undefined ? sharedGodModeState : fallbackGodMode.state;
+
+    const effectiveOraclePrice = wsPrice > 0 ? wsPrice : godModeState?.current_price || 0;
+
+    // Optional Whale Sound Alert via Web Audio API
     useEffect(() => {
-        if (isResizing) { document.addEventListener('mousemove', handleMouseMove); document.addEventListener('mouseup', handleMouseUp); }
-        return () => { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
+        if (!soundAlert || liveFeed.length === 0) return;
+        const latest = liveFeed[0];
+        if (!latest || latest.id === lastAlertEventIdRef.current) return;
+        if (latest.amount >= Math.max(50000, minLiquidationThreshold)) {
+            lastAlertEventIdRef.current = latest.id;
+            try {
+                const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+                if (AudioCtx) {
+                    const ctx = new AudioCtx();
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.value = latest.type === 'Long' ? 420 : 660;
+                    gain.gain.value = 0.04;
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start();
+                    osc.stop(ctx.currentTime + 0.14);
+                }
+            } catch {
+                // ignore audio permission issues
+            }
+        }
+    }, [liveFeed, soundAlert, minLiquidationThreshold]);
+
+    const toggleFullScreen = () => {
+        setIsChartFullScreen((prev) => !prev);
+        setWidgetKey(Date.now());
+    };
+    useEffect(() => {
+        document.body.classList.toggle('body-no-scroll', isChartFullScreen);
+    }, [isChartFullScreen]);
+
+    const handleMouseDown = useCallback((e: React.MouseEvent) => {
+        e.preventDefault();
+        setIsResizing(true);
+    }, []);
+    const handleMouseUp = useCallback(() => {
+        setIsResizing(false);
+    }, []);
+    const handleMouseMove = useCallback(
+        (e: MouseEvent) => {
+            if (isResizing && containerRef.current) {
+                const bounds = containerRef.current.getBoundingClientRect();
+                const newWidth = ((e.clientX - bounds.left) / bounds.width) * 100;
+                if (newWidth > 48 && newWidth < 86) setChartWidth(newWidth);
+            }
+        },
+        [isResizing, setChartWidth],
+    );
+    useEffect(() => {
+        if (isResizing) {
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+        }
+        return () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+        };
     }, [isResizing, handleMouseMove, handleMouseUp]);
 
-    // TradingView Widget
+    // TradingView Widget (when user selects 'price' TradingView tab)
     useEffect(() => {
-        if (chartView !== 'price') return; // Don't init TV if not in price mode
+        if (chartView !== 'price') return;
 
-        const containerId = isChartFullScreen ? `tradingview_fullscreen_liquidation_chart_${widgetKey}` : `tradingview_liquidation_chart_${widgetKey}`;
+        const containerId = isChartFullScreen
+            ? `tradingview_fullscreen_liquidation_chart_${widgetKey}`
+            : `tradingview_liquidation_chart_${widgetKey}`;
+
+        const tvIntervalMap: Record<string, string> = {
+            '1m': '1',
+            '5m': '5',
+            '15m': '15',
+            '1h': '60',
+            '4h': '240',
+        };
+
         const createWidget = () => {
             const container = document.getElementById(containerId);
             if (!container) return;
-            if (widgetRef.current) { try { widgetRef.current.remove(); } catch (e) { } widgetRef.current = null; }
+            if (widgetRef.current) {
+                try {
+                    widgetRef.current.remove();
+                } catch {}
+                widgetRef.current = null;
+            }
 
             const cleanTvPair = activePair.split(':')[0].replace('/', '');
             // @ts-ignore
             const widget = new window.TradingView.widget({
                 symbol: `${selectedExchange.toUpperCase()}:${cleanTvPair}`,
-                interval: '15',
+                interval: tvIntervalMap[activeTimeframe] || '15',
                 autosize: true,
                 container_id: containerId,
                 theme: theme === 'dark' ? 'Dark' : 'Light',
@@ -152,11 +275,11 @@ const StandardLiquidationView: React.FC = () => {
                 enable_publishing: false,
                 hide_side_toolbar: false,
                 allow_symbol_change: false,
-                studies: ["Volume@tv-basicstudies"],
+                studies: ['Volume@tv-basicstudies'],
                 onready: () => {
                     try {
                         chartApiRef.current = typeof widget.chart === 'function' ? widget.chart() : null;
-                    } catch (e) {
+                    } catch {
                         chartApiRef.current = null;
                     }
                     setTvChartReady(true);
@@ -164,420 +287,604 @@ const StandardLiquidationView: React.FC = () => {
             });
             widgetRef.current = widget;
         };
-        const checkLibraryAndCreate = () => { if (typeof window.TradingView !== 'undefined' && window.TradingView.widget) createWidget(); else setTimeout(checkLibraryAndCreate, 100); }
+
+        const checkLibraryAndCreate = () => {
+            if (typeof window.TradingView !== 'undefined' && window.TradingView.widget) createWidget();
+            else setTimeout(checkLibraryAndCreate, 120);
+        };
         checkLibraryAndCreate();
+
         return () => {
             setTvChartReady(false);
-            if (widgetRef.current) { try { widgetRef.current.remove(); widgetRef.current = null; chartApiRef.current = null; } catch (e) { } }
+            if (widgetRef.current) {
+                try {
+                    widgetRef.current.remove();
+                } catch {}
+                widgetRef.current = null;
+                chartApiRef.current = null;
+            }
         };
-    }, [selectedExchange, activePair, theme, widgetKey, isChartFullScreen, chartView]);
+    }, [selectedExchange, activePair, activeTimeframe, theme, widgetKey, isChartFullScreen, chartView]);
 
-    // Drawing Lines
-    const handleAddHighlight = useCallback((level: number) => {
-        if (!isNaN(level) && !highlightedLevels.includes(level)) {
-            setHighlightedLevels([...highlightedLevels, level].sort((a, b) => b - a));
-        }
-    }, [highlightedLevels, setHighlightedLevels]);
-    const handleRemoveHighlight = (level: number) => { setHighlightedLevels(highlightedLevels.filter(l => l !== level)); };
+    const handleToggleHighlight = useCallback(
+        (level: number) => {
+            if (isNaN(level) || level <= 0) return;
+            const exists = highlightedLevels.some((l) => Math.abs(l - level) / level < 0.0002);
+            if (exists) {
+                setHighlightedLevels(highlightedLevels.filter((l) => Math.abs(l - level) / level >= 0.0002));
+            } else {
+                setHighlightedLevels([...highlightedLevels, level].sort((a, b) => b - a));
+            }
+        },
+        [highlightedLevels, setHighlightedLevels],
+    );
+
+    const handleRemoveHighlight = (level: number) => {
+        setHighlightedLevels(highlightedLevels.filter((l) => l !== level));
+    };
+
     const handleHighlightSubmit = (e: FormEvent) => {
         e.preventDefault();
         const level = parseFloat(highlightLevelInput);
-        if (!isNaN(level)) { handleAddHighlight(level); setHighlightLevelInput(''); }
+        if (!isNaN(level) && level > 0) {
+            if (!highlightedLevels.includes(level)) {
+                setHighlightedLevels([...highlightedLevels, level].sort((a, b) => b - a));
+            }
+            setHighlightLevelInput('');
+        }
     };
 
     useEffect(() => {
         const chartApi = chartApiRef.current;
         if (tvChartReady && chartApi && typeof chartApi.createHorzLine === 'function') {
-            drawnLinesRef.current.forEach(line => { try { chartApi.removeEntity(line.id); } catch (e) { } });
+            drawnLinesRef.current.forEach((line) => {
+                try {
+                    chartApi.removeEntity(line.id);
+                } catch {}
+            });
             drawnLinesRef.current = [];
-            highlightedLevels.forEach(level => {
+            highlightedLevels.forEach((level) => {
                 try {
                     const line = chartApi.createHorzLine({
-                        price: level, text: `$${level.toLocaleString()}`, lineStyle: 2, lineColor: '#FBBF24', textColor: '#000000', backgroundColor: '#FBBF24', showLabel: true
+                        price: level,
+                        text: `$${level.toLocaleString()}`,
+                        lineStyle: 2,
+                        lineColor: '#FBBF24',
+                        textColor: '#000000',
+                        backgroundColor: '#FBBF24',
+                        showLabel: true,
                     });
                     drawnLinesRef.current.push(line);
-                } catch (e) { }
+                } catch {}
             });
         }
     }, [highlightedLevels, tvChartReady]);
 
+    const filteredFeed = useMemo(() => {
+        return liveFeed.filter((e) => {
+            if (e.amount < minLiquidationThreshold) return false;
+            if (e.symbol && normalizePairSymbol(e.symbol) !== normalizePairSymbol(activePair)) return false;
+            if (feedFilter === 'long' && e.type !== 'Long') return false;
+            if (feedFilter === 'short' && e.type !== 'Short') return false;
+            if (feedFilter === 'whale' && !e.isWhale) return false;
+            return true;
+        });
+    }, [liveFeed, minLiquidationThreshold, activePair, feedFilter]);
 
+    const handleExportFeedCsv = () => {
+        if (filteredFeed.length === 0) return;
+        const headers = ['Timestamp', 'Time', 'Symbol', 'Side', 'Price', 'USD_Value', 'Is_Whale'];
+        const rows = filteredFeed.map((e) => [
+            e.timestamp,
+            e.time,
+            e.symbol || activePair,
+            e.type,
+            e.price,
+            e.amount.toFixed(2),
+            e.isWhale ? 'YES' : 'NO',
+        ]);
+        const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `liquidations_${activePair.replace('/', '-')}_${Date.now()}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    };
 
-    // Calculate Ratio
     const totalLiq = aggregatedStats.longLiqs + aggregatedStats.shortLiqs;
     const longRatio = totalLiq > 0 ? (aggregatedStats.longLiqs / totalLiq) * 100 : 50;
 
+    const poolSummary = godModeState?.liquidation_pool_summary;
+    const shortPoolsUsd = poolSummary?.total_short_liq_usd || 0;
+    const longPoolsUsd = poolSummary?.total_long_liq_usd || 0;
+    const totalPoolUsd = shortPoolsUsd + longPoolsUsd;
+    const shortPoolPct = totalPoolUsd > 0 ? (shortPoolsUsd / totalPoolUsd) * 100 : 50;
+
+    const deepL2 = godModeState?.deep_l2_summary;
+    const pain = godModeState?.pain_threshold;
+
     return (
-        <div className="flex flex-col h-full gap-4 overflow-hidden">
-
-            {/* High-Tech HUD */}
-            <div className="flex-shrink-0 grid grid-cols-1 md:grid-cols-5 gap-4 staggered-fade-in relative z-50">
-                {/* Search & Price */}
-                <Card className="md:col-span-1 flex flex-col justify-center !p-5 relative bg-gradient-to-br from-white to-slate-50 dark:from-[#000000] dark:to-[#111827] border-slate-200 dark:border-white/5 shadow-lg dark:shadow-2xl rounded-2xl group z-[60]">
-                    <div className="absolute inset-0 bg-gradient-to-br from-brand-primary/10 via-transparent to-transparent opacity-50 group-hover:opacity-100 transition-opacity duration-700 rounded-2xl pointer-events-none"></div>
-                    <div className="absolute -right-10 -top-10 w-32 h-32 bg-brand-primary/20 blur-[50px] rounded-full pointer-events-none"></div>
-                    
-                    <div className="relative z-10 flex flex-col gap-4">
-                        {/* Header */}
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                                <div className="relative flex h-2 w-2">
-                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-primary opacity-75"></span>
-                                  <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-primary"></span>
-                                </div>
-                                <span className="text-[10px] text-slate-500 dark:text-gray-400 font-bold uppercase tracking-widest">Market</span>
-                            </div>
-                            <div className="text-[9px] px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-500 dark:text-gray-400">
-                                Live
-                            </div>
+        <div className="flex flex-col h-full gap-3 overflow-hidden">
+            {/* Pro Trader Edge HUD Strip */}
+            <div className="flex-shrink-0 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 relative z-30">
+                {/* 1. Untapped OI Liquidation Pools (Always populated from backend) */}
+                <Card className="!p-4 bg-gradient-to-br from-white to-slate-50 dark:from-[#070B12] dark:to-[#0C121D] border-slate-200 dark:border-white/10 rounded-2xl shadow-sm">
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-gray-400 flex items-center gap-1.5">
+                            <Layers className="w-3.5 h-3.5 text-cyan-500" />
+                            OI Liq Pools ({activeHorizon.toUpperCase()})
+                        </span>
+                        <span
+                            className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border ${
+                                poolSummary?.dominant_side === 'ABOVE'
+                                    ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/25'
+                                    : poolSummary?.dominant_side === 'BELOW'
+                                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/25'
+                                    : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-gray-400 border-slate-200 dark:border-white/10'
+                            }`}
+                        >
+                            {poolSummary?.dominant_side || 'SYNCING'}
+                        </span>
+                    </div>
+                    <div className="flex justify-between items-baseline text-xs font-mono font-bold mb-2">
+                        <div>
+                            <span className="block text-[9px] text-slate-500 dark:text-gray-400">Shorts Above</span>
+                            <span className="text-sm text-rose-600 dark:text-rose-400">{formatCompactUsd(shortPoolsUsd)}</span>
                         </div>
-
-                        {/* Selectors */}
-                        <div className="flex flex-col gap-2.5">
-                            {/* Exchange Selector */}
-                            <div className="relative group/select">
-                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                    <svg className="w-3.5 h-3.5 text-slate-400 dark:text-gray-400 group-hover/select:text-brand-primary transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                                    </svg>
-                                </div>
-                                <select
-                                    value={selectedExchange}
-                                    onChange={(e) => setSelectedExchange(e.target.value)}
-                                    className="w-full bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/20 rounded-lg py-2 pl-9 pr-8 text-xs font-bold font-mono text-slate-900 dark:text-white appearance-none cursor-pointer focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/50 outline-none transition-all shadow-inner"
-                                >
-                                    {exchanges.map((ex) => (
-                                        <option key={ex} value={ex} className="bg-white dark:bg-[#050505] text-slate-900 dark:text-white font-mono">
-                                            {ex.toUpperCase()}
-                                        </option>
-                                    ))}
-                                </select>
-                                <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                                    <svg className="w-3.5 h-3.5 text-slate-400 dark:text-gray-500 group-hover/select:text-slate-700 dark:group-hover/select:text-white transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                    </svg>
-                                </div>
-                            </div>
-
-                            {/* Pair Selector */}
-                            <ComboBox
-                                value={selectedPair}
-                                onChange={setSelectedPair}
-                                options={availablePairs.map(m => m.symbol)}
-                                disabled={isPairsLoading}
-                                placeholder={isPairsLoading ? "Loading..." : "Search pair..."}
-                                inputClassName="!bg-slate-50 dark:!bg-black/40 !border-slate-200 dark:!border-white/10 hover:!border-slate-300 dark:hover:!border-white/20 !text-slate-900 dark:!text-white !rounded-lg !py-2 !text-xs !font-bold !font-mono shadow-inner transition-all focus:!border-brand-primary"
-                                className="group/combo"
-                                icon={
-                                    <svg className="w-3.5 h-3.5 text-slate-400 dark:text-gray-400 group-hover/combo:text-brand-primary transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                                    </svg>
-                                }
-                            />
+                        <div className="text-right">
+                            <span className="block text-[9px] text-slate-500 dark:text-gray-400">Longs Below</span>
+                            <span className="text-sm text-emerald-600 dark:text-emerald-400">{formatCompactUsd(longPoolsUsd)}</span>
                         </div>
+                    </div>
+                    <div className="w-full h-2 bg-slate-200 dark:bg-black/50 rounded-full overflow-hidden flex">
+                        <div className="h-full bg-rose-500 transition-all duration-500" style={{ width: `${shortPoolPct}%` }} />
+                        <div className="h-full bg-emerald-500 flex-1 transition-all duration-500" />
                     </div>
                 </Card>
 
-                {/* Filter Control */}
-                <Card className="md:col-span-1 flex flex-col justify-center !p-5 relative overflow-hidden bg-gradient-to-br from-white to-slate-50 dark:from-[#000000] dark:to-[#111827] border-slate-200 dark:border-white/5 shadow-lg dark:shadow-2xl rounded-2xl group">
-                    <div className="absolute inset-0 bg-gradient-to-br from-brand-primary/5 via-transparent to-transparent opacity-30 group-hover:opacity-100 transition-opacity duration-700"></div>
-                    {minLiquidationThreshold > 50000 && (
-                        <div className="absolute top-0 right-0 p-1">
-                            <span className="text-[9px] bg-yellow-500/20 text-yellow-600 dark:text-yellow-500 px-1.5 py-0.5 rounded-bl-lg uppercase font-bold border-b border-l border-yellow-500/30 shadow-[0_0_10px_rgba(234,179,8,0.3)] animate-pulse">
-                                Whale
+                {/* 2. Nearest Magnetic Squeeze / Sweep Targets (Clickable!) */}
+                <Card className="!p-4 bg-gradient-to-br from-white to-slate-50 dark:from-[#070B12] dark:to-[#0C121D] border-slate-200 dark:border-white/10 rounded-2xl shadow-sm">
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-gray-400 flex items-center gap-1.5">
+                            <Magnet className="w-3.5 h-3.5 text-amber-500" />
+                            Magnetic Pool Targets
+                        </span>
+                        <span className="text-[9px] font-mono text-slate-400">Click to track</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                        <button
+                            type="button"
+                            disabled={!poolSummary?.nearest_short_pool}
+                            onClick={() => poolSummary?.nearest_short_pool && handleToggleHighlight(poolSummary.nearest_short_pool.price)}
+                            className="text-left p-2 rounded-xl bg-rose-500/[0.06] border border-rose-500/20 hover:border-rose-500/50 transition-all disabled:opacity-50"
+                        >
+                            <span className="block text-[9px] font-bold text-rose-600 dark:text-rose-400 uppercase">Short Squeeze ↑</span>
+                            <span className="block text-xs font-mono font-black text-slate-900 dark:text-white mt-0.5">
+                                {poolSummary?.nearest_short_pool ? formatPairPrice(poolSummary.nearest_short_pool.price) : '--'}
                             </span>
-                        </div>
-                    )}
-                    <div className="relative z-10 flex flex-col h-full justify-between">
-                        <div className="flex justify-between items-center">
-                            <p className="text-[10px] text-slate-500 dark:text-gray-400 uppercase tracking-widest font-bold">Min Threshold</p>
-                            <p className="text-sm font-mono font-bold text-brand-primary drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]">${(minLiquidationThreshold / 1000).toFixed(0)}k</p>
-                        </div>
-                        <div className="mt-4 relative pt-1">
-                            <div className="flex items-center gap-3">
-                                <span className="text-[9px] text-slate-500 dark:text-gray-500 font-mono font-bold">0</span>
-                                <div className="relative flex-1 group/slider">
-                                    <input
-                                        type="range"
-                                        min="0"
-                                        max="100000"
-                                        step="1000"
-                                        value={minLiquidationThreshold}
-                                        onChange={(e) => setMinLiquidationThreshold(Number(e.target.value))}
-                                        className="w-full h-1.5 bg-slate-200 dark:bg-gray-800/50 rounded-lg appearance-none cursor-pointer accent-brand-primary focus:outline-none focus:ring-2 focus:ring-brand-primary/50 relative z-10"
-                                    />
-                                    <div className="absolute top-1/2 -translate-y-1/2 left-0 h-1.5 bg-brand-primary rounded-l-lg pointer-events-none transition-all duration-150 shadow-[0_0_10px_rgba(59,130,246,0.6)]" style={{ width: `${(minLiquidationThreshold / 100000) * 100}%` }}></div>
-                                </div>
-                                <span className="text-[9px] text-slate-500 dark:text-gray-500 font-mono font-bold">100k</span>
-                            </div>
-                        </div>
+                            <span className="block text-[9px] font-mono text-slate-500 dark:text-gray-400">
+                                {poolSummary?.nearest_short_pool
+                                    ? `+${poolSummary.nearest_short_pool.dist_pct.toFixed(2)}% • ${formatCompactUsd(poolSummary.nearest_short_pool.estimated_usd)}`
+                                    : 'No upper pool'}
+                            </span>
+                        </button>
+
+                        <button
+                            type="button"
+                            disabled={!poolSummary?.nearest_long_pool}
+                            onClick={() => poolSummary?.nearest_long_pool && handleToggleHighlight(poolSummary.nearest_long_pool.price)}
+                            className="text-left p-2 rounded-xl bg-emerald-500/[0.06] border border-emerald-500/20 hover:border-emerald-500/50 transition-all disabled:opacity-50"
+                        >
+                            <span className="block text-[9px] font-bold text-emerald-600 dark:text-emerald-400 uppercase">Long Sweep ↓</span>
+                            <span className="block text-xs font-mono font-black text-slate-900 dark:text-white mt-0.5">
+                                {poolSummary?.nearest_long_pool ? formatPairPrice(poolSummary.nearest_long_pool.price) : '--'}
+                            </span>
+                            <span className="block text-[9px] font-mono text-slate-500 dark:text-gray-400">
+                                {poolSummary?.nearest_long_pool
+                                    ? `-${Math.abs(poolSummary.nearest_long_pool.dist_pct).toFixed(2)}% • ${formatCompactUsd(poolSummary.nearest_long_pool.estimated_usd)}`
+                                    : 'No lower pool'}
+                            </span>
+                        </button>
                     </div>
                 </Card>
 
-                {/* Stats: Total Vol */}
-                <Card className="md:col-span-1 flex flex-col justify-center !p-5 relative overflow-hidden bg-gradient-to-br from-white to-slate-50 dark:from-[#000000] dark:to-[#111827] border-slate-200 dark:border-white/5 shadow-lg dark:shadow-2xl rounded-2xl group">
-                    <div className="absolute inset-0 bg-gradient-to-br from-rose-500/5 via-transparent to-transparent opacity-30 group-hover:opacity-100 transition-opacity duration-700"></div>
-                    <div className="absolute -right-8 -bottom-8 w-24 h-24 bg-rose-500/10 blur-[30px] rounded-full"></div>
-                    <div className="relative z-10 flex items-center gap-4">
-                        <div className="p-3 bg-rose-500/10 rounded-xl text-rose-500 border border-rose-500/20 shadow-[0_0_15px_rgba(244,63,94,0.15)] relative">
-                             <div className="absolute inset-0 bg-rose-500/20 animate-ping rounded-xl opacity-20"></div>
-                             <FireIcon className="w-5 h-5 relative z-10 drop-shadow-[0_0_8px_rgba(244,63,94,0.8)]" />
-                        </div>
-                        <div className="flex flex-col">
-                            <p className="text-[10px] text-slate-500 dark:text-gray-400 uppercase tracking-widest font-bold mb-0.5">Total Rekt (Session)</p>
-                            <p className="text-2xl font-bold font-mono text-slate-900 dark:text-white dark:drop-shadow-[0_0_8px_rgba(255,255,255,0.2)]">
-                                ${(aggregatedStats.totalVol / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })}k
-                            </p>
-                        </div>
+                {/* 3. Session Rekt Volume + Long/Short Ratio */}
+                <Card className="!p-4 bg-gradient-to-br from-white to-slate-50 dark:from-[#070B12] dark:to-[#0C121D] border-slate-200 dark:border-white/10 rounded-2xl shadow-sm">
+                    <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-gray-400 flex items-center gap-1.5">
+                            <FireIcon className="w-3.5 h-3.5 text-rose-500" />
+                            Session Rekt
+                        </span>
+                        <span className="text-sm font-mono font-black text-slate-900 dark:text-white">
+                            {formatCompactUsd(aggregatedStats.totalVol)}
+                        </span>
+                    </div>
+                    <div className="flex justify-between items-center text-[11px] font-mono font-bold mb-2">
+                        <span className="text-rose-600 dark:text-rose-400">
+                            Longs {formatCompactUsd(aggregatedStats.longLiqs)} ({longRatio.toFixed(0)}%)
+                        </span>
+                        <span className="text-emerald-600 dark:text-emerald-400">
+                            Shorts {formatCompactUsd(aggregatedStats.shortLiqs)} ({(100 - longRatio).toFixed(0)}%)
+                        </span>
+                    </div>
+                    <div className="w-full h-2 bg-slate-200 dark:bg-black/50 rounded-full overflow-hidden flex">
+                        <div className="h-full bg-rose-500 transition-all duration-500" style={{ width: `${longRatio}%` }} />
+                        <div className="h-full bg-emerald-500 flex-1 transition-all duration-500" />
                     </div>
                 </Card>
 
-                {/* Stats: Ratio Bar */}
-                <Card className="md:col-span-2 flex flex-col justify-center !p-5 relative overflow-hidden bg-gradient-to-br from-white to-slate-50 dark:from-[#000000] dark:to-[#111827] border-slate-200 dark:border-white/5 shadow-lg dark:shadow-2xl rounded-2xl group">
-                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.02)_0%,transparent_100%)] pointer-events-none"></div>
-                    <div className="relative z-10 flex flex-col h-full justify-center gap-4">
-                        <div className="flex justify-between items-end">
-                            <div className="flex flex-col gap-1">
-                                <div className="flex items-center gap-1.5">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.8)] animate-pulse"></div>
-                                    <p className="text-[10px] font-bold text-slate-500 dark:text-gray-400 uppercase tracking-widest">Longs Rekt</p>
-                                </div>
-                                <p className="text-xl font-mono font-bold text-rose-600 dark:text-rose-400 dark:drop-shadow-[0_0_8px_rgba(244,63,94,0.5)]">${(aggregatedStats.longLiqs / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })}k</p>
-                            </div>
-                            
-                            <div className="flex flex-col items-center justify-center opacity-90 backdrop-blur-sm bg-slate-100 dark:bg-black/20 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-white/5">
-                                 <span className="text-[9px] text-slate-500 dark:text-gray-500 uppercase font-mono font-bold tracking-widest">Ratio</span>
-                                 <span className="text-xs font-bold font-mono text-slate-900 dark:text-white mt-0.5">{longRatio.toFixed(1)}% <span className="text-slate-400 dark:text-gray-600">|</span> {(100 - longRatio).toFixed(1)}%</span>
-                            </div>
+                {/* 4. Min Threshold Filter + Deep L2 Wall Imbalance */}
+                <Card className="!p-4 bg-gradient-to-br from-white to-slate-50 dark:from-[#070B12] dark:to-[#0C121D] border-slate-200 dark:border-white/10 rounded-2xl shadow-sm flex flex-col justify-between">
+                    <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-gray-400">
+                            Min Filter: <span className="text-brand-primary font-mono">${(minLiquidationThreshold / 1000).toFixed(0)}k</span>
+                        </span>
+                        <div className="flex items-center gap-1">
+                            {[0, 10000, 50000, 100000].map((val) => (
+                                <button
+                                    key={val}
+                                    type="button"
+                                    onClick={() => setMinLiquidationThreshold(val)}
+                                    className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold border ${
+                                        minLiquidationThreshold === val
+                                            ? 'bg-brand-primary text-white border-brand-primary'
+                                            : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-gray-400 border-slate-200 dark:border-white/10'
+                                    }`}
+                                >
+                                    {val === 0 ? 'All' : `${val / 1000}k`}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
 
-                            <div className="flex flex-col gap-1 items-end">
-                                <div className="flex items-center gap-1.5">
-                                    <p className="text-[10px] font-bold text-slate-500 dark:text-gray-400 uppercase tracking-widest">Shorts Rekt</p>
-                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse"></div>
-                                </div>
-                                <p className="text-xl font-mono font-bold text-emerald-600 dark:text-emerald-400 dark:drop-shadow-[0_0_8px_rgba(16,185,129,0.5)]">${(aggregatedStats.shortLiqs / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })}k</p>
-                            </div>
-                        </div>
-                        {/* The Ratio Bar */}
-                        <div className="w-full h-2.5 bg-slate-200 dark:bg-black/60 rounded-full overflow-hidden relative flex border border-slate-200 dark:border-white/5 shadow-inner">
-                            <div className="h-full bg-gradient-to-r from-rose-600 to-rose-400 transition-all duration-700 ease-out relative" style={{ width: `${longRatio}%` }}>
-                                <div className="absolute inset-0 bg-[linear-gradient(45deg,rgba(255,255,255,0.15)_25%,transparent_25%,transparent_50%,rgba(255,255,255,0.15)_50%,rgba(255,255,255,0.15)_75%,transparent_75%,transparent)] bg-[length:1rem_1rem] opacity-50"></div>
-                            </div>
-                            <div className="h-full bg-gradient-to-r from-emerald-400 to-emerald-600 flex-1 transition-all duration-700 ease-out relative">
-                                <div className="absolute inset-0 bg-[linear-gradient(45deg,rgba(255,255,255,0.15)_25%,transparent_25%,transparent_50%,rgba(255,255,255,0.15)_50%,rgba(255,255,255,0.15)_75%,transparent_75%,transparent)] bg-[length:1rem_1rem] opacity-50"></div>
-                            </div>
-                            {/* Center Marker */}
-                            <div className="absolute top-[-2px] bottom-[-2px] left-1/2 w-0.5 bg-slate-700 dark:bg-white z-10 shadow-sm dark:shadow-[0_0_8px_rgba(255,255,255,1)]"></div>
-                        </div>
+                    <input
+                        type="range"
+                        min="0"
+                        max="100000"
+                        step="5000"
+                        value={minLiquidationThreshold}
+                        onChange={(e) => setMinLiquidationThreshold(Number(e.target.value))}
+                        className="w-full h-1.5 bg-slate-200 dark:bg-gray-800 rounded-lg appearance-none cursor-pointer accent-brand-primary my-1.5"
+                    />
+
+                    <div className="flex items-center justify-between text-[10px] font-mono pt-1 border-t border-slate-200/70 dark:border-white/10">
+                        <span className="text-slate-500 dark:text-gray-400">
+                            L2 Bias:{' '}
+                            <strong
+                                className={
+                                    deepL2?.book_bias === 'BID_HEAVY'
+                                        ? 'text-emerald-600 dark:text-emerald-400'
+                                        : deepL2?.book_bias === 'ASK_HEAVY'
+                                        ? 'text-rose-600 dark:text-rose-400'
+                                        : 'text-slate-700 dark:text-slate-300'
+                                }
+                            >
+                                {deepL2?.book_bias || 'BALANCED'}
+                            </strong>
+                        </span>
+                        <span className="text-slate-500 dark:text-gray-400">
+                            Pain: <strong className={pain && pain.level >= 70 ? 'text-rose-500' : 'text-cyan-600 dark:text-cyan-400'}>{pain?.level ?? 0}%</strong>
+                        </span>
                     </div>
                 </Card>
             </div>
 
-            {/* Main Content Area */}
-            <div ref={containerRef} className="flex-1 flex gap-4 relative min-h-0 staggered-fade-in" style={{ animationDelay: '100ms' }}>
+            {/* Main Split Workspace */}
+            <div ref={containerRef} className="flex-1 flex gap-3 relative min-h-0">
                 {isResizing && <div className="absolute inset-0 z-50 cursor-col-resize" />}
 
-                {/* Left: Chart */}
-                <div className="h-full flex flex-col transition-all duration-75 relative" style={{ width: `${chartWidth}%` }}>
-                    <Card className="flex-1 min-h-0 relative p-0 overflow-hidden border-slate-200 dark:border-white/5 shadow-lg dark:shadow-2xl bg-white dark:bg-[#000000] rounded-2xl group">
-                        {/* High-tech border effects */}
-                        <div className="absolute inset-0 bg-gradient-to-br from-brand-primary/10 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none z-0"></div>
-                        <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-brand-primary/50 to-transparent opacity-50 z-10"></div>
-                        <div className="absolute bottom-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-brand-primary/20 to-transparent z-10"></div>
-
-                        {/* View Switcher and Price (Absolute Top-Left) */}
-                        <div className="absolute top-4 left-4 z-20 flex items-center gap-4">
-                            <div className="flex bg-white/90 dark:bg-black/60 backdrop-blur-md rounded-xl p-1 shadow-md dark:shadow-[0_4px_20px_rgba(0,0,0,0.5)] border border-slate-200 dark:border-white/10 overflow-hidden">
-                                <button
-                                    onClick={() => setChartView('price')}
-                                    className={`px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all duration-300 relative ${chartView === 'price' ? 'text-brand-primary dark:text-white' : 'text-slate-500 dark:text-gray-500 hover:text-slate-800 dark:hover:text-gray-300 hover:bg-slate-100 dark:hover:bg-white/5'}`}
-                                >
-                                    {chartView === 'price' && <div className="absolute inset-0 bg-brand-primary/15 dark:bg-brand-primary/20 bg-gradient-to-r from-brand-primary/25 dark:from-brand-primary/40 to-brand-primary/10 rounded-lg -z-10 shadow-[inner_0_0_10px_rgba(59,130,246,0.3)] border border-brand-primary/50"></div>}
-                                    Price Action
-                                </button>
-                                <button
-                                    onClick={() => setChartView('bubbles')}
-                                    className={`px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all duration-300 relative ${chartView === 'bubbles' ? 'text-brand-primary dark:text-white' : 'text-slate-500 dark:text-gray-500 hover:text-slate-800 dark:hover:text-gray-300 hover:bg-slate-100 dark:hover:bg-white/5'}`}
-                                >
-                                    {chartView === 'bubbles' && <div className="absolute inset-0 bg-brand-primary/15 dark:bg-brand-primary/20 bg-gradient-to-r from-brand-primary/25 dark:from-brand-primary/40 to-brand-primary/10 rounded-lg -z-10 shadow-[inner_0_0_10px_rgba(59,130,246,0.3)] border border-brand-primary/50"></div>}
-                                    Liquidations
-                                </button>
+                {/* Left: Main Chart Container */}
+                <div className="h-full flex flex-col relative min-w-0" style={{ width: `${chartWidth}%` }}>
+                    <Card className="flex-1 min-h-0 relative !p-0 overflow-hidden border-slate-200 dark:border-white/10 shadow-lg bg-white dark:bg-[#05070C] rounded-2xl group">
+                        {/* View Switcher & Oracle Pill (Top Left) */}
+                        <div className="absolute top-3.5 left-3.5 z-20 flex items-center gap-2.5 flex-wrap">
+                            <div className="flex bg-white/95 dark:bg-black/70 backdrop-blur-md rounded-xl p-1 shadow border border-slate-200 dark:border-white/10">
+                                {[
+                                    { key: 'heatmap', label: 'Liquidity Map' },
+                                    { key: 'price', label: 'TradingView' },
+                                    { key: 'bubbles', label: 'Bubbles' },
+                                ].map((v) => (
+                                    <button
+                                        key={v.key}
+                                        type="button"
+                                        onClick={() => setChartView(v.key as any)}
+                                        className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all ${
+                                            chartView === v.key
+                                                ? 'bg-brand-primary/15 text-brand-primary dark:text-white border border-brand-primary/40'
+                                                : 'text-slate-500 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white'
+                                        }`}
+                                    >
+                                        {v.label}
+                                    </button>
+                                ))}
                             </div>
 
-                           {/* Embedded Price Display */}
-                           <div className="flex items-center gap-3 bg-white/90 dark:bg-black/60 backdrop-blur-md rounded-xl px-4 py-1 shadow-md dark:shadow-[0_4px_20px_rgba(0,0,0,0.5)] border border-slate-200 dark:border-white/10 h-[34px]">
-                                <span className="text-[10px] text-slate-500 dark:text-gray-500 uppercase tracking-widest font-bold">Oracle</span>
-                                <span className={`text-base font-mono font-bold tracking-tight transition-colors duration-300 ${priceUpdateStatus === 'up' ? 'text-emerald-600 dark:text-emerald-400 dark:drop-shadow-[0_0_8px_rgba(52,211,153,0.5)]' : priceUpdateStatus === 'down' ? 'text-rose-600 dark:text-rose-400 dark:drop-shadow-[0_0_8px_rgba(251,113,133,0.5)]' : 'text-slate-900 dark:text-white dark:drop-shadow-[0_0_5px_rgba(255,255,255,0.3)]'}`}>
-                                    {wsPrice > 0 ? `$${wsPrice.toLocaleString(undefined, { minimumFractionDigits: wsPrice < 1 ? 4 : 2, maximumFractionDigits: wsPrice < 1 ? 4 : 2 })}` : '---'}
+                            {!isConnected && (
+                                <span className="text-[9px] font-bold text-rose-500 bg-rose-500/10 px-2 py-1 rounded-lg border border-rose-500/25 animate-pulse">
+                                    WS RECONNECTING
                                 </span>
-                                {!isConnected && (
-                                    <span className="text-[8px] font-bold text-red-500 bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20 animate-pulse">
-                                        OFFLINE
-                                    </span>
-                                )}
-                           </div>
+                            )}
                         </div>
+
+                        {/* Chart Content */}
+                        {chartView === 'heatmap' && (
+                            <LiveLiquidityPoolChart
+                                symbol={activePair}
+                                exchange={selectedExchange}
+                                timeframe={activeTimeframe}
+                                oraclePrice={effectiveOraclePrice}
+                                godModeData={godModeState}
+                                highlightedLevels={highlightedLevels}
+                                onToggleLevel={handleToggleHighlight}
+                                isDark={isDark}
+                            />
+                        )}
 
                         {chartView === 'price' && (
                             <div id={`tradingview_liquidation_chart_${widgetKey}`} className="w-full h-full relative z-10" />
                         )}
 
                         {chartView === 'bubbles' && (
-                            <div className="w-full h-full p-6 bg-transparent relative z-10">
-                                <LiquidationBubbleChart data={liveFeed} activePair={activePair} activeExchange={selectedExchange} />
-                            </div>
+                            <LiquidationBubbleChart
+                                data={liveFeed}
+                                activePair={activePair}
+                                activeExchange={selectedExchange}
+                                timeframe={activeTimeframe}
+                                onSelectPrice={(p) => handleToggleHighlight(Number(p.toFixed(p < 1 ? 4 : 2)))}
+                            />
                         )}
 
-                        {/* Floating Toolbar for Highlights */}
-                        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 pointer-events-none w-full max-w-lg px-4 transition-transform duration-500 group-hover:-translate-y-2">
-                            <div className="bg-white/95 dark:bg-[#000000]/80 backdrop-blur-xl border border-slate-200 dark:border-white/10 rounded-2xl p-2.5 flex items-center justify-between gap-3 shadow-lg dark:shadow-[0_10px_30px_rgba(0,0,0,0.5)] pointer-events-auto relative overflow-hidden group/toolbar">
-                                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-brand-primary/5 to-transparent -translate-x-full group-hover/toolbar:animate-[shimmer_2s_infinite]"></div>
-                                
-                                <span className="text-[10px] font-bold text-slate-600 dark:text-gray-400 uppercase tracking-widest px-2 whitespace-nowrap flex items-center gap-1.5">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse shadow-[0_0_5px_rgba(234,179,8,0.8)]"></div>
+                        {/* Floating Track Levels Toolbar */}
+                        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 w-full max-w-xl px-4">
+                            <div className="bg-white/95 dark:bg-[#05070C]/90 backdrop-blur-xl border border-slate-200 dark:border-white/10 rounded-2xl p-2 flex items-center gap-2.5 shadow-lg">
+                                <span className="text-[10px] font-bold text-slate-600 dark:text-gray-300 uppercase tracking-wider px-1.5 whitespace-nowrap flex items-center gap-1.5">
+                                    <Crosshair className="w-3.5 h-3.5 text-amber-500" />
                                     Track Levels
                                 </span>
-                                
-                                <div className="h-6 w-px bg-slate-200 dark:bg-white/10 mx-1"></div>
-                                
-                                <form onSubmit={handleHighlightSubmit} className="flex gap-2 w-40 shrink-0">
+
+                                <form onSubmit={handleHighlightSubmit} className="flex gap-1.5 w-36 shrink-0">
                                     <input
                                         type="number"
+                                        step="any"
                                         value={highlightLevelInput}
                                         onChange={(e) => setHighlightLevelInput(e.target.value)}
                                         placeholder="Price..."
-                                        className="bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-white/5 rounded-lg px-2.5 py-1 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-600 focus:border-brand-primary/50 focus:ring-1 focus:ring-brand-primary/50 outline-none w-full font-mono transition-all"
+                                        className="bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-lg px-2 py-1 text-xs text-slate-900 dark:text-white outline-none w-full font-mono"
                                     />
-                                    <button type="submit" className="bg-brand-primary/20 hover:bg-brand-primary/40 text-brand-primary border border-brand-primary/30 px-2.5 py-1 rounded-lg text-xs font-bold transition-colors">+</button>
+                                    <button
+                                        type="submit"
+                                        className="bg-brand-primary/20 hover:bg-brand-primary/35 text-brand-primary border border-brand-primary/35 px-2.5 py-1 rounded-lg text-xs font-bold"
+                                    >
+                                        +
+                                    </button>
                                 </form>
 
-                                <div className="flex-1 flex gap-1.5 overflow-x-auto no-scrollbar scroll-smooth">
-                                    {highlightedLevels.map(level => (
-                                        <span key={level} className="flex flex-shrink-0 items-center gap-1 bg-yellow-500/10 text-yellow-600 dark:text-yellow-500 border border-yellow-500/20 rounded-md px-2 py-0.5 text-[10px] font-mono font-bold whitespace-nowrap group/tag transition-all hover:bg-yellow-500/20 hover:border-yellow-500/40">
+                                <div className="flex-1 flex gap-1.5 overflow-x-auto no-scrollbar">
+                                    {highlightedLevels.map((level) => (
+                                        <span
+                                            key={level}
+                                            className="flex flex-shrink-0 items-center gap-1 bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 rounded-md px-2 py-0.5 text-[10px] font-mono font-bold"
+                                        >
                                             ${level}
-                                            <button onClick={() => handleRemoveHighlight(level)} className="text-yellow-600/60 dark:text-yellow-500/50 group-hover/tag:text-yellow-600 dark:group-hover/tag:text-yellow-500 hover:!text-red-500 dark:hover:!text-red-400 focus:outline-none transition-colors ml-0.5" type="button">&times;</button>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleRemoveHighlight(level)}
+                                                className="hover:text-rose-500 ml-0.5"
+                                            >
+                                                &times;
+                                            </button>
                                         </span>
                                     ))}
                                     {highlightedLevels.length === 0 && (
-                                        <span className="text-[10px] text-slate-400 dark:text-gray-600 italic px-2 py-1 whitespace-nowrap">No levels tracked</span>
+                                        <span className="text-[10px] text-slate-400 dark:text-gray-500 italic px-1 py-0.5 whitespace-nowrap">
+                                            Click any Pool/Magnet or enter price
+                                        </span>
                                     )}
                                 </div>
                             </div>
                         </div>
 
-                        <button onClick={toggleFullScreen} className="absolute top-4 right-4 z-20 p-2.5 bg-white/90 dark:bg-black/40 backdrop-blur-md border border-slate-200 dark:border-white/10 rounded-xl text-slate-500 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 hover:border-slate-300 dark:hover:border-white/20 transition-all shadow-md dark:shadow-[0_4px_15px_rgba(0,0,0,0.5)]">
+                        <button
+                            type="button"
+                            onClick={toggleFullScreen}
+                            className="absolute top-3.5 right-3.5 z-20 p-2 bg-white/95 dark:bg-black/60 backdrop-blur-md border border-slate-200 dark:border-white/10 rounded-xl text-slate-500 dark:text-gray-300 hover:text-slate-900 dark:hover:text-white shadow"
+                            title="Fullscreen Chart"
+                        >
                             <ExpandIcon />
                         </button>
                     </Card>
                 </div>
 
-                {/* Dragger */}
+                {/* Split Resizer */}
                 <div
-                    className="w-1.5 cursor-col-resize flex items-center justify-center group flex-shrink-0 hover:scale-x-150 transition-transform"
+                    className="w-1.5 cursor-col-resize flex items-center justify-center group flex-shrink-0"
                     onMouseDown={handleMouseDown}
                 >
-                    <div className={`h-16 w-1 rounded-full bg-slate-300 dark:bg-white/10 group-hover:bg-brand-primary transition-all duration-300 ${isResizing ? 'bg-brand-primary shadow-[0_0_10px_rgba(59,130,246,0.8)]' : ''}`}></div>
+                    <div
+                        className={`h-16 w-1 rounded-full bg-slate-300 dark:bg-white/15 group-hover:bg-brand-primary transition-all ${
+                            isResizing ? 'bg-brand-primary scale-x-150' : ''
+                        }`}
+                    />
                 </div>
 
-                {/* Right: Kill Feed & CLD */}
-                <div className="h-full flex flex-col gap-4" style={{ width: `calc(${100 - chartWidth}% - 22px)` }}>
-                    <Card className="flex-1 flex flex-col min-h-0 !p-0 border-slate-200 dark:border-white/5 shadow-lg dark:shadow-2xl bg-white dark:bg-[#000000] rounded-2xl overflow-hidden relative">
-                        {/* High-tech border effects */}
-                        <div className="absolute inset-0 bg-gradient-to-br from-brand-primary/5 via-transparent to-transparent opacity-50 z-0 pointer-events-none"></div>
-
+                {/* Right Quant Dock: Kill Feed / Pool Ladder / Analytics */}
+                <div className="h-full flex flex-col min-w-0" style={{ width: `calc(${100 - chartWidth}% - 18px)` }}>
+                    <Card className="flex-1 flex flex-col min-h-0 !p-0 border-slate-200 dark:border-white/10 shadow-lg bg-white dark:bg-[#05070C] rounded-2xl overflow-hidden">
                         {/* Tab Switcher */}
-                        <div className="flex border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/40 relative z-10 w-full overflow-hidden shrink-0">
-                            <button onClick={() => setRightPanelTab('feed')} className={`flex-1 py-3 text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all duration-300 relative truncate px-2 ${rightPanelTab === 'feed' ? 'text-brand-primary bg-brand-primary/5 dark:bg-white/5' : 'text-slate-500 dark:text-gray-500 hover:text-slate-800 dark:hover:text-gray-300 hover:bg-slate-100 dark:hover:bg-white/5'}`}>
-                                Live Feed
-                                {rightPanelTab === 'feed' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-brand-primary shadow-[0_-2px_8px_rgba(59,130,246,0.8)]"></div>}
-                            </button>
-                            <button onClick={() => setRightPanelTab('cld')} className={`flex-1 py-3 text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all duration-300 relative truncate px-2 ${rightPanelTab === 'cld' ? 'text-brand-primary bg-brand-primary/5 dark:bg-white/5' : 'text-slate-500 dark:text-gray-500 hover:text-slate-800 dark:hover:text-gray-300 hover:bg-slate-100 dark:hover:bg-white/5'}`}>
-                                Analytics
-                                {rightPanelTab === 'cld' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-brand-primary shadow-[0_-2px_8px_rgba(59,130,246,0.8)]"></div>}
-                            </button>
+                        <div className="flex border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/40 shrink-0">
+                            {[
+                                { key: 'feed', label: `Kill Feed (${filteredFeed.length})` },
+                                { key: 'pools', label: `OI Pools (${godModeState?.liquidation_pools?.length || 0})` },
+                                { key: 'cld', label: 'CLD & Stats' },
+                            ].map((t) => (
+                                <button
+                                    key={t.key}
+                                    type="button"
+                                    onClick={() => setRightPanelTab(t.key as any)}
+                                    className={`flex-1 py-2.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider transition-all relative px-2 truncate ${
+                                        rightPanelTab === t.key
+                                            ? 'text-brand-primary bg-brand-primary/5 dark:bg-white/5'
+                                            : 'text-slate-500 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white'
+                                    }`}
+                                >
+                                    {t.label}
+                                    {rightPanelTab === t.key && (
+                                        <div className="absolute bottom-0 left-0 w-full h-0.5 bg-brand-primary" />
+                                    )}
+                                </button>
+                            ))}
                         </div>
 
-                        <div className="flex-1 overflow-y-auto p-0 relative z-10 w-full">
-                            {rightPanelTab === 'feed' ? (
-                                <div className="absolute inset-0 overflow-y-auto p-4 custom-scrollbar">
-                                    {liveFeed.length === 0 && (
-                                        <div className="h-full flex flex-col items-center justify-center text-gray-500 space-y-4">
-                                            <div className="relative w-12 h-12 flex items-center justify-center">
-                                                <div className="absolute inset-0 border-t-2 border-brand-primary rounded-full animate-spin"></div>
-                                                <div className="w-2 h-2 bg-brand-primary rounded-full animate-pulse shadow-[0_0_10px_rgba(59,130,246,0.8)]"></div>
-                                            </div>
-                                            <span className="text-[10px] sm:text-xs uppercase tracking-widest font-mono text-center px-4">
-                                                {isConnected ? `Scanning for ${activePair} Liquidations...` : 'Connecting to Node...'}
-                                            </span>
+                        <div className="flex-1 overflow-hidden relative">
+                            {rightPanelTab === 'feed' && (
+                                <div className="flex flex-col h-full">
+                                    {/* Feed Filters & Export */}
+                                    <div className="p-2.5 border-b border-slate-200 dark:border-white/10 flex items-center justify-between gap-1.5 bg-slate-50/70 dark:bg-black/20 shrink-0">
+                                        <div className="flex items-center gap-1">
+                                            {[
+                                                { key: 'all', label: 'All' },
+                                                { key: 'long', label: 'Long' },
+                                                { key: 'short', label: 'Short' },
+                                                { key: 'whale', label: 'Whale' },
+                                            ].map((f) => (
+                                                <button
+                                                    key={f.key}
+                                                    type="button"
+                                                    onClick={() => setFeedFilter(f.key as any)}
+                                                    className={`px-2 py-1 rounded-lg text-[10px] font-bold uppercase border transition-colors ${
+                                                        feedFilter === f.key
+                                                            ? 'bg-brand-primary text-white border-brand-primary'
+                                                            : 'bg-white dark:bg-white/5 text-slate-600 dark:text-gray-400 border-slate-200 dark:border-white/10'
+                                                    }`}
+                                                >
+                                                    {f.label}
+                                                </button>
+                                            ))}
                                         </div>
-                                    )}
-                                    {liveFeed
-                                        .filter(
-                                            (e) =>
-                                                e.amount >= minLiquidationThreshold &&
-                                                (!e.symbol || normalizePairSymbol(e.symbol) === normalizePairSymbol(activePair))
-                                        )
-                                        .map((e) => (
-                                            <KillFeedItem key={e.id} event={e} activePair={activePair} />
-                                        ))}
+                                        <div className="flex items-center gap-1">
+                                            <button
+                                                type="button"
+                                                onClick={() => setSoundAlert((s) => !s)}
+                                                className={`p-1.5 rounded-lg border text-xs ${
+                                                    soundAlert
+                                                        ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/35'
+                                                        : 'bg-white dark:bg-white/5 text-slate-500 dark:text-gray-400 border-slate-200 dark:border-white/10'
+                                                }`}
+                                                title={soundAlert ? 'Mute Whale Sound Alert' : 'Enable Whale Sound Alert'}
+                                            >
+                                                {soundAlert ? <Bell className="w-3.5 h-3.5" /> : <BellOff className="w-3.5 h-3.5" />}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                disabled={filteredFeed.length === 0}
+                                                onClick={handleExportFeedCsv}
+                                                className="p-1.5 rounded-lg border bg-white dark:bg-white/5 text-slate-600 dark:text-gray-300 border-slate-200 dark:border-white/10 hover:border-cyan-500/40 disabled:opacity-40"
+                                                title="Export Kill Feed CSV"
+                                            >
+                                                <Download className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
+                                        {filteredFeed.length === 0 ? (
+                                            <div className="h-full flex flex-col items-center justify-center text-slate-500 dark:text-gray-400 space-y-3 text-center px-4">
+                                                <div className="w-8 h-8 border-2 border-brand-primary border-t-transparent rounded-full animate-spin" />
+                                                <span className="text-[11px] uppercase tracking-wider font-mono">
+                                                    {isConnected
+                                                        ? `Listening for ${activePair} prints (>= $${(minLiquidationThreshold / 1000).toFixed(0)}k)...`
+                                                        : 'Connecting to Liquidation Node...'}
+                                                </span>
+                                            </div>
+                                        ) : (
+                                            filteredFeed.map((e) => (
+                                                <KillFeedItem
+                                                    key={e.id}
+                                                    event={e}
+                                                    activePair={activePair}
+                                                    onTrackPrice={handleToggleHighlight}
+                                                />
+                                            ))
+                                        )}
+                                    </div>
                                 </div>
-                            ) : (
-                                <div className="absolute inset-0 flex flex-col p-5">
-                                    <div className="flex items-center justify-between mb-4">
-                                        <h3 className="text-[10px] sm:text-xs font-bold text-slate-500 dark:text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                                            <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-brand-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
-                                            </svg>
-                                            <span className="hidden sm:inline">Cumulative Liq Delta</span>
-                                            <span className="inline sm:hidden">CVD</span>
+                            )}
+
+                            {rightPanelTab === 'pools' && (
+                                <PoolLadderPanel
+                                    godModeState={godModeState}
+                                    currentPrice={effectiveOraclePrice}
+                                    highlightedLevels={highlightedLevels}
+                                    onToggleLevel={handleToggleHighlight}
+                                />
+                            )}
+
+                            {rightPanelTab === 'cld' && (
+                                <div className="flex flex-col h-full p-4 gap-3">
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="text-xs font-bold text-slate-600 dark:text-gray-300 uppercase tracking-wider">
+                                            Cumulative Liquidation Delta
                                         </h3>
                                         {cldData.length > 0 && (
-                                            <span className={`text-[10px] sm:text-xs font-mono font-bold px-2 py-1 rounded bg-slate-100 dark:bg-black/40 border border-slate-200 dark:border-white/5 ${cldData[cldData.length-1].value >= 0 ? 'text-emerald-600 dark:text-emerald-400 dark:drop-shadow-[0_0_5px_rgba(16,185,129,0.5)]' : 'text-rose-600 dark:text-rose-400 dark:drop-shadow-[0_0_5px_rgba(244,63,94,0.5)]'}`}>
-                                                {cldData[cldData.length-1].value >= 0 ? '+' : ''}{(cldData[cldData.length-1].value / 1000).toFixed(1)}k
+                                            <span
+                                                className={`text-xs font-mono font-bold px-2 py-0.5 rounded bg-slate-100 dark:bg-black/40 border border-slate-200 dark:border-white/10 ${
+                                                    cldData[cldData.length - 1].value >= 0
+                                                        ? 'text-emerald-600 dark:text-emerald-400'
+                                                        : 'text-rose-600 dark:text-rose-400'
+                                                }`}
+                                            >
+                                                {cldData[cldData.length - 1].value >= 0 ? '+' : ''}
+                                                {(cldData[cldData.length - 1].value / 1000).toFixed(1)}k
                                             </span>
                                         )}
                                     </div>
-                                    
-                                    <div className="flex-1 relative min-h-0">
-                                        <div className="absolute inset-0 bg-slate-50 dark:bg-black/20 rounded-xl border border-slate-200 dark:border-white/5 p-2">
-                                            <ResponsiveContainer debounce={220} width="100%" height="100%">
-                                                <AreaChart data={cldData}>
-                                                    <defs>
-                                                        <linearGradient id="cldGradient" x1="0" y1="0" x2="0" y2="1">
-                                                            <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.4} />
-                                                            <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
-                                                        </linearGradient>
-                                                    </defs>
-                                                    <Tooltip
-                                                        contentStyle={{ backgroundColor: theme === 'dark' ? 'rgba(11, 17, 32, 0.9)' : 'rgba(255, 255, 255, 0.95)', border: theme === 'dark' ? '1px solid rgba(255,255,255,0.1)' : '1px solid #e2e8f0', backdropFilter: 'blur(8px)', borderRadius: '0.5rem', color: theme === 'dark' ? '#fff' : '#0f172a', fontSize: '12px', fontFamily: 'monospace' }}
-                                                        formatter={(v: number) => {
-                                                            const isPos = v >= 0;
-                                                            return [<span className={isPos ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>{isPos ? '+' : ''}${(v).toLocaleString()}</span>, 'Delta'];
-                                                        }}
-                                                        labelFormatter={() => ''}
-                                                    />
-                                                    <ReferenceLine y={0} stroke={theme === 'dark' ? 'rgba(255,255,255,0.2)' : 'rgba(15,23,42,0.2)'} strokeDasharray="3 3" />
-                                                    <Area
-                                                        type="monotone"
-                                                        dataKey="value"
-                                                        stroke="#3B82F6"
-                                                        strokeWidth={2}
-                                                        fill="url(#cldGradient)"
-                                                        isAnimationActive={false}
-                                                    />
-                                                </AreaChart>
-                                            </ResponsiveContainer>
-                                        </div>
+
+                                    <div className="flex-1 min-h-0 bg-slate-50 dark:bg-black/25 rounded-xl border border-slate-200 dark:border-white/10 p-2">
+                                        <ResponsiveContainer debounce={220} width="100%" height="100%">
+                                            <AreaChart data={cldData}>
+                                                <defs>
+                                                    <linearGradient id="cldGradient" x1="0" y1="0" x2="0" y2="1">
+                                                        <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.4} />
+                                                        <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
+                                                    </linearGradient>
+                                                </defs>
+                                                <Tooltip
+                                                    contentStyle={{
+                                                        backgroundColor: isDark ? 'rgba(11, 17, 32, 0.95)' : 'rgba(255, 255, 255, 0.98)',
+                                                        border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid #e2e8f0',
+                                                        borderRadius: '0.5rem',
+                                                        color: isDark ? '#fff' : '#0f172a',
+                                                        fontSize: '12px',
+                                                        fontFamily: 'monospace',
+                                                    }}
+                                                    formatter={(v: number) => [
+                                                        <span className={v >= 0 ? 'text-emerald-500' : 'text-rose-500'}>
+                                                            {v >= 0 ? '+' : ''}${v.toLocaleString()}
+                                                        </span>,
+                                                        'Delta',
+                                                    ]}
+                                                    labelFormatter={() => ''}
+                                                />
+                                                <ReferenceLine y={0} stroke={isDark ? 'rgba(255,255,255,0.2)' : 'rgba(15,23,42,0.2)'} strokeDasharray="3 3" />
+                                                <Area
+                                                    type="monotone"
+                                                    dataKey="value"
+                                                    stroke="#3B82F6"
+                                                    strokeWidth={2}
+                                                    fill="url(#cldGradient)"
+                                                    isAnimationActive={false}
+                                                />
+                                            </AreaChart>
+                                        </ResponsiveContainer>
                                     </div>
-                                    <div className="mt-4 flex flex-col sm:flex-row justify-between items-start sm:items-center text-[9px] sm:text-[10px] font-mono border-t border-slate-200 dark:border-white/5 pt-3 gap-2 shrink-0">
-                                        <div className="flex items-center gap-1.5 text-emerald-500">
-                                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></div>
-                                            Positive = Buy Pressure
-                                        </div>
-                                        <div className="flex items-center gap-1.5 text-rose-500">
-                                            Negative = Sell Pressure
-                                            <div className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0"></div>
-                                        </div>
+
+                                    <div className="flex justify-between text-[10px] font-mono border-t border-slate-200 dark:border-white/10 pt-2">
+                                        <span className="text-emerald-600 dark:text-emerald-400">Positive = Short Squeeze Dominance</span>
+                                        <span className="text-rose-600 dark:text-rose-400">Negative = Long Flush Dominance</span>
                                     </div>
                                 </div>
                             )}
@@ -586,11 +893,38 @@ const StandardLiquidationView: React.FC = () => {
                 </div>
             </div>
 
-            {/* Fullscreen Chart Portal */}
+            {/* Fullscreen Portal */}
             {isChartFullScreen && (
-                <div className="fixed inset-0 z-[100] bg-white dark:bg-[#000000] p-0 animate-modal-fade-in">
-                    <div id={`tradingview_fullscreen_liquidation_chart_${widgetKey}`} className="w-full h-full" />
-                    <button onClick={toggleFullScreen} className="absolute top-4 right-4 z-20 p-2 bg-white/90 dark:bg-[#000000]/50 backdrop-blur-md rounded-lg text-slate-800 dark:text-white border border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-[#000000] transition-colors">
+                <div className="fixed inset-0 z-[120] bg-white dark:bg-[#05070C]">
+                    {chartView === 'heatmap' && (
+                        <LiveLiquidityPoolChart
+                            symbol={activePair}
+                            exchange={selectedExchange}
+                            timeframe={activeTimeframe}
+                            oraclePrice={effectiveOraclePrice}
+                            godModeData={godModeState}
+                            highlightedLevels={highlightedLevels}
+                            onToggleLevel={handleToggleHighlight}
+                            isDark={isDark}
+                        />
+                    )}
+                    {chartView === 'price' && (
+                        <div id={`tradingview_fullscreen_liquidation_chart_${widgetKey}`} className="w-full h-full" />
+                    )}
+                    {chartView === 'bubbles' && (
+                        <LiquidationBubbleChart
+                            data={liveFeed}
+                            activePair={activePair}
+                            activeExchange={selectedExchange}
+                            timeframe={activeTimeframe}
+                            onSelectPrice={(p) => handleToggleHighlight(Number(p.toFixed(p < 1 ? 4 : 2)))}
+                        />
+                    )}
+                    <button
+                        type="button"
+                        onClick={toggleFullScreen}
+                        className="absolute top-4 right-4 z-30 p-2.5 bg-white/90 dark:bg-black/70 backdrop-blur-md rounded-xl text-slate-800 dark:text-white border border-slate-200 dark:border-white/15 shadow"
+                    >
                         <CollapseIcon />
                     </button>
                 </div>

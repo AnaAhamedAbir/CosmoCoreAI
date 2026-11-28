@@ -1,50 +1,113 @@
 import React, { useState } from 'react';
+import LiquidationCommandBar from '@/components/features/market/LiquidationCommandBar';
+import { useCCXTMarkets } from '@/hooks/useCCXTMarkets';
+import { LiquidationPoolHorizon, useGodModeStream } from '@/hooks/useGodModeData';
+import { useLiquidationWebSocket } from '@/hooks/useLiquidationWebSocket';
+import { useBotStore } from '@/store/botStore';
+import { useUIStore } from '@/store/uiStore';
 import StandardLiquidationView from './StandardLiquidationView';
 import GodModeLiquidationView from './GodModeLiquidationView';
 
 const LiquidationMap: React.FC = () => {
     const [isGodMode, setIsGodMode] = useState(false);
 
+    const {
+        exchanges,
+        selectedExchange,
+        setSelectedExchange,
+        availablePairs,
+        selectedPair,
+        setSelectedPair,
+        isLoading: isPairsLoading,
+    } = useCCXTMarkets();
+
+    const activePair = selectedPair || 'BTC/USDT';
+    const { indicatorSettings, setIndicatorSettings } = useBotStore();
+    const { liquidationTimeframe, setLiquidationTimeframe } = useUIStore();
+
+    const activeHorizon: LiquidationPoolHorizon = indicatorSettings.liquidationPoolHorizon || '24h';
+
+    const handleHorizonChange = (h: LiquidationPoolHorizon) => {
+        setIndicatorSettings({ liquidationPoolHorizon: h });
+    };
+
+    // Single unified WebSocket streams shared seamlessly across Standard & God Mode
+    const { state: godModeState, isConnected: godModeConnected } = useGodModeStream(
+        activePair.split(':')[0],
+        true,
+        selectedExchange.toLowerCase(),
+        activeHorizon,
+    );
+
+    const liqStream = useLiquidationWebSocket(selectedExchange, activePair);
+
+    const oraclePrice =
+        liqStream.currentPrice > 0
+            ? liqStream.currentPrice
+            : godModeState?.current_price || 0;
+
     return (
-        <div className="h-full flex flex-col relative overflow-hidden">
-            {/* Toggle Switch Header (Absolute positioned to float over the top right) */}
-            <div className="absolute top-4 right-4 z-[100]">
-                <div className="flex items-center gap-3 bg-white/90 dark:bg-black/60 backdrop-blur-md p-1.5 px-3 rounded-xl border border-slate-200 dark:border-white/10 shadow-lg dark:shadow-[0_4px_20px_rgba(0,0,0,0.5)] cursor-pointer" onClick={() => setIsGodMode(!isGodMode)}>
-                    <span className={`text-[10px] font-bold uppercase tracking-wider transition-colors duration-300 ${!isGodMode ? 'text-brand-primary drop-shadow-[0_0_5px_rgba(59,130,246,0.5)]' : 'text-slate-500 dark:text-gray-500'}`}>Standard</span>
-                    
-                    <div 
-                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-500 focus:outline-none ${isGodMode ? 'bg-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.6)]' : 'bg-slate-300 dark:bg-gray-700'}`}
-                    >
-                        <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform duration-500 ease-in-out ${isGodMode ? 'translate-x-4.5' : 'translate-x-1'}`} style={{ transform: isGodMode ? 'translateX(18px)' : 'translateX(4px)' }} />
-                    </div>
+        <div className="h-full flex flex-col gap-3 relative overflow-hidden text-slate-900 dark:text-white">
+            <LiquidationCommandBar
+                exchanges={exchanges}
+                selectedExchange={selectedExchange}
+                onExchangeChange={setSelectedExchange}
+                availablePairs={availablePairs}
+                activePair={activePair}
+                onPairChange={setSelectedPair}
+                isPairsLoading={isPairsLoading}
+                timeframe={liquidationTimeframe || '15m'}
+                onTimeframeChange={setLiquidationTimeframe}
+                horizon={activeHorizon}
+                onHorizonChange={handleHorizonChange}
+                isGodMode={isGodMode}
+                onModeChange={setIsGodMode}
+                oraclePrice={oraclePrice}
+                priceUpdateStatus={liqStream.priceUpdateStatus}
+                fundingRate={godModeState?.funding_rate}
+                openInterestUsd={godModeState?.open_interest_usd}
+                isConnected={isGodMode ? godModeConnected : liqStream.isConnected}
+            />
 
-                    <span className={`text-[10px] font-bold uppercase tracking-wider transition-colors duration-300 ${isGodMode ? 'text-rose-500 drop-shadow-[0_0_8px_rgba(244,63,94,0.8)]' : 'text-slate-500 dark:text-gray-500'}`}>God Mode</span>
-                </div>
-            </div>
-
-            {/* View Container */}
             <div className="flex-1 min-h-0 relative">
-                {/* We use key to force unmount/remount to cleanly handle heavy charting libraries */}
                 {isGodMode ? (
                     <div key="god-mode" className="absolute inset-0 animate-fade-in">
-                        <GodModeLiquidationView />
+                        <GodModeLiquidationView
+                            sharedExchange={selectedExchange}
+                            sharedPair={activePair}
+                            sharedTimeframe={liquidationTimeframe || '15m'}
+                            sharedHorizon={activeHorizon}
+                            sharedGodModeState={godModeState}
+                            sharedConnected={godModeConnected}
+                        />
                     </div>
                 ) : (
-                    <div key="standard-mode" className="absolute inset-0 animate-fade-in text-slate-900 dark:text-white pt-4">
-                        <StandardLiquidationView />
+                    <div key="standard-mode" className="absolute inset-0 animate-fade-in">
+                        <StandardLiquidationView
+                            sharedExchange={selectedExchange}
+                            sharedPair={activePair}
+                            sharedTimeframe={liquidationTimeframe || '15m'}
+                            sharedHorizon={activeHorizon}
+                            sharedGodModeState={godModeState}
+                            sharedLiqStream={liqStream}
+                        />
                     </div>
                 )}
             </div>
-            
-            <style dangerouslySetInnerHTML={{__html: `
+
+            <style
+                dangerouslySetInnerHTML={{
+                    __html: `
                 @keyframes fadeIn {
                     from { opacity: 0; filter: blur(4px); }
                     to { opacity: 1; filter: blur(0); }
                 }
                 .animate-fade-in {
-                    animation: fadeIn 0.4s ease-out forwards;
+                    animation: fadeIn 0.35s ease-out forwards;
                 }
-            `}} />
+            `,
+                }}
+            />
         </div>
     );
 };

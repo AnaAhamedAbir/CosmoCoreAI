@@ -7,14 +7,16 @@ interface UIState {
     setOrderFlowShowFootprint: (show: boolean) => void;
     liquidationChartWidth: number;
     setLiquidationChartWidth: (width: number) => void;
-    liquidationRightPanelTab: 'feed' | 'cld';
-    setLiquidationRightPanelTab: (tab: 'feed' | 'cld') => void;
+    liquidationRightPanelTab: 'feed' | 'pools' | 'cld';
+    setLiquidationRightPanelTab: (tab: 'feed' | 'pools' | 'cld') => void;
     liquidationHighlightedLevels: number[];
     setLiquidationHighlightedLevels: (levels: number[]) => void;
     liquidationMinThreshold: number;
     setLiquidationMinThreshold: (threshold: number) => void;
-    liquidationChartView: 'price' | 'bubbles';
-    setLiquidationChartView: (view: 'price' | 'bubbles') => void;
+    liquidationChartView: 'heatmap' | 'price' | 'bubbles';
+    setLiquidationChartView: (view: 'heatmap' | 'price' | 'bubbles') => void;
+    liquidationTimeframe: string;
+    setLiquidationTimeframe: (tf: string) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -30,6 +32,8 @@ export const useUIStore = create<UIState>((set) => ({
     setLiquidationHighlightedLevels: (levels) => set({ liquidationHighlightedLevels: levels }),
     liquidationMinThreshold: 10000,
     setLiquidationMinThreshold: (threshold) => set({ liquidationMinThreshold: threshold }),
-    liquidationChartView: 'price',
+    liquidationChartView: 'heatmap',
     setLiquidationChartView: (view) => set({ liquidationChartView: view }),
+    liquidationTimeframe: '15m',
+    setLiquidationTimeframe: (tf) => set({ liquidationTimeframe: tf }),
 }));

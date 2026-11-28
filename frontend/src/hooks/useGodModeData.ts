@@ -182,13 +182,14 @@ export interface GodModeState {
     };
 }
 
-export const useGodModeData = (
+export const useGodModeStream = (
     symbol: string,
     enabled: boolean = true,
     exchange: string = 'binance',
     poolHorizon: LiquidationPoolHorizon = '24h'
-) => {
+): { state: GodModeState | null; isConnected: boolean } => {
     const [godModeData, setGodModeData] = useState<GodModeState | null>(null);
+    const [isConnected, setIsConnected] = useState<boolean>(false);
     const wsRef = useRef<WebSocket | null>(null);
     const thermalGuardRef = useRef<boolean>(isThermalGuardActive());
     const lastEmitAtRef = useRef<number>(0);
@@ -217,11 +218,13 @@ export const useGodModeData = (
     useEffect(() => {
         if (!symbol || !enabled) {
             setGodModeData(null);
+            setIsConnected(false);
             return;
         }
 
         // Clear previous symbol's stale zones/HUD immediately on symbol or exchange switch
         setGodModeData(null);
+        setIsConnected(false);
         lastEmitAtRef.current = 0;
         lastPayloadHorizonRef.current = '';
 
@@ -241,6 +244,8 @@ export const useGodModeData = (
             wsRef.current = ws;
 
             ws.onopen = () => {
+                if (!isSubscribed) return;
+                setIsConnected(true);
                 console.log(`📡 Connected to God Mode Stream: ${symbol} (${exchange}, ${connectHorizon})`);
                 // If user changed horizon while WebSocket was still CONNECTING, sync immediately
                 if (poolHorizonRef.current !== connectHorizon && ws && ws.readyState === WebSocket.OPEN) {
@@ -291,6 +296,7 @@ export const useGodModeData = (
 
             ws.onclose = () => {
                 if (!isSubscribed) return;
+                setIsConnected(false);
                 console.log('God Mode Disconnected. Reconnecting in 3s...');
                 reconnectTimeout = setTimeout(connect, 3000);
             };
@@ -300,6 +306,7 @@ export const useGodModeData = (
 
         return () => {
             isSubscribed = false;
+            setIsConnected(false);
             if (reconnectTimeout) clearTimeout(reconnectTimeout);
             if (ws) {
                 ws.onclose = null;
@@ -314,5 +321,15 @@ export const useGodModeData = (
         };
     }, [symbol, enabled, exchange]);
 
-    return godModeData;
+    return { state: godModeData, isConnected };
+};
+
+export const useGodModeData = (
+    symbol: string,
+    enabled: boolean = true,
+    exchange: string = 'binance',
+    poolHorizon: LiquidationPoolHorizon = '24h'
+) => {
+    const { state } = useGodModeStream(symbol, enabled, exchange, poolHorizon);
+    return state;
 };

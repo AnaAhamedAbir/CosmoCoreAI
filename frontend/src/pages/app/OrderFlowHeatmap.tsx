@@ -204,7 +204,7 @@ interface ChartDragBracketEntry {
 const chartDragBracketRegistry = new Map<string, ChartDragBracketEntry>();
 
 // Chart Component
-const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: string; interval: string; walls: { price: number, type: 'buy' | 'sell', size?: number }[]; bids?: any[]; asks?: any[]; currentPrice: number; showFootprint: boolean; showCVD: boolean; showVPVR: boolean; indicatorSettings: IndicatorSettings; tradeEvent: any; botStatus: any; openOrders: OpenLimitOrder[]; activePosition?: FastPositionResponse | null; advancedMetrics: AdvancedMetricsSettings; advancedMetricsData: any; selectedApiKeyId: string | null; predictionResult: PredictionResult | null; activeMLModelId: string | null; onAIPredictClick?: (price: number) => void; onChartBackgroundClick?: (price: number) => void; showCrosshairAIPredict?: boolean; bestBid?: number; bestAsk?: number; showBidAsk?: boolean; showMarkPrice?: boolean; isActiveChart?: boolean; totalChartsCount?: number; chartSlotIndex?: number; onToggleUTBotAlerts?: () => void; onSyncUTBotToBot?: () => void }>(({ chartId = 'main', exchange, symbol, interval, walls, bids = [], asks = [], currentPrice, showFootprint, showCVD, showVPVR, indicatorSettings, tradeEvent, botStatus, openOrders, activePosition = null, advancedMetrics, advancedMetricsData, selectedApiKeyId, predictionResult, activeMLModelId, onAIPredictClick, onChartBackgroundClick, showCrosshairAIPredict = false, bestBid = 0, bestAsk = 0, showBidAsk = false, showMarkPrice = true, isActiveChart = true, totalChartsCount = 1, chartSlotIndex = 0, onToggleUTBotAlerts, onSyncUTBotToBot }) => {
+const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: string; interval: string; walls: { price: number, type: 'buy' | 'sell', size?: number }[]; bids?: any[]; asks?: any[]; currentPrice: number; showFootprint: boolean; showCVD: boolean; showVPVR: boolean; indicatorSettings: IndicatorSettings; tradeEvent: any; botStatus: any; openOrders: OpenLimitOrder[]; activePosition?: FastPositionResponse | null; advancedMetrics: AdvancedMetricsSettings; advancedMetricsData: any; selectedApiKeyId: string | null; predictionResult: PredictionResult | null; activeMLModelId: string | null; onAIPredictClick?: (price: number) => void; onChartBackgroundClick?: (price: number) => void; showCrosshairAIPredict?: boolean; bestBid?: number; bestAsk?: number; showLastPriceLine?: boolean; showBidAsk?: boolean; showMarkPrice?: boolean; isActiveChart?: boolean; totalChartsCount?: number; chartSlotIndex?: number; onToggleUTBotAlerts?: () => void; onSyncUTBotToBot?: () => void }>(({ chartId = 'main', exchange, symbol, interval, walls, bids = [], asks = [], currentPrice, showFootprint, showCVD, showVPVR, indicatorSettings, tradeEvent, botStatus, openOrders, activePosition = null, advancedMetrics, advancedMetricsData, selectedApiKeyId, predictionResult, activeMLModelId, onAIPredictClick, onChartBackgroundClick, showCrosshairAIPredict = false, bestBid = 0, bestAsk = 0, showLastPriceLine = true, showBidAsk = false, showMarkPrice = true, isActiveChart = true, totalChartsCount = 1, chartSlotIndex = 0, onToggleUTBotAlerts, onSyncUTBotToBot }) => {
     const { theme } = useTheme();
     const isDark = theme === 'dark';
     const chartContainerRef = useRef<HTMLDivElement>(null);
@@ -256,6 +256,8 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
     const lastAskLabelVisibleRef = useRef<boolean>(true);
     const lastMarkLabelVisibleRef = useRef<boolean>(true);
     const hasLiveBboRef = useRef<boolean>(false);
+    const showLastPriceLineRef = useRef<boolean>(showLastPriceLine);
+    showLastPriceLineRef.current = showLastPriceLine;
     const showBidAskRef = useRef<boolean>(showBidAsk);
     showBidAskRef.current = showBidAsk;
     const bestBidPropRef = useRef<number>(bestBid);
@@ -2794,7 +2796,19 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         isSweep: boolean = false
     ) => {
         const series = candlestickSeriesRef.current;
-        if (!series || !Number.isFinite(price) || price <= 0) return;
+        if (!series) return;
+
+        if (!showLastPriceLineRef.current) {
+            if (currentPriceLineRef.current) {
+                try { series.removePriceLine(currentPriceLineRef.current); } catch {}
+                currentPriceLineRef.current = null;
+                lastPriceLineRenderedRef.current = { price: 0, side: null, title: '', lineWidth: 1 };
+                reconcileAxisLabelCollisions();
+            }
+            return;
+        }
+
+        if (!Number.isFinite(price) || price <= 0) return;
 
         const isBuy = side === 'buy';
         const lineColor = isBuy ? '#16a34a' : '#dc2626';
@@ -4374,11 +4388,27 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
 
 
 
-    // Custom Current Price Line (seed/recreate on mount, symbol/timeframe change, or when live ticks aren't active).
-    // While live trade ticks are actively streaming, applyLivePriceTick updates this line directly at 0-lag
-    // so 200ms-throttled React currentPrice flushes can never overwrite or snap the line backwards.
+    // Custom Current Price Line (toggleable via showLastPriceLine; seed/recreate on mount, symbol/timeframe change,
+    // or when live ticks aren't active). While live trade ticks are actively streaming, applyLivePriceTick updates
+    // this line directly at 0-lag so 200ms-throttled React currentPrice flushes can never overwrite it.
     useEffect(() => {
-        if (!candlestickSeriesRef.current) return;
+        const series = candlestickSeriesRef.current;
+        if (!series) return;
+
+        if (!showLastPriceLine) {
+            if (sweepDecayTimerRef.current) {
+                clearTimeout(sweepDecayTimerRef.current);
+                sweepDecayTimerRef.current = null;
+            }
+            if (currentPriceLineRef.current) {
+                try { series.removePriceLine(currentPriceLineRef.current); } catch {}
+                currentPriceLineRef.current = null;
+            }
+            lastPriceLineRenderedRef.current = { price: 0, side: null, title: '', lineWidth: 1 };
+            reconcileAxisLabelCollisions();
+            return;
+        }
+
         const directStreamActive =
             Boolean(currentPriceLineRef.current) &&
             hasDirectTicksRef.current &&
@@ -4394,7 +4424,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         if (!targetPrice || targetPrice <= 0) return;
 
         syncCurrentPriceLine(targetPrice, lastTradeSideRef.current);
-    }, [currentPrice, symbol, exchange, interval, candlesReadyTick, syncCurrentPriceLine]);
+    }, [showLastPriceLine, currentPrice, symbol, exchange, interval, candlesReadyTick, syncCurrentPriceLine, reconcileAxisLabelCollisions]);
 
     const syncBidAskLine = useCallback((
         ref: React.MutableRefObject<any>,
@@ -6062,6 +6092,7 @@ const OrderFlowChartPanel = React.memo<{
     parentOpenOrders?: OpenLimitOrder[];
     parentPosition?: FastPositionResponse | null;
     showCrosshairAIPredict?: boolean;
+    showLastPriceLine?: boolean;
     showBidAsk?: boolean;
     showMarkPrice?: boolean;
     renderFloatingTools?: React.ReactNode;
@@ -6101,6 +6132,7 @@ const OrderFlowChartPanel = React.memo<{
     parentOpenOrders,
     parentPosition,
     showCrosshairAIPredict = false,
+    showLastPriceLine = true,
     showBidAsk = false,
     showMarkPrice = true,
     renderFloatingTools,
@@ -6360,7 +6392,7 @@ const OrderFlowChartPanel = React.memo<{
                 ) : (
                     <OrderFlowChart 
                         chartId={config.id}
-                        exchange={config.exchange} symbol={config.symbol} interval={config.interval} walls={filteredWalls} bids={bids} asks={asks} currentPrice={currentPrice} showFootprint={showFootprint} showCVD={showCVD} showVPVR={showVPVR} indicatorSettings={indicatorSettings} tradeEvent={tradeEvent} botStatus={botStatus} openOrders={openOrders} activePosition={activePosition} advancedMetrics={advancedMetrics} advancedMetricsData={advancedMetricsData} selectedApiKeyId={selectedApiKeyId} predictionResult={predictionResult} activeMLModelId={activeMLModelId} showCrosshairAIPredict={showCrosshairAIPredict} bestBid={bestBid} bestAsk={bestAsk} showBidAsk={showBidAsk} showMarkPrice={showMarkPrice}
+                        exchange={config.exchange} symbol={config.symbol} interval={config.interval} walls={filteredWalls} bids={bids} asks={asks} currentPrice={currentPrice} showFootprint={showFootprint} showCVD={showCVD} showVPVR={showVPVR} indicatorSettings={indicatorSettings} tradeEvent={tradeEvent} botStatus={botStatus} openOrders={openOrders} activePosition={activePosition} advancedMetrics={advancedMetrics} advancedMetricsData={advancedMetricsData} selectedApiKeyId={selectedApiKeyId} predictionResult={predictionResult} activeMLModelId={activeMLModelId} showCrosshairAIPredict={showCrosshairAIPredict} bestBid={bestBid} bestAsk={bestAsk} showLastPriceLine={showLastPriceLine} showBidAsk={showBidAsk} showMarkPrice={showMarkPrice}
                         isActiveChart={isActive || allChartsCount === 1}
                         totalChartsCount={allChartsCount}
                         chartSlotIndex={chartSlotIndex}
@@ -6471,6 +6503,23 @@ const OrderFlowHeatmap: React.FC = () => {
         try {
             localStorage.setItem('orderflow_show_crosshair_ai_predict', JSON.stringify(enabled));
         } catch {}
+    };
+
+    const [showLastPriceLine, setShowLastPriceLine] = useState<boolean>(() => {
+        try {
+            const saved = localStorage.getItem('orderflow_show_last_price_line');
+            return saved !== null ? JSON.parse(saved) : true;
+        } catch {
+            return true;
+        }
+    });
+
+    const handleToggleLastPriceLine = () => {
+        setShowLastPriceLine(prev => {
+            const next = !prev;
+            try { localStorage.setItem('orderflow_show_last_price_line', JSON.stringify(next)); } catch {}
+            return next;
+        });
     };
 
     const [showBidAsk, setShowBidAsk] = useState<boolean>(() => {
@@ -7656,6 +7705,7 @@ const OrderFlowHeatmap: React.FC = () => {
                     showFootprint={Boolean(activeChartSettings.showFootprint)}
                     showCVD={Boolean(activeChartSettings.showCVD)}
                     showVPVR={Boolean(activeChartSettings.showHeatmap)}
+                    showLastPriceLine={showLastPriceLine}
                     showBidAsk={showBidAsk}
                     showMarkPrice={showMarkPrice}
                     onToggleFootprint={() =>
@@ -7676,6 +7726,7 @@ const OrderFlowHeatmap: React.FC = () => {
                             showHeatmap: !activeChartSettings.showHeatmap,
                         })
                     }
+                    onToggleLastPriceLine={handleToggleLastPriceLine}
                     onToggleBidAsk={handleToggleBidAsk}
                     onToggleMarkPrice={allCharts.some(c => c.symbol.includes(':')) ? handleToggleMarkPrice : undefined}
                 />
@@ -7773,6 +7824,7 @@ const OrderFlowHeatmap: React.FC = () => {
                                 parentOpenOrders={openOrders}
                                 parentPosition={activePosition}
                                 showCrosshairAIPredict={showCrosshairAIPredict}
+                                showLastPriceLine={showLastPriceLine}
                                 showBidAsk={showBidAsk}
                                 showMarkPrice={showMarkPrice}
                                 renderFloatingTools={hasFullscreenChart ? floatingToolsNode : undefined}

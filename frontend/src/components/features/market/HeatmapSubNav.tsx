@@ -23,11 +23,13 @@ interface HeatmapSubNavProps {
     showFootprint?: boolean;
     showCVD?: boolean;
     showVPVR?: boolean;
+    showLastPriceLine?: boolean;
     showBidAsk?: boolean;
     showMarkPrice?: boolean;
     onToggleFootprint?: () => void;
     onToggleCVD?: () => void;
     onToggleVPVR?: () => void;
+    onToggleLastPriceLine?: () => void;
     onToggleBidAsk?: () => void;
     onToggleMarkPrice?: () => void;
 }
@@ -48,11 +50,13 @@ export const HeatmapSubNav: React.FC<HeatmapSubNavProps> = ({
     showFootprint = false,
     showCVD = false,
     showVPVR = false,
+    showLastPriceLine = true,
     showBidAsk = false,
     showMarkPrice = false,
     onToggleFootprint,
     onToggleCVD,
     onToggleVPVR,
+    onToggleLastPriceLine,
     onToggleBidAsk,
     onToggleMarkPrice,
 }) => {
@@ -106,6 +110,26 @@ export const HeatmapSubNav: React.FC<HeatmapSubNavProps> = ({
                         >
                             <BarChart3 className="w-3 h-3 text-emerald-500" />
                             <span>CVD</span>
+                        </button>
+                    )}
+
+                    {onToggleLastPriceLine && (
+                        <button
+                            type="button"
+                            onClick={onToggleLastPriceLine}
+                            className={`px-2 py-1 rounded-lg text-[10.5px] font-mono font-bold flex items-center gap-1 transition-colors cursor-pointer ${
+                                showLastPriceLine
+                                    ? 'bg-sky-500/20 text-sky-700 dark:text-sky-300 border border-sky-500/40'
+                                    : 'text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white'
+                            }`}
+                            title="Toggle Main Last Traded Price Line"
+                        >
+                            <span
+                                className={`w-1.5 h-1.5 rounded-full ${
+                                    showLastPriceLine ? 'bg-sky-400' : 'bg-slate-400'
+                                }`}
+                            />
+                            <span>Last Line</span>
                         </button>
                     )}
 

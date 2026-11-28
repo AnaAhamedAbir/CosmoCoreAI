@@ -20,6 +20,7 @@ export interface OrderPayload {
     antiSpoofGuard?: boolean;
     contracts?: number;
     positionSide?: string;
+    timeInForce?: string;
   };
   client_timestamp?: number;
   attached_tp?: {
@@ -28,6 +29,7 @@ export interface OrderPayload {
     value: number;
     order_type: 'Limit' | 'Market';
     timeout_mins?: number | null;
+    strict_maker?: boolean;
   };
   attached_sl?: {
     enabled: boolean;

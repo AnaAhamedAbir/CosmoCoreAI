@@ -741,6 +741,15 @@ export const BracketTpSlTabPanel: React.FC<BracketTpSlTabPanelProps> = ({
                     </button>
                   ))}
                 </div>
+                {tpConfig.orderType === 'Limit' && (
+                  <div
+                    className="text-[8.5px] font-mono text-emerald-300/90 flex items-center gap-1 pt-0.5"
+                    title="Strict Maker Guard: if price flashes past TP before placement, re-pegs passively on Maker side instead of crossing as a losing GTC Taker."
+                  >
+                    <span>🛡️</span>
+                    <span>Strict Maker Guard (Blocks Taker Loss)</span>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1">
@@ -803,6 +812,39 @@ export const BracketTpSlTabPanel: React.FC<BracketTpSlTabPanelProps> = ({
                 )}
               </div>
             </div>
+
+            {/* Tight-Spread TP Fee Trap Guard Notice */}
+            {feeBreakdown &&
+              tpDiffPct !== null &&
+              tpDiffPct > 0 &&
+              feeBreakdown.effectiveTakerRate > 0 &&
+              tpDiffPct < feeBreakdown.effectiveTakerRate * 100 && (
+                <div
+                  className={`flex items-start gap-1.5 px-2 py-1.5 rounded-lg border text-[9.5px] font-mono leading-snug ${
+                    tpConfig.orderType === 'Market'
+                      ? 'bg-rose-950/35 border-rose-500/45 text-rose-200'
+                      : 'bg-emerald-950/25 border-emerald-500/35 text-emerald-200'
+                  }`}
+                >
+                  <span className="shrink-0">{tpConfig.orderType === 'Market' ? '⚠️' : '🛡️'}</span>
+                  <span>
+                    {tpConfig.orderType === 'Market' ? (
+                      <>
+                        TP gap (<strong>{tpDiffPct.toFixed(3)}%</strong>) is smaller than Taker fee (
+                        <strong>{formatFeeRatePct(feeBreakdown.effectiveTakerRate)}</strong>) — Market TP
+                        will close at a net loss! Switch to <strong>Limit Maker</strong>.
+                      </>
+                    ) : (
+                      <>
+                        Tight scalp (<strong>{tpDiffPct.toFixed(3)}%</strong> &lt; Taker{' '}
+                        <strong>{formatFeeRatePct(feeBreakdown.effectiveTakerRate)}</strong>):{' '}
+                        <strong>Strict Maker Guard</strong> will re-peg passively on flash moves instead
+                        of crossing as Taker.
+                      </>
+                    )}
+                  </span>
+                </div>
+              )}
 
             {/* 1-Click Wall Snap for TP */}
             <TakeProfitWallSnapButton

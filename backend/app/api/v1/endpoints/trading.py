@@ -48,6 +48,7 @@ class AttachedTPConfig(BaseModel):
     value: float
     order_type: str  # 'Limit' or 'Market'
     timeout_mins: Optional[float] = 0  # Background threshold for limit order monitor (0 = infinite / until filled)
+    strict_maker: Optional[bool] = True  # Protect Limit TP from silently falling back to a losing GTC Taker fill
 
 class AttachedSLConfig(BaseModel):
     enabled: bool
@@ -1397,6 +1398,7 @@ async def place_drag_bracket_endpoint(
             new_tp_price = tp_spawn_res.get('tp_price') if isinstance(tp_spawn_res, dict) else None
             if new_tp_id:
                 resolved_tp_px = float(new_tp_price or final_price)
+                final_price = resolved_tp_px
                 for sid in linked_sl_ids:
                     sdata = BracketOrderService.ACTIVE_SOFTWARE_SL.get(sid)
                     if sdata and not sdata.get('cancelled'):

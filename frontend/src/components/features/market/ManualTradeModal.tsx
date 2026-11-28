@@ -347,6 +347,13 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
   const [marginMode, setMarginMode] = useState<'cross' | 'isolated'>('isolated');
   const [reduceOnly, setReduceOnly] = useState<boolean>(false);
   const [isAutoLimit, setIsAutoLimit] = useState<boolean>(true);
+  const [limitPostOnly, setLimitPostOnly] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('cosmo_manual_limit_post_only_v1');
+      if (saved !== null) return saved === 'true';
+    } catch { }
+    return true;
+  });
   const [positionData, setPositionData] = useState<FastPositionResponse | null>(null);
   const [isLoadingPosition, setIsLoadingPosition] = useState(false);
   const [tpConfig, setTpConfig] = useState({
@@ -3045,6 +3052,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
         paramsPayload.antiSpoofGuard = smartPegAntiSpoof;
       } else {
         paramsPayload.autoBestLimit = false;
+        const isSpotIcebergActive = !isFutures && Boolean(dragIcebergQty && dragIcebergQty > 0);
+        if (limitPostOnly && !isSpotIcebergActive) {
+          paramsPayload.timeInForce = 'postOnly';
+        }
       }
 
       const resolvedExchange = apiKeys.find(k => k.id.toString() === selectedApi)?.exchange || 'binance';
@@ -3524,8 +3535,11 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       if (isInverseFutures && contractsCount) {
         paramsPayload.contracts = contractsCount;
       }
+      const isSpotIcebergActive = !isFutures && Boolean(resolvedIcebergQty && resolvedIcebergQty > 0);
       if (orderType === 'Limit' && isAutoLimit) {
         paramsPayload.autoBestLimit = true;
+      } else if (orderType === 'Limit' && !isAutoLimit && limitPostOnly && !isSpotIcebergActive) {
+        paramsPayload.timeInForce = 'postOnly';
       }
       if (orderType === 'SmartPeg') {
         paramsPayload.maxChaseDeviationPct = smartPegMaxDev;
@@ -3562,7 +3576,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
           mode: tpConfig.mode,
           value: Number(tpConfig.value),
           order_type: tpConfig.orderType,
-          timeout_mins: tpConfig.timeoutMins
+          timeout_mins: tpConfig.timeoutMins,
+          strict_maker: tpConfig.orderType === 'Limit',
         };
       }
 
@@ -5684,15 +5699,57 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                       </div>
                                     </button>
 
-                                    {!isAutoLimit && effectiveCurrentPrice > 0 && (
-                                      <button
-                                        type="button"
-                                        onClick={() => setLimitPrice(effectiveCurrentPrice.toString())}
-                                        className="px-2 py-0.5 rounded bg-cyan-500/15 hover:bg-cyan-500/30 border border-cyan-500/35 text-cyan-300 font-mono text-[10px] font-bold cursor-pointer shrink-0"
-                                        title="Snap Limit Price to current live price"
-                                      >
-                                        Live ${formatDisplayPrice(effectiveCurrentPrice)}
-                                      </button>
+                                    {!isAutoLimit && (
+                                      <div className="flex items-center gap-1 shrink-0">
+                                        {(() => {
+                                          const spotIcebergBlocksGtx = !isFutures && isIceberg && effectiveIcebergQty > 0;
+                                          const effectivePostOnly = limitPostOnly && !spotIcebergBlocksGtx;
+                                          return (
+                                            <button
+                                              type="button"
+                                              disabled={spotIcebergBlocksGtx}
+                                              onClick={() => {
+                                                if (spotIcebergBlocksGtx) return;
+                                                const next = !limitPostOnly;
+                                                setLimitPostOnly(next);
+                                                try {
+                                                  localStorage.setItem('cosmo_manual_limit_post_only_v1', String(next));
+                                                } catch { }
+                                              }}
+                                              className={`px-1.5 py-0.5 rounded border font-mono text-[9.5px] font-black transition-colors ${
+                                                spotIcebergBlocksGtx
+                                                  ? 'bg-white/[0.03] border-white/10 text-gray-500 cursor-not-allowed'
+                                                  : effectivePostOnly
+                                                    ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200 cursor-pointer'
+                                                    : 'bg-white/[0.04] hover:bg-white/10 border-white/15 text-gray-400 hover:text-white cursor-pointer'
+                                              }`}
+                                              title={
+                                                spotIcebergBlocksGtx
+                                                  ? 'Binance Spot Iceberg requires LIMIT GTC (turn OFF Iceberg to use Post-Only LIMIT_MAKER).'
+                                                  : effectivePostOnly
+                                                    ? 'Post-Only (GTX) ON: Guarantees Maker fee (0ms overhead). Prevents accidental Taker cross.'
+                                                    : 'Post-Only OFF: Standard GTC Limit (may cross book as Taker if price flashes).'
+                                              }
+                                            >
+                                              {spotIcebergBlocksGtx
+                                                ? 'GTC (Iceberg)'
+                                                : effectivePostOnly
+                                                  ? '🛡️ GTX Maker'
+                                                  : 'GTC'}
+                                            </button>
+                                          );
+                                        })()}
+                                        {effectiveCurrentPrice > 0 && (
+                                          <button
+                                            type="button"
+                                            onClick={() => setLimitPrice(effectiveCurrentPrice.toString())}
+                                            className="px-2 py-0.5 rounded bg-cyan-500/15 hover:bg-cyan-500/30 border border-cyan-500/35 text-cyan-300 font-mono text-[10px] font-bold cursor-pointer shrink-0"
+                                            title="Snap Limit Price to current live price"
+                                          >
+                                            Live ${formatDisplayPrice(effectiveCurrentPrice)}
+                                          </button>
+                                        )}
+                                      </div>
                                     )}
                                   </div>
 

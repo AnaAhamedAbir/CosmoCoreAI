@@ -152,6 +152,10 @@ class TradingFeeService:
         ):
             maker_rate = 0.0
             tier_label = f"Binance {parsed['quote']} 0% Maker"
+        elif family == "binance" and market_type == "usdm_futures" and parsed["quote"] == "USDC":
+            maker_rate = 0.0
+            taker_rate = 0.0004
+            tier_label = "Binance USDC Futures (0% Maker)"
         elif family == "binance" and market_type == "usdm_futures":
             tier_label = "Binance USD-M Standard"
         elif family == "binance" and market_type == "coinm_futures":

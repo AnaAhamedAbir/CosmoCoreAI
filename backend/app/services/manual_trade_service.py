@@ -2709,7 +2709,8 @@ class ManualTradeService:
                     if _fmt_px(sl_price) == _fmt_px(entry_price):
                         raise HTTPException(status_code=400, detail=f"SL gap ({val}) is smaller than 1 price tick for {order_req.symbol} at {entry_price}.")
                 
-                is_post_only = ex_params.get('postOnly', False)
+                # Binance Spot prohibits LIMIT_MAKER + workingIcebergQty (requires LIMIT + GTC for Iceberg)
+                is_post_only = bool(ex_params.get('postOnly', False)) and (valid_iceberg is None)
                 payload = {
                     "symbol": native_symbol,
                     "workingType": "LIMIT_MAKER" if is_post_only else "LIMIT",
@@ -2849,10 +2850,12 @@ class ManualTradeService:
 
             # If not executed via OTOCO and iceberg is requested for spot limit order
             if not is_ws_success and valid_iceberg is not None:
+                # Binance Spot Iceberg orders strictly require standard LIMIT + GTC (never LIMIT_MAKER / postOnly)
+                if ex_params.pop('postOnly', None):
+                    logger.info("🧊 Spot Iceberg active: switching entry from LIMIT_MAKER to LIMIT GTC (Binance Spot requirement)")
                 ex_params['icebergAmount'] = valid_iceberg
                 ex_params['icebergQty'] = str(bracket_order_service._safe_amount_to_precision(exchange, order_req.symbol, valid_iceberg))
-                if 'timeInForce' not in ex_params and not ex_params.get('postOnly'):
-                    ex_params['timeInForce'] = 'GTC'
+                ex_params['timeInForce'] = 'GTC'
                 logger.info(f"🧊 Configured icebergQty={ex_params['icebergQty']} on Spot limit order")
 
             if not is_ws_success:

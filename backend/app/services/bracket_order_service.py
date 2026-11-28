@@ -2001,36 +2001,44 @@ class BracketOrderService:
                     ex_params = await BracketOrderService._apply_futures_exit_params(order_ex, symbol, opposite_side) if is_futures else {}
                     cons_ws_ready = is_ws_api_ready(order_ex, is_futures=is_futures, is_inverse=bool(is_inverse))
 
-                    async def _place_consolidated_limit(l_params: dict):
+                    async def _place_consolidated_limit(l_params: dict, override_px: float = None):
+                        px_to_use = float(override_px) if override_px is not None else float(final_tp_price)
                         if getattr(order_ex, 'has', {}).get('createOrderWs') and hasattr(order_ex, 'create_order_ws') and cons_ws_ready:
                             try:
                                 from app.services.manual_trade_service import ManualTradeService
                                 ws_t, ws_p = ManualTradeService._sanitize_ws_order_args(
                                     order_ex, 'limit', l_params, is_futures, is_edit=False
                                 )
-                                return await order_ex.create_order_ws(symbol, ws_t, opposite_side, tp_target_amt, final_tp_price, ws_p)
+                                return await order_ex.create_order_ws(symbol, ws_t, opposite_side, tp_target_amt, px_to_use, ws_p)
                             except Exception as ws_c_err:
                                 err_l = str(ws_c_err).lower()
                                 if '-5022' in err_l or 'post' in err_l or 'maker' in err_l:
                                     raise
                                 logger.debug(f"Consolidated TP create_order_ws fallback to REST: {ws_c_err}")
-                        return await order_ex.create_limit_order(symbol, opposite_side, tp_target_amt, final_tp_price, l_params)
+                        return await order_ex.create_limit_order(symbol, opposite_side, tp_target_amt, px_to_use, l_params)
 
                     try:
                         tp_res = None
+                        tp_exec_meta = {"label": "Limit", "is_maker": True}
                         if tp_order_type == 'limit':
-                            ex_params_po = dict(ex_params)
-                            ex_params_po['postOnly'] = True
-                            try:
-                                tp_res = await _place_consolidated_limit(ex_params_po)
-                            except Exception as po_cons_err:
-                                logger.warning(f"Consolidated TP Post-Only rejected ({po_cons_err}). Retrying with standard GTC Limit...")
-                                tp_res = None
-                            if not tp_res or str(tp_res.get('status', '')).lower() in ('expired', 'canceled', 'cancelled', 'rejected'):
-                                ex_params_gtc = dict(ex_params)
-                                ex_params_gtc.pop('postOnly', None)
-                                ex_params_gtc['timeInForce'] = 'GTC'
-                                tp_res = await _place_consolidated_limit(ex_params_gtc)
+                            from app.services.maker_tp_guard import place_strict_maker_tp_order
+
+                            strict_maker_tp = bool(tp_config.get('strict_maker', True))
+                            tp_res, placed_cons_px, tp_exec_meta = await place_strict_maker_tp_order(
+                                order_ex=order_ex,
+                                symbol=symbol,
+                                opposite_side=opposite_side,
+                                amount=tp_target_amt,
+                                target_tp_price=float(final_tp_price),
+                                entry_price=float(weighted_entry or average_price or 0.0),
+                                base_params=ex_params,
+                                is_futures=is_futures,
+                                place_limit_fn=lambda px, amt, pd: _place_consolidated_limit(pd, override_px=px),
+                                format_price_fn=lambda px: BracketOrderService._safe_price_to_precision(order_ex, symbol, px),
+                                strict_maker=strict_maker_tp,
+                                max_maker_attempts=3,
+                            )
+                            final_tp_price = placed_cons_px
                         else:
                             if is_futures:
                                 tp_cond_params = dict(ex_params)
@@ -2079,6 +2087,7 @@ class BracketOrderService:
                                     db = SessionLocal()
                                     try:
                                         exchange_display = api_key_record.exchange.capitalize() if api_key_record else "Exchange"
+                                        cons_tp_label = str(tp_exec_meta.get("label") or ("Post-Only Maker (GTX)" if tp_order_type == 'limit' else "Limit"))
                                         msg = (
                                             f"🔄 *CONSOLIDATED TP UPDATED*\n"
                                             f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -2087,6 +2096,7 @@ class BracketOrderService:
                                             f"• TP Side: *{opposite_side.upper()}*\n"
                                             f"• Consolidated Amount: `{tp_target_amt}`\n"
                                             f"• TP Target Price: `${final_tp_price}`\n"
+                                            f"• Order Type: `{cons_tp_label}`\n"
                                             f"⏱ Placement Speed: `{cons_tp_ms} ms` ⚡"
                                         )
                                         await NotificationService.send_message(db, user_id, msg, parse_mode="Markdown", alert_type="alert_manual_trade")
@@ -2347,55 +2357,34 @@ class BracketOrderService:
                                 )
                                 return await order_ex.create_order_ws(symbol, ws_type, opposite_side, amt, px, ws_params)
                             except Exception as ws_tp_err:
+                                err_l = str(ws_tp_err).lower()
+                                if any(kw in err_l for kw in ('-5022', '-2010', 'immediately match', 'post only', 'post-only', 'post_only', 'maker', 'gtx')):
+                                    raise
                                 logger.warning(f"⚠️ Bracket TP create_order_ws fallback to REST for {symbol}: {ws_tp_err}")
                         elif has_ws_create and not ws_ready_tp:
                             schedule_ws_api_prewarm(order_ex, is_futures=is_futures, is_inverse=is_inverse)
                         return await order_ex.create_limit_order(symbol, opposite_side, amt, px, p_dict)
 
+                    tp_exec_meta = {"label": "Post-Only Maker (GTX)", "is_maker": True}
                     if tp_order_type == 'limit':
-                        # 1ms local RAM/Redis BBO check: if final_tp_price already crosses the book,
-                        # skip the doomed Post-Only (GTX) attempt to avoid wasting 1 extra RTT (~255ms)
-                        skip_post_only = False
-                        try:
-                            from app.services.smart_peg_entry_executor import _fetch_bbo_fast
-                            bbo_ob = await asyncio.wait_for(
-                                _fetch_bbo_fast(order_ex, symbol, max_age_seconds=2.5, rest_fallback=False),
-                                timeout=0.040,
-                            )
-                            if bbo_ob and bbo_ob.get('bids') and bbo_ob.get('asks'):
-                                b_bid = float(bbo_ob['bids'][0][0])
-                                b_ask = float(bbo_ob['asks'][0][0])
-                                if opposite_side == 'buy' and b_ask > 0 and final_tp_price >= b_ask:
-                                    skip_post_only = True
-                                elif opposite_side == 'sell' and b_bid > 0 and final_tp_price <= b_bid:
-                                    skip_post_only = True
-                        except Exception:
-                            pass
+                        from app.services.maker_tp_guard import place_strict_maker_tp_order
 
-                        if not skip_post_only:
-                            # 1st attempt: Post-Only Maker limit order (saves fees)
-                            ex_params_po = dict(ex_params)
-                            ex_params_po['postOnly'] = True
-                            try:
-                                tp_res = await _place_tp_limit(final_tp_price, final_amount, ex_params_po)
-                            except Exception as po_e:
-                                logger.warning(f"⚠️ Bracket TP Post-Only rejected ({po_e}). Retrying immediately with standard GTC Limit...")
-                                tp_res = None
-
-                        # On Binance Futures, a GTX Post-Only order that crosses the book returns HTTP 200 with status='expired'
-                        if not tp_res or str(tp_res.get('status', '')).lower() in ('expired', 'canceled', 'cancelled', 'rejected'):
-                            if tp_res:
-                                logger.warning(
-                                    f"⚠️ Bracket TP Post-Only returned status='{tp_res.get('status')}' on {symbol}. "
-                                    f"Retrying immediately with standard GTC Limit..."
-                                )
-                            ex_params_gtc = dict(ex_params)
-                            ex_params_gtc.pop('postOnly', None)
-                            ex_params_gtc['timeInForce'] = 'GTC'
-                            tp_res = await _place_tp_limit(final_tp_price, final_amount, ex_params_gtc)
-                            logger.info(f"✅ Bracket Monitor: Standard GTC Limit TP placed successfully! ID: {tp_res.get('id')}")
-                        else:
-                            logger.info(f"✅ Bracket Monitor: Maker Post-Only TP placed! ID: {tp_res.get('id')}")
+                        strict_maker_tp = bool(tp_config.get('strict_maker', True))
+                        tp_res, placed_tp_px, tp_exec_meta = await place_strict_maker_tp_order(
+                            order_ex=order_ex,
+                            symbol=symbol,
+                            opposite_side=opposite_side,
+                            amount=final_amount,
+                            target_tp_price=float(final_tp_price),
+                            entry_price=float(average_price or 0.0),
+                            base_params=ex_params,
+                            is_futures=is_futures,
+                            place_limit_fn=_place_tp_limit,
+                            format_price_fn=lambda px: BracketOrderService._safe_price_to_precision(order_ex, symbol, px),
+                            strict_maker=strict_maker_tp,
+                            max_maker_attempts=3,
+                        )
+                        final_tp_price = placed_tp_px
                     else:
                         # Market TP: Place a conditional TAKE_PROFIT_MARKET order at final_tp_price on Futures
                         # (Never fire an immediate market order right after entry!)
@@ -2429,7 +2418,11 @@ class BracketOrderService:
                                 from app.db.session import SessionLocal
                                 db = SessionLocal()
                                 try:
-                                    tp_type_label = "Post-Only Maker" if tp_order_type == 'limit' else ("Conditional Market" if is_futures else "Limit")
+                                    tp_type_label = (
+                                        str(tp_exec_meta.get("label") or "Post-Only Maker (GTX)")
+                                        if tp_order_type == 'limit'
+                                        else ("Conditional Market" if is_futures else "Limit")
+                                    )
                                     exchange_display = api_key_record.exchange.capitalize() if api_key_record else "Exchange"
                                     msg = (
                                         f"🎯 *TAKE-PROFIT ORDER PLACED*\n"

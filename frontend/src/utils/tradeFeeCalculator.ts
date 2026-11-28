@@ -233,6 +233,10 @@ export function getFallbackFeeProfile(
   ) {
     makerRate = 0.0;
     tierLabel = `Binance ${parts.quote} 0% Maker`;
+  } else if (family === 'binance' && marketType === 'usdm_futures' && parts.quote === 'USDC') {
+    makerRate = 0.0;
+    takerRate = 0.0004;
+    tierLabel = 'Binance USDC Futures (0% Maker)';
   } else if (family === 'binance' && marketType === 'usdm_futures') {
     tierLabel = 'Binance USD-M Standard';
   } else if (family === 'binance' && marketType === 'coinm_futures') {

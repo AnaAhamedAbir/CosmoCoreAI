@@ -1,347 +1,708 @@
 /**
- * SystemAlertWidget — Cyberpunk Glassmorphism Design
- * =====================================================
- * Floating, draggable server monitor with neon aesthetics,
- * animated scanlines, hexagonal status nodes, and a
- * matrix-style live log terminal.
+ * SystemAlertWidget — SaaS Infrastructure & Incident Observability Console
+ * =========================================================================
+ * Production-grade Owner/SRE monitoring workspace:
+ *  - Live Incident Feed with Redis persistence, severity KPI filters, search,
+ *    service filters, acknowledge/resolve actions, and full stack-trace inspector.
+ *  - Chronologically merged Multi-Service Live Log Stream with severity filters,
+ *    keyword search, pause/resume, line wrap, copy, and .log export.
+ *  - Real-time Infrastructure Health bar (PostgreSQL, Redis, Celery, WS, Exchange RTT)
+ *    and integrated VPS Hardware & Latency Guard telemetry.
+ *  - Draggable compact mode + expandable wide operations mode + mobile responsive sheet.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import {
+  Activity,
+  AlertOctagon,
+  AlertTriangle,
+  Check,
+  CheckCircle2,
+  Copy,
+  Cpu,
+  Database,
+  Download,
+  Expand,
+  FlaskConical,
+  Maximize2,
+  Minimize2,
+  Pause,
+  Play,
+  Radio,
+  RefreshCw,
+  Search,
+  Server,
+  ShieldAlert,
+  ShieldCheck,
+  Terminal,
+  Trash2,
+  WrapText,
+  X,
+  XCircle,
+} from 'lucide-react';
 import { useSystemAlerts, type SystemAlert, type AlertSeverity } from '@/hooks/useSystemAlerts';
 import { useTheme } from '@/context/ThemeContext';
 import { useLatencyGuard } from '@/context/LatencyGuardContext';
 import DeviceTelemetryPanel from '@/components/common/DeviceTelemetryPanel';
-import { isThermalGuardActive } from '@/utils/deviceProfile';
+import {
+  systemService,
+  type SystemHealth,
+  type ContainerLogBatchRecord,
+  type ContainerLogLine,
+} from '@/services/systemService';
 import { buildAuthenticatedWsUrl } from '@/utils/wsAuth';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Config & Helpers ─────────────────────────────────────────────────────────
 
-interface LogLine {
-  line: string;
-  level: 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL';
-}
+type TabId = 'incidents' | 'logs' | 'telemetry';
+type IncidentStatusFilter = 'active' | 'all' | 'resolved';
+type LogLevelFilter = 'ALL' | 'CRITICAL' | 'ERROR' | 'WARNING' | 'INFO';
 
-interface ContainerLogBatch {
-  container: string;
-  display_name: string;
-  lines: LogLine[];
-  timestamp: string;
-}
-
-// ─── Config ───────────────────────────────────────────────────────────────────
-
-const SEVERITY_CFG: Record<AlertSeverity, { icon: string; color: string; neon: string; bg: string; border: string; label: string; glow: string }> = {
-  CRITICAL: { icon: '⬡', label: 'CRITICAL', color: 'text-red-600 dark:text-red-400',       neon: '#f87171', bg: 'bg-red-50/90 dark:bg-red-950/60',       border: 'border-red-300 dark:border-red-500/40', glow: 'shadow-red-500/30' },
-  ERROR:    { icon: '⬡', label: 'ERROR',    color: 'text-orange-600 dark:text-orange-400', neon: '#fb923c', bg: 'bg-orange-50/90 dark:bg-orange-950/60', border: 'border-orange-300 dark:border-orange-500/40', glow: 'shadow-orange-500/30' },
-  WARNING:  { icon: '⬡', label: 'WARNING',  color: 'text-amber-700 dark:text-yellow-400',  neon: '#facc15', bg: 'bg-amber-50/90 dark:bg-yellow-950/40',  border: 'border-amber-300 dark:border-yellow-500/40', glow: 'shadow-yellow-500/20' },
+const SEVERITY_META: Record<
+  AlertSeverity,
+  {
+    label: string;
+    pill: string;
+    dot: string;
+    accentBar: string;
+    cardBorder: string;
+    Icon: React.FC<{ className?: string }>;
+  }
+> = {
+  CRITICAL: {
+    label: 'Critical',
+    pill: 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30',
+    dot: 'bg-rose-500',
+    accentBar: 'bg-rose-500',
+    cardBorder: 'border-rose-200/90 dark:border-rose-500/25 hover:border-rose-400/60 dark:hover:border-rose-500/45',
+    Icon: AlertOctagon,
+  },
+  ERROR: {
+    label: 'Error',
+    pill: 'bg-orange-500/15 text-orange-700 dark:text-orange-300 border-orange-500/30',
+    dot: 'bg-orange-500',
+    accentBar: 'bg-orange-500',
+    cardBorder: 'border-orange-200/90 dark:border-orange-500/25 hover:border-orange-400/60 dark:hover:border-orange-500/45',
+    Icon: XCircle,
+  },
+  WARNING: {
+    label: 'Warning',
+    pill: 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30',
+    dot: 'bg-amber-500',
+    accentBar: 'bg-amber-500',
+    cardBorder: 'border-amber-200/90 dark:border-amber-500/25 hover:border-amber-400/60 dark:hover:border-amber-500/45',
+    Icon: AlertTriangle,
+  },
 };
 
-const LINE_COLOR: Record<LogLine['level'], string> = {
-  CRITICAL: 'text-red-400',
-  ERROR:    'text-orange-300',
-  WARNING:  'text-yellow-300',
-  INFO:     'text-emerald-400/80',
+const SERVICE_META: Record<string, { short: string; label: string; badge: string }> = {
+  cosmoquant_backend:          { short: 'API',   label: 'Backend API',    badge: 'bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30' },
+  cosmo_celery_worker:         { short: 'CLR',   label: 'Celery Worker',  badge: 'bg-violet-500/15 text-violet-700 dark:text-violet-300 border-violet-500/30' },
+  cosmo_celery_worker_default: { short: 'CLR',   label: 'Celery Default', badge: 'bg-violet-500/15 text-violet-700 dark:text-violet-300 border-violet-500/30' },
+  cosmo_celery_worker_heavy:   { short: 'HVY',   label: 'Celery Heavy',   badge: 'bg-fuchsia-500/15 text-fuchsia-700 dark:text-fuchsia-300 border-fuchsia-500/30' },
+  cosmo_celery_beat:           { short: 'BEAT',  label: 'Celery Beat',    badge: 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30' },
+  cosmo_telegram_bot:          { short: 'BOT',   label: 'Telegram Bot',   badge: 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30' },
+  cosmoquant_redis:            { short: 'REDIS', label: 'Redis Cache',    badge: 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30' },
+  cosmoquant_db:               { short: 'DB',    label: 'PostgreSQL',     badge: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30' },
+  cosmoquant_frontend:         { short: 'WEB',   label: 'Frontend',       badge: 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-500/30' },
+  cosmoquant_nginx:            { short: 'NGX',   label: 'Nginx Proxy',    badge: 'bg-teal-500/15 text-teal-700 dark:text-teal-300 border-teal-500/30' },
+  network_latency:             { short: 'NET',   label: 'Exchange Link',  badge: 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30' },
 };
 
-const LIGHT_LINE_COLOR: Record<LogLine['level'], string> = {
-  CRITICAL: 'text-red-700',
-  ERROR:    'text-orange-700',
-  WARNING:  'text-yellow-800',
-  INFO:     'text-gray-800',
+const getServiceMeta = (container: string, fallbackDisplay?: string) =>
+  SERVICE_META[container] || {
+    short: (fallbackDisplay || container).slice(0, 4).toUpperCase(),
+    label: fallbackDisplay || container,
+    badge: 'bg-slate-500/15 text-slate-700 dark:text-slate-300 border-slate-500/30',
+  };
+
+const formatRelativeTime = (iso: string): string => {
+  const diffSec = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (!Number.isFinite(diffSec)) return '';
+  if (diffSec < 10) return 'just now';
+  if (diffSec < 60) return `${diffSec}s ago`;
+  const mins = Math.floor(diffSec / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
 };
 
-const CONTAINER_INFO: Record<string, { short: string; color: string; neon: string }> = {
-  cosmoquant_backend:          { short: 'API', color: 'text-sky-300',     neon: '#38bdf8' },
-  cosmo_celery_worker:         { short: 'CLR', color: 'text-violet-300',  neon: '#a78bfa' },
-  cosmo_celery_worker_default: { short: 'CLR', color: 'text-violet-300',  neon: '#a78bfa' },
-  cosmo_celery_worker_heavy:   { short: 'HVY', color: 'text-fuchsia-300', neon: '#e879f9' },
-  cosmo_celery_beat:           { short: 'SCH', color: 'text-indigo-300',  neon: '#818cf8' },
-  cosmo_telegram_bot:          { short: 'BOT', color: 'text-amber-300',   neon: '#fbbf24' },
-  cosmoquant_redis:            { short: 'RDS', color: 'text-rose-300',    neon: '#fb7185' },
-  cosmoquant_db:               { short: 'DB',  color: 'text-emerald-300', neon: '#34d399' },
-  cosmoquant_frontend:         { short: 'WEB', color: 'text-cyan-300',    neon: '#22d3ee' },
+const formatExactTime = (iso: string): string => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 };
 
-// ─── Critical Toast ───────────────────────────────────────────────────────────
+const getHeadline = (alert: SystemAlert): string => {
+  if (alert.snippet && alert.snippet.length > 0) {
+    const first = alert.snippet[0];
+    if (first.toLowerCase().includes('traceback (most recent call last)') && alert.snippet.length > 1) {
+      return alert.snippet[alert.snippet.length - 1];
+    }
+    return first;
+  }
+  return alert.message?.split('\n')[0] || 'Server incident detected';
+};
 
-const CriticalToast: React.FC<{ alert: SystemAlert; onClose: () => void }> = ({ alert, onClose }) => {
-  const [vis, setVis] = useState(false);
+const getCenterPos = (w: number, h: number) => {
+  if (typeof window === 'undefined') return { x: 80, y: 64 };
+  const clampedW = Math.min(w, window.innerWidth - 24);
+  const clampedH = Math.min(h, window.innerHeight - 24);
+  return {
+    x: Math.max(12, Math.round((window.innerWidth - clampedW) / 2)),
+    y: Math.max(12, Math.round((window.innerHeight - clampedH) / 2)),
+  };
+};
+
+// ─── Actionable SaaS Incident Toast ───────────────────────────────────────────
+
+const IncidentToast: React.FC<{
+  alert: SystemAlert;
+  onInspect: () => void;
+  onClose: () => void;
+}> = ({ alert, onInspect, onClose }) => {
+  const meta = SEVERITY_META[alert.severity];
+  const svc = getServiceMeta(alert.container, alert.display_name);
+  const Icon = meta.Icon;
+
   useEffect(() => {
-    requestAnimationFrame(() => setVis(true));
-    const t = setTimeout(() => { setVis(false); setTimeout(onClose, 400); }, 7000);
+    const t = setTimeout(onClose, 8000);
     return () => clearTimeout(t);
   }, [onClose]);
 
   return (
-    <div
-      className={`fixed top-4 right-4 z-[9999] w-80 rounded-2xl p-px transition-all duration-400 ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'}`}
-      style={{ background: 'linear-gradient(135deg, #ef444480, #7c3aed60)', boxShadow: '0 0 40px #ef444440, 0 25px 50px #00000080' }}
-    >
-      <div className="rounded-2xl p-3.5" style={{ background: 'rgba(12,5,20,0.97)', backdropFilter: 'blur(20px)' }}>
-        <div className="flex items-start gap-3">
-          <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5"
-            style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.4)', boxShadow: '0 0 12px #ef444440' }}>
-            <span className="text-red-400 text-sm animate-pulse">⚠</span>
+    <div className="w-[340px] max-w-[calc(100vw-24px)] rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0B1120] shadow-2xl overflow-hidden transition-all duration-200">
+      <div className={`h-1 w-full ${meta.accentBar}`} />
+      <div className="p-3.5 flex items-start gap-3">
+        <div className={`w-8 h-8 rounded-lg border flex items-center justify-center flex-shrink-0 mt-0.5 ${meta.pill}`}>
+          <Icon className="w-4 h-4" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border ${meta.pill}`}>
+              {meta.label}
+            </span>
+            <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold border ${svc.badge}`}>
+              {svc.short}
+            </span>
+            <span className="text-[10px] font-mono text-slate-400 ml-auto">{formatExactTime(alert.timestamp)}</span>
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-red-400 font-bold text-xs tracking-wider uppercase">Critical — {alert.display_name}</p>
-            <p className="text-gray-300 text-xs mt-1 leading-relaxed truncate">{alert.snippet[0] || 'Critical error detected'}</p>
+          <p className="text-xs font-medium text-slate-800 dark:text-slate-100 mt-1.5 line-clamp-2 break-words leading-snug">
+            {getHeadline(alert)}
+          </p>
+          <div className="flex items-center gap-2 mt-2">
+            <button
+              type="button"
+              onClick={onInspect}
+              className="text-[10px] font-bold text-cyan-600 dark:text-cyan-400 hover:underline cursor-pointer"
+            >
+              Inspect Incident →
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-[10px] font-medium text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 ml-auto cursor-pointer"
+            >
+              Dismiss
+            </button>
           </div>
-          <button onClick={() => { setVis(false); setTimeout(onClose, 400); }}
-            className="text-gray-600 hover:text-white flex-shrink-0 mt-0.5 transition-colors">
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-          </button>
         </div>
       </div>
     </div>
   );
 };
 
-// ─── Alert Detail Modal ──────────────────────────────────────────────────────
+// ─── Incident Detail Inspector Modal ──────────────────────────────────────────
 
-const AlertDetailModal: React.FC<{ alert: SystemAlert; onClose: () => void }> = ({ alert, onClose }) => {
-  const cfg = SEVERITY_CFG[alert.severity];
-  const { theme } = useTheme();
-  const isDark = theme === 'dark';
-  const date = new Date(alert.timestamp);
-  const dateStr = date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-  const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const IncidentInspectorModal: React.FC<{
+  alert: SystemAlert;
+  onAcknowledge: (id: string) => void;
+  onClose: () => void;
+}> = ({ alert, onAcknowledge, onClose }) => {
+  const meta = SEVERITY_META[alert.severity];
+  const svc = getServiceMeta(alert.container, alert.display_name);
+  const Icon = meta.Icon;
+  const [copied, setCopied] = useState<'stack' | 'json' | null>(null);
 
-  // Close on backdrop click
-  const handleBackdrop = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget) onClose();
-  };
-
-  // Close on Escape
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  return (
-    <div
-      className="fixed inset-0 z-[99999] flex items-center justify-center p-4"
-      style={{ background: isDark ? 'rgba(0,0,0,0.80)' : 'rgba(0,0,0,0.50)', backdropFilter: 'blur(8px)' }}
-      onClick={handleBackdrop}
-    >
-      <div
-        className="relative w-full max-w-lg rounded-2xl p-px animate-in"
-        style={{
-          background: `linear-gradient(135deg, ${cfg.neon}50, rgba(255,255,255,0.08), ${cfg.neon}30)`,
-          boxShadow: `0 0 60px ${cfg.neon}30, 0 30px 80px ${isDark ? 'rgba(0,0,0,0.9)' : 'rgba(0,0,0,0.3)'}`,
-          animation: 'modalIn 0.2s ease-out',
-        }}
-      >
-        <div className="rounded-2xl overflow-hidden" style={{ background: isDark ? 'rgba(8,8,18,0.98)' : 'rgba(248,250,252,0.98)' }}>
+  const copyText = async (text: string, kind: 'stack' | 'json') => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(kind);
+      setTimeout(() => setCopied(null), 1800);
+    } catch {
+      // ignore
+    }
+  };
 
-          {/* Header */}
-          <div className="relative px-5 py-4 border-b" style={{ borderColor: `${cfg.neon}20`, background: `${cfg.neon}08` }}>
-            {/* Neon strip */}
-            <div className="absolute left-0 top-0 bottom-0 w-0.5 rounded-l-2xl"
-              style={{ background: cfg.neon, boxShadow: `0 0 12px ${cfg.neon}` }} />
-            <div className="flex items-start justify-between gap-4 pl-3">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className={`text-[10px] font-black tracking-[0.2em] uppercase ${cfg.color}`}
-                    style={{ textShadow: `0 0 10px ${cfg.neon}` }}>{cfg.label}</span>
-                  <span className={`${isDark ? 'text-gray-700' : 'text-gray-400'} text-[9px]`}>•</span>
-                  <span className={`${isDark ? 'text-gray-400' : 'text-gray-600'} font-mono text-[10px]`}>{alert.display_name}</span>
-                </div>
-                <p className={`${isDark ? 'text-gray-600' : 'text-gray-400'} font-mono text-[9px] tracking-wider`}>{dateStr} · {timeStr}</p>
+  const fullTimestamp = new Date(alert.timestamp).toLocaleString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="w-full max-w-2xl max-h-[85vh] flex flex-col rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#070B14] shadow-2xl overflow-hidden">
+        <div className={`h-1 w-full ${meta.accentBar}`} />
+
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-[#0B1120]">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className={`w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 ${meta.pill}`}>
+              <Icon className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${meta.pill}`}>
+                  {meta.label}
+                </span>
+                <span className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold border ${svc.badge}`}>
+                  {svc.label}
+                </span>
+                {alert.acknowledged && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                    <CheckCircle2 className="w-3 h-3" /> Resolved
+                  </span>
+                )}
               </div>
-              <button
-                onClick={onClose}
-                className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all flex-shrink-0 ${isDark ? 'border border-white/10 text-gray-500 hover:text-white hover:bg-white/10' : 'border border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-gray-100'}`}
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white mt-1.5 break-words leading-snug">
+                {getHeadline(alert)}
+              </h3>
+              <p className="text-[11px] font-mono text-slate-500 dark:text-slate-400 mt-1">
+                {fullTimestamp} · ID {alert.id.slice(-10)}
+                {alert.logger ? ` · ${alert.logger}` : ''}
+                {alert.source ? ` · ${alert.source}` : ''}
+              </p>
             </div>
           </div>
 
-          {/* Full message body */}
-          <div className="px-5 py-4 space-y-4">
-            {/* All snippet lines */}
-            {alert.snippet.length > 0 && (
-              <div>
-                <p className="text-[9px] font-black tracking-[0.2em] uppercase mb-2" style={{ color: `${cfg.neon}80` }}>Log Output</p>
-                <div className="rounded-xl p-3 font-mono text-[10px] leading-relaxed space-y-1"
-                  style={{ background: isDark ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.04)', border: `1px solid ${cfg.neon}15` }}>
-                  {alert.snippet.map((l, i) => (
-                    <p key={i} className={`${isDark ? 'text-gray-300' : 'text-gray-700'} break-all`}>
-                      <span className={`${isDark ? 'text-gray-700' : 'text-gray-400'} mr-2 select-none`}>{String(i + 1).padStart(2, '0')}</span>{l}
-                    </p>
-                  ))}
-                </div>
-              </div>
-            )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-200/70 dark:hover:bg-white/10 transition-colors cursor-pointer"
+            aria-label="Close incident inspector"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
 
-            {/* Full telegram message */}
-            {alert.message && (
-              <div>
-                <p className="text-[9px] font-black tracking-[0.2em] uppercase mb-2" style={{ color: `${cfg.neon}80` }}>Full Alert Message</p>
-                <div className={`rounded-xl p-3 font-mono text-[10px] leading-relaxed whitespace-pre-wrap ${isDark ? 'text-gray-400' : 'text-gray-600'}`}
-                  style={{ background: isDark ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.04)', border: `1px solid ${cfg.neon}15`, maxHeight: '200px', overflowY: 'auto' }}>
-                  {alert.message}
-                </div>
+        {/* Body */}
+        <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-4">
+          {alert.snippet.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Stack Trace &amp; Context ({alert.snippet.length} lines)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void copyText(alert.snippet.join('\n'), 'stack')}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-semibold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#0B1120] text-slate-600 dark:text-slate-300 hover:border-cyan-500/50 hover:text-cyan-600 dark:hover:text-cyan-300 transition-colors cursor-pointer"
+                >
+                  {copied === 'stack' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                  {copied === 'stack' ? 'Copied' : 'Copy Trace'}
+                </button>
               </div>
-            )}
+              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-950 text-slate-100 p-3.5 font-mono text-[11px] leading-relaxed overflow-x-auto space-y-0.5">
+                {alert.snippet.map((line, idx) => (
+                  <div key={idx} className="flex items-start gap-3">
+                    <span className="text-slate-600 select-none w-5 text-right flex-shrink-0">
+                      {String(idx + 1).padStart(2, '0')}
+                    </span>
+                    <span
+                      className={`whitespace-pre-wrap break-all ${
+                        idx === alert.snippet.length - 1 && alert.snippet.length > 1
+                          ? 'text-rose-300 font-semibold'
+                          : 'text-slate-200'
+                      }`}
+                    >
+                      {line}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
-            {/* Meta info pills */}
-            <div className="flex items-center gap-2 flex-wrap pt-1">
-              <span className="px-2 py-0.5 rounded-md font-mono text-[9px] border" style={{ color: cfg.neon + 'cc', borderColor: cfg.neon + '30', background: cfg.neon + '10' }}>
+          {alert.message && (
+            <div className="space-y-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
+                Full Payload Message
+              </span>
+              <pre className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0B1120] p-3.5 font-mono text-[11px] text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words max-h-52 overflow-y-auto leading-relaxed">
+                {alert.message}
+              </pre>
+            </div>
+          )}
+
+          {/* Metadata strip */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0B1120] px-3 py-2">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Service</span>
+              <span className="text-xs font-mono font-semibold text-slate-800 dark:text-slate-200 truncate block">
                 {alert.container}
               </span>
-              <span className="px-2 py-0.5 rounded-md font-mono text-[9px] border border-slate-200 dark:border-white/10 text-slate-500 dark:text-gray-400">
-                ID: {alert.id.slice(-8)}
+            </div>
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0B1120] px-3 py-2">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Source</span>
+              <span className="text-xs font-mono font-semibold text-slate-800 dark:text-slate-200 truncate block">
+                {alert.source || 'live_handler'}
+              </span>
+            </div>
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0B1120] px-3 py-2 col-span-2 sm:col-span-1">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Status</span>
+              <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 block">
+                {alert.acknowledged ? 'Acknowledged' : 'Active Incident'}
               </span>
             </div>
           </div>
+        </div>
 
-          {/* Footer */}
-          <div className="px-5 py-3 border-t flex justify-end" style={{ borderColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.08)' }}>
+        {/* Footer */}
+        <div className="flex items-center justify-between gap-2 px-5 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-[#0B1120]">
+          <button
+            type="button"
+            onClick={() => void copyText(JSON.stringify(alert, null, 2), 'json')}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors cursor-pointer"
+          >
+            {copied === 'json' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+            {copied === 'json' ? 'JSON Copied' : 'Copy JSON'}
+          </button>
+
+          <div className="flex items-center gap-2">
+            {!alert.acknowledged && (
+              <button
+                type="button"
+                onClick={() => onAcknowledge(alert.id)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-colors cursor-pointer"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Mark Resolved
+              </button>
+            )}
             <button
+              type="button"
               onClick={onClose}
-              className="px-4 py-1.5 rounded-lg text-[10px] font-bold tracking-wider uppercase transition-all border"
-              style={{ borderColor: cfg.neon + '40', color: cfg.neon, background: cfg.neon + '10' }}
+              className="px-3.5 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors cursor-pointer"
             >
               Close
             </button>
           </div>
         </div>
       </div>
-
-      <style>{`
-        @keyframes modalIn {
-          from { opacity: 0; transform: scale(0.94) translateY(8px); }
-          to   { opacity: 1; transform: scale(1)   translateY(0);    }
-        }
-      `}</style>
-    </div>
+    </div>,
+    document.body
   );
 };
 
-// ─── Alert Card ───────────────────────────────────────────────────────────────
+// ─── Live Log Stream Terminal (Chronological Multi-Service) ───────────────────
 
-const AlertCard: React.FC<{ alert: SystemAlert }> = ({ alert }) => {
-  const cfg = SEVERITY_CFG[alert.severity];
-  const { theme } = useTheme();
-  const isDark = theme === 'dark';
-  const [expanded, setExpanded] = useState(false);
-  const time = new Date(alert.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const LogStreamView: React.FC<{
+  batches: Map<string, ContainerLogBatchRecord>;
+  logConn: boolean;
+  paused: boolean;
+  onTogglePause: () => void;
+  onClearLocal: () => void;
+}> = ({ batches, logConn, paused, onTogglePause, onClearLocal }) => {
+  const [serviceFilter, setServiceFilter] = useState<string | null>(null);
+  const [levelFilter, setLevelFilter] = useState<LogLevelFilter>('ALL');
+  const [query, setQuery] = useState('');
+  const [wrapLines, setWrapLines] = useState(true);
+  const [copied, setCopied] = useState(false);
+
+  const containers = useMemo(() => Array.from(batches.keys()).sort(), [batches]);
+
+  const serviceErrorCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const [key, batch] of batches.entries()) {
+      const errCount = batch.lines.filter((l) => l.level === 'ERROR' || l.level === 'CRITICAL').length;
+      counts.set(key, errCount);
+    }
+    return counts;
+  }, [batches]);
+
+  const mergedLines = useMemo(() => {
+    const list: Array<{
+      key: string;
+      container: string;
+      display: string;
+      line: string;
+      level: ContainerLogLine['level'];
+      sortTs: number;
+    }> = [];
+    const selectedBatches = serviceFilter
+      ? batches.has(serviceFilter)
+        ? [batches.get(serviceFilter)!]
+        : []
+      : Array.from(batches.values());
+
+    for (const batch of selectedBatches) {
+      const batchTs = new Date(batch.timestamp).getTime() || 0;
+      batch.lines.forEach((l, idx) => {
+        const lineTs = l.ts ? new Date(l.ts).getTime() : batchTs + idx;
+        list.push({
+          key: `${batch.container}-${idx}-${lineTs}`,
+          container: batch.container,
+          display: batch.display_name,
+          line: l.line,
+          level: l.level,
+          sortTs: Number.isFinite(lineTs) ? lineTs : batchTs + idx,
+        });
+      });
+    }
+
+    // Newest first across all services
+    list.sort((a, b) => b.sortTs - a.sortTs);
+
+    const q = query.trim().toLowerCase();
+    return list.filter((item) => {
+      if (levelFilter !== 'ALL' && item.level !== levelFilter) return false;
+      if (q && !item.line.toLowerCase().includes(q) && !item.container.toLowerCase().includes(q)) return false;
+      return true;
+    }).slice(0, 300);
+  }, [batches, serviceFilter, levelFilter, query]);
+
+  const handleCopy = async () => {
+    try {
+      const text = mergedLines.map((l) => `[${getServiceMeta(l.container, l.display).short}] [${l.level}] ${l.line}`).join('\n');
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleExport = () => {
+    const text = mergedLines.map((l) => `[${getServiceMeta(l.container, l.display).short}] [${l.level}] ${l.line}`).join('\n');
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `cosmocore-logs-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.log`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const levelBadgeClass: Record<ContainerLogLine['level'], string> = {
+    CRITICAL: 'bg-rose-500/20 text-rose-300 border-rose-500/40',
+    ERROR: 'bg-orange-500/20 text-orange-300 border-orange-500/40',
+    WARNING: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+    INFO: 'bg-slate-700/60 text-slate-300 border-slate-600/50',
+  };
+
+  const lineTextClass: Record<ContainerLogLine['level'], string> = {
+    CRITICAL: 'text-rose-300 font-semibold',
+    ERROR: 'text-orange-200',
+    WARNING: 'text-amber-200/95',
+    INFO: 'text-slate-300/90',
+  };
+
   return (
-    <>
-      {expanded && <AlertDetailModal alert={alert} onClose={() => setExpanded(false)} />}
-      <div
-        className={`relative rounded-xl p-3 border overflow-hidden transition-all cursor-pointer group ${cfg.bg} ${cfg.border}`}
-        style={{ boxShadow: isDark ? `0 4px 20px ${cfg.neon}18` : '0 2px 8px rgba(0,0,0,0.06)' }}
-        onClick={() => setExpanded(true)}
-      >
-        {/* Hover glow overlay */}
-        <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none rounded-xl"
-          style={{ background: `radial-gradient(ellipse at 50% 0%, ${cfg.neon}15, transparent 70%)` }} />
-
-        {/* Neon left stripe */}
-        <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full" style={{ background: cfg.neon, boxShadow: `0 0 8px ${cfg.neon}` }} />
-        <div className="pl-3">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <span className={`text-[10px] font-black tracking-widest uppercase ${cfg.color}`}
-                style={{ textShadow: isDark ? `0 0 8px ${cfg.neon}` : 'none' }}>{cfg.label}</span>
-              <span className="text-gray-400 dark:text-gray-700 text-[9px]">•</span>
-              <span className="text-gray-700 dark:text-gray-400 text-[10px] font-mono font-medium">{alert.display_name}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-gray-500 dark:text-gray-600 text-[9px] font-mono">{time}</span>
-              {/* Expand hint */}
-              <span className="text-[8px] font-bold tracking-wider opacity-0 group-hover:opacity-60 transition-opacity"
-                style={{ color: cfg.neon }}>EXPAND ↗</span>
-            </div>
+    <div className="flex flex-col h-full min-h-0">
+      {/* Controls Toolbar */}
+      <div className="flex-shrink-0 px-3.5 py-2.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-[#0B1120]/90 space-y-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="relative flex-1 min-w-[160px]">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Filter log lines or service..."
+              className="w-full h-8 pl-8 pr-7 rounded-lg text-xs bg-white dark:bg-[#070B14] border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-cyan-500/60"
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
           </div>
-          {alert.snippet.length > 0 && (
-            <div className="rounded-lg p-2 font-mono text-[9.5px] text-gray-700 dark:text-gray-400 space-y-0.5"
-              style={{ background: isDark ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.7)', border: isDark ? '1px solid rgba(255,255,255,0.04)' : '1px solid rgba(0,0,0,0.06)' }}>
-              {alert.snippet.slice(0, 3).map((l, i) => <p key={i} className="truncate leading-relaxed">{l}</p>)}
-              {alert.snippet.length > 3 && (
-                <p className="text-gray-500 dark:text-gray-700 text-[9px]">+{alert.snippet.length - 3} more lines…</p>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    </>
-  );
-};
 
-// ─── Log Terminal ─────────────────────────────────────────────────────────────
+          {/* Severity level segmented filter */}
+          <div className="flex items-center rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#070B14] p-0.5">
+            {(['ALL', 'CRITICAL', 'ERROR', 'WARNING', 'INFO'] as LogLevelFilter[]).map((lvl) => (
+              <button
+                key={lvl}
+                type="button"
+                onClick={() => setLevelFilter(lvl)}
+                className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors cursor-pointer ${
+                  levelFilter === lvl
+                    ? lvl === 'CRITICAL'
+                      ? 'bg-rose-600 text-white'
+                      : lvl === 'ERROR'
+                        ? 'bg-orange-600 text-white'
+                        : lvl === 'WARNING'
+                          ? 'bg-amber-600 text-white'
+                          : 'bg-cyan-600 text-white'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                {lvl === 'CRITICAL' ? 'CRIT' : lvl === 'WARNING' ? 'WARN' : lvl}
+              </button>
+            ))}
+          </div>
 
-const LogTerminal: React.FC<{
-  batches: Map<string, ContainerLogBatch>;
-  filter: string | null;
-  onFilter: (c: string | null) => void;
-}> = ({ batches, filter, onFilter }) => {
-  const lines: Array<{ key: string; container: string; display: string; line: string; level: LogLine['level'] }> = [];
-  const src = filter ? (batches.has(filter) ? [batches.get(filter)!] : []) : Array.from(batches.values());
-  for (const b of src) {
-    const reversedLines = [...b.lines.slice(-60)].reverse();
-    reversedLines.forEach((l, idx) => {
-      lines.push({ key: `${b.container}-${idx}`, container: b.container, display: b.display_name, line: l.line, level: l.level });
-    });
-  }
-
-  const containers = Array.from(batches.keys());
-
-  const { theme } = useTheme();
-  const isDark = theme === 'dark';
-
-  return (
-    <div className="flex flex-col h-full">
-      {/* Container filter pills */}
-      <div className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 border-b flex-wrap" style={{ borderColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(226,232,240,0.8)' }}>
-        <button onClick={() => onFilter(null)}
-          className={`px-2.5 py-0.5 rounded-full text-[9.5px] font-bold tracking-wider border transition-all uppercase cursor-pointer ${filter === null
-            ? isDark ? 'text-white border-white/30 bg-white/10' : 'text-slate-900 border-slate-400 bg-slate-200/80 font-extrabold'
-            : isDark ? 'text-gray-600 border-transparent hover:text-gray-400' : 'text-slate-500 border-transparent hover:text-slate-800'}`}>
-          ALL
-        </button>
-        {containers.map(c => {
-          const info = CONTAINER_INFO[c] || { short: c.slice(0, 3).toUpperCase(), color: isDark ? 'text-gray-400' : 'text-slate-600', neon: '#9ca3af' };
-          return (
-            <button key={c} onClick={() => onFilter(filter === c ? null : c)}
-              className={`px-2.5 py-0.5 rounded-full text-[9.5px] font-bold tracking-wider transition-all border uppercase cursor-pointer ${filter === c ? (isDark ? info.color : 'text-violet-700 border-violet-400 bg-violet-100') + ' border-current' : isDark ? 'text-gray-600 border-transparent hover:text-gray-400' : 'text-slate-500 border-transparent hover:text-slate-800'}`}
-              style={filter === c ? { textShadow: isDark ? `0 0 6px ${info.neon}` : 'none', boxShadow: `0 0 8px ${info.neon}20` } : {}}>
-              {info.short}
+          {/* Action buttons */}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={onTogglePause}
+              title={paused ? 'Resume live stream' : 'Pause live stream'}
+              className={`h-8 px-2.5 rounded-lg border text-[10px] font-bold uppercase tracking-wider inline-flex items-center gap-1 transition-colors cursor-pointer ${
+                paused
+                  ? 'bg-amber-500/15 border-amber-500/40 text-amber-600 dark:text-amber-300'
+                  : 'bg-white dark:bg-[#070B14] border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:border-cyan-500/40'
+              }`}
+            >
+              {paused ? <Play className="w-3 h-3" /> : <Pause className="w-3 h-3" />}
+              <span className="hidden sm:inline">{paused ? 'Paused' : 'Live'}</span>
             </button>
-          );
-        })}
-      </div>
-
-      {/* Terminal body */}
-      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-px font-mono text-[10px] scrollbar-thin"
-        style={{ background: isDark ? 'rgba(0,0,0,0.4)' : 'rgba(248,250,252,0.6)' }}>
-        {lines.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-3">
-            <div className="relative">
-              <div className="w-10 h-10 rounded-full border border-emerald-500/30 flex items-center justify-center"
-                style={{ boxShadow: '0 0 20px #10b98130' }}>
-                <span className="text-emerald-500 dark:text-emerald-400 animate-pulse text-lg">⬡</span>
-              </div>
-            </div>
-            <p className={`${isDark ? 'text-gray-600' : 'text-slate-500'} text-xs font-medium`}>Streaming logs · updates every 2s</p>
+            <button
+              type="button"
+              onClick={() => setWrapLines((v) => !v)}
+              title="Toggle line wrapping"
+              className={`w-8 h-8 rounded-lg border flex items-center justify-center transition-colors cursor-pointer ${
+                wrapLines
+                  ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-600 dark:text-cyan-300'
+                  : 'bg-white dark:bg-[#070B14] border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400'
+              }`}
+            >
+              <WrapText className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleCopy()}
+              title="Copy visible logs"
+              className="w-8 h-8 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#070B14] text-slate-500 dark:text-slate-400 hover:text-cyan-500 flex items-center justify-center transition-colors cursor-pointer"
+            >
+              {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+            </button>
+            <button
+              type="button"
+              onClick={handleExport}
+              title="Download .log file"
+              className="w-8 h-8 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#070B14] text-slate-500 dark:text-slate-400 hover:text-cyan-500 flex items-center justify-center transition-colors cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={onClearLocal}
+              title="Clear log buffer"
+              className="w-8 h-8 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#070B14] text-slate-500 dark:text-slate-400 hover:text-rose-500 flex items-center justify-center transition-colors cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
           </div>
-        ) : (
-          lines.map(({ key, container, display, line, level }) => {
-            const info = CONTAINER_INFO[container];
+        </div>
+
+        {/* Service Filter Pills */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setServiceFilter(null)}
+            className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border transition-colors cursor-pointer ${
+              serviceFilter === null
+                ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-transparent'
+                : 'bg-white dark:bg-[#070B14] text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            All Services ({containers.length})
+          </button>
+          {containers.map((c) => {
+            const svc = getServiceMeta(c);
+            const errs = serviceErrorCounts.get(c) || 0;
+            const active = serviceFilter === c;
             return (
-              <div key={key} className="flex items-start gap-2 leading-relaxed py-px px-1 rounded hover:bg-slate-200/50 dark:hover:bg-white/5 group transition-colors">
-                {!filter && info && (
-                  <span className={`flex-shrink-0 text-[8.5px] font-black tracking-wider mt-px ${isDark ? info.color : 'text-violet-700'}`}
-                    style={{ textShadow: isDark ? `0 0 4px ${info.neon}` : 'none' }}>
-                    {info.short}
+              <button
+                key={c}
+                type="button"
+                onClick={() => setServiceFilter(active ? null : c)}
+                className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase border transition-colors cursor-pointer ${
+                  active
+                    ? svc.badge
+                    : 'bg-white dark:bg-[#070B14] text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <span>{svc.short}</span>
+                {errs > 0 && (
+                  <span className="px-1 rounded-sm bg-rose-500 text-white text-[8.5px] leading-tight">
+                    {errs}
                   </span>
                 )}
-                <span className={`break-all leading-relaxed ${isDark ? LINE_COLOR[level] : LIGHT_LINE_COLOR[level]}`}>{line}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Terminal Output */}
+      <div className="flex-1 min-h-0 overflow-auto bg-[#060913] text-slate-200 p-3 font-mono text-[11px] space-y-0.5 scrollbar-thin">
+        {mergedLines.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center gap-3 text-center py-10">
+            <div className="w-11 h-11 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center">
+              <Terminal className="w-5 h-5 text-cyan-400" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-slate-300">
+                {batches.size === 0
+                  ? logConn
+                    ? 'Connected — awaiting service log stream...'
+                    : 'Connecting to live log stream...'
+                  : 'No log lines match the active filter'}
+              </p>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Multi-service logs stream automatically every 2 seconds
+              </p>
+            </div>
+          </div>
+        ) : (
+          mergedLines.map(({ key, container, display, line, level }) => {
+            const svc = getServiceMeta(container, display);
+            return (
+              <div
+                key={key}
+                className={`flex items-start gap-2 px-2 py-1 rounded-md hover:bg-white/[0.04] transition-colors ${
+                  level === 'CRITICAL'
+                    ? 'bg-rose-500/10'
+                    : level === 'ERROR'
+                      ? 'bg-orange-500/[0.07]'
+                      : ''
+                }`}
+              >
+                <span className={`flex-shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold border ${svc.badge}`}>
+                  {svc.short}
+                </span>
+                <span className={`flex-shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold border ${levelBadgeClass[level]}`}>
+                  {level === 'CRITICAL' ? 'CRIT' : level === 'WARNING' ? 'WARN' : level}
+                </span>
+                <span className={`leading-relaxed ${wrapLines ? 'break-all whitespace-pre-wrap' : 'whitespace-nowrap'} ${lineTextClass[level]}`}>
+                  {line}
+                </span>
               </div>
             );
           })
@@ -351,39 +712,25 @@ const LogTerminal: React.FC<{
   );
 };
 
-// ─── Pulse Ring (decorative) ──────────────────────────────────────────────────
-
-const StatusNode: React.FC<{ active: boolean; color: string; neon: string; label: string }> = ({ active, color, neon, label }) => (
-  <div className="flex flex-col items-center gap-1">
-    <div className="relative w-5 h-5">
-      <div className={`w-5 h-5 rounded-full border transition-all ${active ? 'border-current' : 'border-gray-700'}`}
-        style={{ borderColor: active ? neon : undefined, boxShadow: active ? `0 0 8px ${neon}80, 0 0 16px ${neon}30` : undefined }}>
-        <div className={`absolute inset-1 rounded-full transition-all ${active ? 'animate-pulse' : 'bg-gray-800'}`}
-          style={{ background: active ? neon : undefined }} />
-      </div>
-      {active && (
-        <div className="absolute inset-0 rounded-full animate-ping opacity-30"
-          style={{ border: `1px solid ${neon}` }} />
-      )}
-    </div>
-    <span className="text-[7.5px] font-bold tracking-widest uppercase" style={{ color: active ? neon : '#4b5563' }}>{label}</span>
-  </div>
-);
-
-// ─── Main Widget ──────────────────────────────────────────────────────────────
-
-const getCenterPosition = (modalWidth: number, modalHeight: number) => {
-  if (typeof window === 'undefined') return { x: 100, y: 100 };
-  const w = Math.min(modalWidth, window.innerWidth - 20);
-  const h = Math.min(modalHeight, window.innerHeight - 20);
-  return {
-    x: Math.max(10, Math.round((window.innerWidth - w) / 2)),
-    y: Math.max(10, Math.round((window.innerHeight - h) / 2)),
-  };
-};
+// ─── Main SaaS System Monitor Widget ──────────────────────────────────────────
 
 const SystemAlertWidget: React.FC = () => {
-  const { alerts: wsAlerts, unreadCount, connected, clearAlerts, markAllRead } = useSystemAlerts();
+  const {
+    alerts: wsAlerts,
+    unreadCount,
+    connected,
+    captureMode,
+    loadingHistory,
+    latestLiveAlert,
+    clearAlerts,
+    markAllRead,
+    acknowledgeAlert,
+    acknowledgeAllAlerts,
+    refreshHistory,
+    sendTestAlert,
+    dismissLiveAlert,
+  } = useSystemAlerts();
+
   const {
     latencyAlerts,
     unreadLatencyCount,
@@ -391,50 +738,129 @@ const SystemAlertWidget: React.FC = () => {
     severity: latencySeverity,
     shouldWarn: isLatencyWarning,
     shouldProtect: isLatencyGuarded,
+    clientToVpsMs,
     markLatencyAlertsRead,
     clearLatencyAlerts,
     dismissTransitionAlert,
   } = useLatencyGuard();
+
   const { theme } = useTheme();
   const isDark = theme === 'dark';
 
-  const alerts = React.useMemo(() => {
+  // Panel state
+  const [open, setOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [tab, setTab] = useState<TabId>('incidents');
+  const [inspectedAlert, setInspectedAlert] = useState<SystemAlert | null>(null);
+  const [toasts, setToasts] = useState<SystemAlert[]>([]);
+
+  // Incident filters
+  const [sevFilter, setSevFilter] = useState<AlertSeverity | 'ALL'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<IncidentStatusFilter>('active');
+  const [containerFilter, setContainerFilter] = useState<string>('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [testingAlert, setTestingAlert] = useState(false);
+
+  // Live infrastructure health bar
+  const [health, setHealth] = useState<SystemHealth | null>(null);
+  const [healthLoading, setHealthLoading] = useState(false);
+
+  // Container logs WS state
+  const [logBatches, setLogBatches] = useState<Map<string, ContainerLogBatchRecord>>(new Map());
+  const [logConn, setLogConn] = useState(false);
+  const [logsPaused, setLogsPaused] = useState(false);
+  const logsPausedRef = useRef(false);
+  logsPausedRef.current = logsPaused;
+  const logWsRef = useRef<WebSocket | null>(null);
+
+  // Dragging state (compact floating mode only)
+  const modalW = expanded ? 1040 : 740;
+  const modalH = expanded ? 740 : 600;
+  const [position, setPosition] = useState(() => getCenterPos(740, 600));
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef({ startX: 0, startY: 0, curX: 0, curY: 0 });
+  const rafRef = useRef<number | null>(null);
+
+  // Merge WS persisted alerts + local latency alerts cleanly
+  const alerts = useMemo(() => {
     const wsNetworkTs = wsAlerts
       .filter((a) => a.container === 'network_latency')
       .map((a) => new Date(a.timestamp).getTime());
-    const dedupedLatencyAlerts = latencyAlerts.filter((la) => {
+    const dedupedLatency = latencyAlerts.filter((la) => {
       const laTs = new Date(la.timestamp).getTime();
       return !wsNetworkTs.some((wt) => Math.abs(wt - laTs) < 20000);
     });
-    const combined = [...wsAlerts, ...dedupedLatencyAlerts];
+    const combined = [...wsAlerts, ...dedupedLatency];
     combined.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-    return combined.slice(0, 60);
-  }, [latencyAlerts, wsAlerts]);
+    return combined.slice(0, 150);
+  }, [wsAlerts, latencyAlerts]);
 
-  const [open, setOpen]       = useState(false);
-  const [tab, setTab]         = useState<'alerts' | 'logs' | 'device'>('alerts');
-  const [toasts, setToasts]   = useState<SystemAlert[]>([]);
-  const [logBatches, setLogBatches] = useState<Map<string, ContainerLogBatch>>(new Map());
-  const [logFilter, setLogFilter]   = useState<string | null>(null);
-  const [logConn, setLogConn]       = useState(false);
-
-  // CRITICAL WebSocket toast
+  // Show actionable toast ONLY for newly arriving live CRITICAL/ERROR alerts (never historical replays)
   useEffect(() => {
-    if (wsAlerts.length > prevLen.current) {
-      const n = wsAlerts[0];
-      if (n?.severity === 'CRITICAL') setToasts(p => [...p, n]);
+    if (!latestLiveAlert) return;
+    if (latestLiveAlert.severity === 'CRITICAL' || latestLiveAlert.severity === 'ERROR') {
+      setToasts((prev) =>
+        prev.some((t) => t.id === latestLiveAlert.id) ? prev : [latestLiveAlert, ...prev].slice(0, 3)
+      );
     }
-    prevLen.current = wsAlerts.length;
-  }, [wsAlerts]);
+    dismissLiveAlert();
+  }, [latestLiveAlert, dismissLiveAlert]);
 
-  // Real-time Network / Exchange Latency Drop Toast (fires on state transition into warning/critical)
   useEffect(() => {
     if (!latestTransitionAlert) return;
-    setToasts((p) => (p.some((x) => x.id === latestTransitionAlert.id) ? p : [...p, latestTransitionAlert]));
+    setToasts((prev) =>
+      prev.some((t) => t.id === latestTransitionAlert.id) ? prev : [latestTransitionAlert, ...prev].slice(0, 3)
+    );
     dismissTransitionAlert();
   }, [latestTransitionAlert, dismissTransitionAlert]);
 
-  // Container log WebSocket (connect only when Logs drawer is open on 'logs' tab)
+  // Fetch system health bar when panel is open (properly parses 503 degraded/unhealthy payloads!)
+  const [healthError, setHealthError] = useState(false);
+  const fetchHealth = useCallback(async () => {
+    setHealthLoading(true);
+    try {
+      const data = await systemService.getSystemHealth();
+      setHealth(data);
+      setHealthError(false);
+    } catch (err: unknown) {
+      const respData = (err as { response?: { data?: SystemHealth } })?.response?.data;
+      if (respData && respData.services) {
+        setHealth(respData);
+        setHealthError(false);
+      } else {
+        setHealth(null);
+        setHealthError(true);
+      }
+    } finally {
+      setHealthLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    void fetchHealth();
+    const timer = setInterval(() => void fetchHealth(), 30000);
+    return () => clearInterval(timer);
+  }, [open, fetchHealth]);
+
+  // Recenter when opening or toggling expanded mode
+  useEffect(() => {
+    if (open) {
+      setPosition(getCenterPos(modalW, modalH));
+    }
+  }, [open, modalW, modalH]);
+
+  // Close on Escape (when inspector is not open)
+  useEffect(() => {
+    if (!open || inspectedAlert) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, inspectedAlert]);
+
+  // Live logs snapshot + WebSocket when on 'logs' tab
   useEffect(() => {
     if (!open || tab !== 'logs') {
       setLogConn(false);
@@ -449,32 +875,59 @@ const SystemAlertWidget: React.FC = () => {
     let alive = true;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
+    // Instant REST snapshot fallback so logs render immediately
+    systemService
+      .getContainerLogsSnapshot()
+      .then((res) => {
+        if (!alive || !res?.batches) return;
+        setLogBatches((prev) => {
+          const next = new Map(prev);
+          for (const b of res.batches) {
+            if (b?.container) next.set(b.container, b);
+          }
+          return next;
+        });
+      })
+      .catch(() => {});
+
     const connect = async () => {
       if (!alive || logWsRef.current?.readyState === WebSocket.OPEN) return;
       const url = await buildAuthenticatedWsUrl('/ws/container-logs');
-      if (!url || !alive) return;
+      if (!url) {
+        if (alive) timer = setTimeout(connect, 4000);
+        return;
+      }
+      if (!alive) return;
+
       const ws = new WebSocket(url);
       logWsRef.current = ws;
-
-      ws.onopen  = () => { if (alive) setLogConn(true); };
+      ws.onopen = () => {
+        if (alive) setLogConn(true);
+      };
       ws.onclose = () => {
         if (logWsRef.current === ws) logWsRef.current = null;
         if (!alive) return;
         setLogConn(false);
-        timer = setTimeout(connect, 6000);
+        timer = setTimeout(connect, 5000);
       };
       ws.onerror = () => ws.close();
       ws.onmessage = (e) => {
-        if (!alive) return;
+        if (!alive || logsPausedRef.current) return;
         try {
           const d = JSON.parse(e.data);
-          if (d.type !== 'container_logs') return;
-          setLogBatches(p => { const n = new Map(p); n.set(d.container, d); return n; });
-        } catch { /* */ }
+          if (d.type !== 'container_logs' || !d.container) return;
+          setLogBatches((prev) => {
+            const next = new Map(prev);
+            next.set(d.container, d);
+            return next;
+          });
+        } catch {
+          // ignore
+        }
       };
     };
 
-    connect();
+    void connect();
     return () => {
       alive = false;
       if (timer) clearTimeout(timer);
@@ -487,140 +940,58 @@ const SystemAlertWidget: React.FC = () => {
     };
   }, [open, tab]);
 
-  const [position, setPosition]     = useState(() => getCenterPosition(530, 530));
-  const [isDragging, setIsDragging] = useState(false);
-  const dragRef = useRef({ startX: 0, startY: 0, curX: 0, curY: 0 });
-
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const logWsRef   = useRef<WebSocket | null>(null);
-  const prevLen    = useRef(0);
-
-  // Cyber Quantum HUD animation states
-  const [animatingOpen, setAnimatingOpen] = useState(false);
-  const [btnFlash, setBtnFlash] = useState(false);
-  const prevOpenRef = useRef(open);
-  const rafRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (open) {
-      setPosition(getCenterPosition(530, 530));
-      setAnimatingOpen(true);
-      const timer = setTimeout(() => {
-        setAnimatingOpen(false);
-      }, 500);
-      return () => clearTimeout(timer);
-    } else {
-      setAnimatingOpen(false);
-    }
-    prevOpenRef.current = open;
-  }, [open]);
-
-  // Handle window resize when not dragging
-  useEffect(() => {
-    const onResize = () => {
-      if (!isDragging && !open) {
-        setPosition(getCenterPosition(530, 530));
-      }
-    };
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, [isDragging, open]);
-
-  // Unified Drag System (Mouse, Touch, Stylus — 60/120fps RAF Zero Lag)
+  // Smooth RAF pointer dragging
   useEffect(() => {
     if (!isDragging) return;
-
-    const onPointerMove = (e: PointerEvent) => {
+    const onMove = (e: PointerEvent) => {
       e.preventDefault();
-      const clientX = e.clientX;
-      const clientY = e.clientY;
-
+      const cx = e.clientX;
+      const cy = e.clientY;
       if (rafRef.current !== null) return;
       rafRef.current = requestAnimationFrame(() => {
         rafRef.current = null;
-        const dx = clientX - dragRef.current.startX;
-        const dy = clientY - dragRef.current.startY;
-
-        const modalWidth = Math.min(530, window.innerWidth - 20);
-        const modalHeight = Math.min(530, window.innerHeight - 20);
-
-        const maxX = Math.max(0, window.innerWidth - modalWidth);
-        const maxY = Math.max(0, window.innerHeight - modalHeight);
-
+        const dx = cx - dragRef.current.startX;
+        const dy = cy - dragRef.current.startY;
+        const curW = Math.min(modalW, window.innerWidth - 24);
+        const curH = Math.min(modalH, window.innerHeight - 24);
+        const maxX = Math.max(0, window.innerWidth - curW);
+        const maxY = Math.max(0, window.innerHeight - curH);
         setPosition({
           x: Math.max(0, Math.min(maxX, dragRef.current.curX + dx)),
           y: Math.max(0, Math.min(maxY, dragRef.current.curY + dy)),
         });
       });
     };
-
-    const onPointerUp = () => {
+    const onUp = () => {
       if (rafRef.current !== null) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
       setIsDragging(false);
     };
-
-    window.addEventListener('pointermove', onPointerMove, { passive: false });
-    window.addEventListener('pointerup', onPointerUp);
-    window.addEventListener('pointercancel', onPointerUp);
-
+    window.addEventListener('pointermove', onMove, { passive: false });
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
     return () => {
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
-      window.removeEventListener('pointermove', onPointerMove);
-      window.removeEventListener('pointerup', onPointerUp);
-      window.removeEventListener('pointercancel', onPointerUp);
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
     };
-  }, [isDragging]);
+  }, [isDragging, modalW, modalH]);
 
-  const handlePointerDown = (e: React.PointerEvent) => {
-    // Ignore non-primary mouse buttons
+  const handleHeaderPointerDown = (e: React.PointerEvent) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
-    
-    // Ignore interactive elements inside title bar (e.g. close button)
     const target = e.target as HTMLElement;
-    if (target.closest('button, a, input, select, textarea')) {
-      return;
-    }
-
-    try {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    } catch {
-      // ignore
-    }
-
+    if (target.closest('button, a, input, select')) return;
     setIsDragging(true);
     dragRef.current = { startX: e.clientX, startY: e.clientY, curX: position.x, curY: position.y };
   };
 
-  const handlePointerUp = (e: React.PointerEvent) => {
-    if (isDragging) {
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
-      setIsDragging(false);
-      try {
-        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-          e.currentTarget.releasePointerCapture(e.pointerId);
-        }
-      } catch {
-        // ignore
-      }
-    }
-  };
-
-  const handleOpen = () => {
-    setBtnFlash(true);
-    setTimeout(() => setBtnFlash(false), 450);
-    setOpen(v => {
-      const next = !v;
+  const handleToggleOpen = () => {
+    setOpen((prev) => {
+      const next = !prev;
       if (next) {
-        setPosition(getCenterPosition(530, 530));
         markAllRead();
         markLatencyAlertsRead();
       }
@@ -628,370 +999,719 @@ const SystemAlertWidget: React.FC = () => {
     });
   };
 
-  const critical = alerts.filter(a => a.severity === 'CRITICAL').length;
-  const error    = alerts.filter(a => a.severity === 'ERROR').length;
-  const warning  = alerts.filter(a => a.severity === 'WARNING').length;
+  const handleTestAlert = async () => {
+    setTestingAlert(true);
+    try {
+      await sendTestAlert();
+    } catch {
+      // ignore
+    } finally {
+      setTestingAlert(false);
+    }
+  };
+
+  // KPI counts
+  const activeAlerts = useMemo(() => alerts.filter((a) => !a.acknowledged), [alerts]);
+  const resolvedCount = alerts.length - activeAlerts.length;
+  const criticalCount = activeAlerts.filter((a) => a.severity === 'CRITICAL').length;
+  const errorCount = activeAlerts.filter((a) => a.severity === 'ERROR').length;
+  const warningCount = activeAlerts.filter((a) => a.severity === 'WARNING').length;
+
+  const uniqueContainers = useMemo(
+    () => Array.from(new Set(alerts.map((a) => a.container))).sort(),
+    [alerts]
+  );
+
+  const filteredAlerts = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return alerts.filter((a) => {
+      if (statusFilter === 'active' && a.acknowledged) return false;
+      if (statusFilter === 'resolved' && !a.acknowledged) return false;
+      if (sevFilter !== 'ALL' && a.severity !== sevFilter) return false;
+      if (containerFilter !== 'ALL' && a.container !== containerFilter) return false;
+      if (q) {
+        const hay = `${a.container} ${a.display_name} ${a.logger || ''} ${a.message} ${a.snippet.join(' ')}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [alerts, statusFilter, sevFilter, containerFilter, searchQuery]);
+
   const totalUnread = unreadCount + unreadLatencyCount;
-  const bothLive = open && tab === 'logs' ? connected && logConn : connected;
-  const hasAlert = totalUnread > 0 || isLatencyWarning;
-  const isCriticalStyle = totalUnread > 0 || latencySeverity === 'critical' || latencySeverity === 'unreachable';
+  const activeSevereCount = criticalCount + errorCount;
+  const hasCritical = criticalCount > 0 || latencySeverity === 'critical' || latencySeverity === 'unreachable';
+  const hasAttention = totalUnread > 0 || activeSevereCount > 0 || isLatencyWarning;
+
+  const fallbackHealthState = healthError ? 'offline' : 'checking';
+  const infraItems = [
+    {
+      label: 'PostgreSQL',
+      status: health?.services.database || fallbackHealthState,
+      Icon: Database,
+    },
+    {
+      label: 'Redis',
+      status: health?.services.redis || fallbackHealthState,
+      Icon: Server,
+    },
+    {
+      label: 'Workers',
+      status: health?.services.celery_worker || fallbackHealthState,
+      Icon: Cpu,
+    },
+    {
+      label: 'Alert WS',
+      status: connected ? 'online' : 'offline',
+      Icon: Radio,
+    },
+  ];
+
+  const getStatusDotClass = (status: string) => {
+    if (status === 'online' || status === 'healthy') return 'bg-emerald-500';
+    if (status === 'checking') return 'bg-slate-400 animate-pulse';
+    if (status === 'degraded') return 'bg-amber-500';
+    return 'bg-rose-500';
+  };
 
   return (
     <>
-      {toasts.map(t => (
-        <CriticalToast key={t.id} alert={t} onClose={() => setToasts(p => p.filter(x => x.id !== t.id))} />
-      ))}
-
-      {/* ─── Trigger Button ─── */}
-      <button
-        ref={triggerRef}
-        id="system-alert-widget-trigger"
-        onClick={handleOpen}
-        className={`relative flex items-center gap-2 px-2.5 sm:px-3 h-9 rounded-xl border transition-colors cursor-pointer select-none overflow-hidden ${open ? 'ring-1 ring-cyan-500/45' : ''}`}
-        style={{
-          background: hasAlert
-            ? isCriticalStyle
-              ? 'linear-gradient(135deg, rgba(239,68,68,0.16), rgba(15,23,42,0.5))'
-              : 'linear-gradient(135deg, rgba(245,158,11,0.16), rgba(15,23,42,0.5))'
-            : isDark ? '#0B1120' : 'rgba(241,245,249,0.95)',
-          borderColor: hasAlert
-            ? isCriticalStyle ? 'rgba(239,68,68,0.45)' : 'rgba(245,158,11,0.55)'
-            : isDark ? 'rgba(30,41,59,0.85)' : 'rgba(203,213,225,0.9)',
-        }}
-        title={isLatencyWarning ? `Network Latency Warning (${latencySeverity.toUpperCase()})${isLatencyGuarded ? ' • Execution Guard Active' : ''}` : 'System Monitor & Latency Guard'}
-      >
-        {/* Flash Feedback */}
-        {btnFlash && (
-          <span
-            className="absolute inset-0 rounded-xl pointer-events-none animate-cyber-btn-flash"
-            style={{
-              background: isDark
-                ? 'linear-gradient(135deg, rgba(6,182,212,0.35), rgba(99,102,241,0.25))'
-                : 'linear-gradient(135deg, rgba(6,182,212,0.25), rgba(99,102,241,0.15))',
-            }}
-          />
+      {/* ─── Actionable Incident Toasts ─── */}
+      {toasts.length > 0 &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div className="fixed top-4 right-4 z-[99990] flex flex-col gap-2 pointer-events-auto">
+            {toasts.map((t) => (
+              <IncidentToast
+                key={t.id}
+                alert={t}
+                onInspect={() => {
+                  setToasts((p) => p.filter((x) => x.id !== t.id));
+                  setOpen(true);
+                  setTab('incidents');
+                  setInspectedAlert(t);
+                  markAllRead();
+                }}
+                onClose={() => setToasts((p) => p.filter((x) => x.id !== t.id))}
+              />
+            ))}
+          </div>,
+          document.body
         )}
 
-        {/* Live dot (static to preserve mobile battery & thermal guard) */}
-        <div
-          className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-            isCriticalStyle && hasAlert
-              ? 'bg-rose-400'
-              : isLatencyWarning
-                ? 'bg-amber-400'
-                : bothLive
-                  ? 'bg-emerald-400'
-                  : isDark ? 'bg-slate-600' : 'bg-slate-400'
+      {/* ─── Incident Inspector Modal ─── */}
+      {inspectedAlert && (
+        <IncidentInspectorModal
+          alert={inspectedAlert}
+          onAcknowledge={(id) => {
+            void acknowledgeAlert(id);
+            setInspectedAlert((curr) => (curr && curr.id === id ? { ...curr, acknowledged: true } : curr));
+          }}
+          onClose={() => setInspectedAlert(null)}
+        />
+      )}
+
+      {/* ─── Header Trigger Pill ─── */}
+      <button
+        id="system-alert-widget-trigger"
+        type="button"
+        onClick={handleToggleOpen}
+        className={`relative flex items-center gap-2 px-2.5 sm:px-3 h-9 rounded-xl border transition-all cursor-pointer select-none whitespace-nowrap ${
+          open
+            ? 'ring-2 ring-cyan-500/35 border-cyan-500/50 bg-cyan-500/10 dark:bg-[#0D1A2D]'
+            : hasAttention
+              ? hasCritical
+                ? 'border-rose-400/60 dark:border-rose-500/45 bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-100/80 dark:hover:bg-rose-950/45'
+                : 'border-amber-400/60 dark:border-amber-500/45 bg-amber-50 dark:bg-amber-950/25 hover:bg-amber-100/80 dark:hover:bg-amber-950/40'
+              : 'border-slate-200 dark:border-slate-800/90 bg-slate-100/90 dark:bg-[#0B1120] hover:border-cyan-500/40'
+        }`}
+        title={
+          isLatencyWarning
+            ? `Network Latency Warning (${latencySeverity.toUpperCase()})${isLatencyGuarded ? ' • Execution Guard Active' : ''}`
+            : 'System Monitor — Incidents, Live Logs & VPS Telemetry'
+        }
+      >
+        <span
+          className={`w-2 h-2 rounded-full flex-shrink-0 ${
+            hasCritical
+              ? 'bg-rose-500 animate-pulse'
+              : hasAttention
+                ? 'bg-amber-500'
+                : connected
+                  ? 'bg-emerald-500'
+                  : 'bg-slate-400'
           }`}
         />
 
-        {/* Hex icon */}
-        <svg className={`w-3.5 h-3.5 flex-shrink-0 transition-colors ${hasAlert ? (isCriticalStyle ? 'text-rose-400' : 'text-amber-400') : 'text-slate-500 dark:text-slate-400'}`}
-          fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8}
-            d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18" />
-        </svg>
+        {hasCritical ? (
+          <ShieldAlert className="w-3.5 h-3.5 text-rose-500 flex-shrink-0" />
+        ) : (
+          <Activity
+            className={`w-3.5 h-3.5 flex-shrink-0 ${
+              hasAttention ? 'text-amber-500' : 'text-cyan-600 dark:text-cyan-400'
+            }`}
+          />
+        )}
 
-        <span className={`text-[11px] font-bold tracking-wider uppercase hidden sm:inline whitespace-nowrap transition-colors ${
-          hasAlert
-            ? (isCriticalStyle ? 'text-rose-500 dark:text-rose-300' : 'text-amber-600 dark:text-amber-300')
-            : 'text-slate-600 dark:text-slate-300'
-        }`}>
+        <span
+          className={`text-[11px] font-bold tracking-wide hidden sm:inline ${
+            hasCritical
+              ? 'text-rose-700 dark:text-rose-300'
+              : hasAttention
+                ? 'text-amber-700 dark:text-amber-300'
+                : 'text-slate-700 dark:text-slate-200'
+          }`}
+        >
           {totalUnread > 0
-            ? `${totalUnread} Alert${totalUnread > 1 ? 's' : ''}`
-            : isLatencyWarning
-              ? 'Latency !'
-              : 'Sys Monitor'}
+            ? `${totalUnread} Incident${totalUnread > 1 ? 's' : ''}`
+            : activeSevereCount > 0
+              ? `${activeSevereCount} Active`
+              : isLatencyWarning
+                ? 'Latency'
+                : 'Sys Monitor'}
         </span>
 
-        {totalUnread > 0 && (
-          <span className={`min-w-[18px] h-[18px] px-1 text-white text-[9px] font-black rounded-full flex items-center justify-center ${isCriticalStyle ? 'bg-rose-600' : 'bg-amber-600'}`}>
+        {totalUnread > 0 ? (
+          <span
+            className={`min-w-[18px] h-[18px] px-1 text-white text-[9.5px] font-bold rounded-full flex items-center justify-center ${
+              hasCritical ? 'bg-rose-600' : 'bg-amber-600'
+            }`}
+          >
             {totalUnread > 99 ? '99+' : totalUnread}
           </span>
-        )}
-        {totalUnread === 0 && isLatencyWarning && (
-          <span className={`px-1.5 py-0.5 text-[8.5px] font-black rounded uppercase text-white ${isCriticalStyle ? 'bg-rose-600' : 'bg-amber-600'}`}>
+        ) : isLatencyWarning ? (
+          <span
+            className={`px-1.5 py-0.5 text-[8.5px] font-bold rounded uppercase text-white ${
+              hasCritical ? 'bg-rose-600' : 'bg-amber-600'
+            }`}
+          >
             {isLatencyGuarded ? 'GUARD' : 'LAG'}
           </span>
-        )}
+        ) : connected ? (
+          <span className="hidden xl:inline-flex px-1.5 py-0.5 text-[9px] font-mono font-bold rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25">
+            OK
+          </span>
+        ) : null}
       </button>
 
-      {/* ─── Floating Window ─── */}
-      {(open || !isThermalGuardActive()) && createPortal(
-        <div
-          id="system-alert-floating-window"
-          className={`fixed z-[9999] ${
-            isDragging
-              ? ''
-              : animatingOpen
-              ? 'animate-cyber-hud-open pointer-events-auto'
-              : open
-              ? 'opacity-100 pointer-events-auto scale-100 transition-[opacity,transform] duration-200'
-              : 'opacity-0 pointer-events-none scale-95 transition-[opacity,transform] duration-200'
-          }`}
-          style={{
-            top: `${position.y}px`,
-            left: `${position.x}px`,
-            width: '530px',
-            maxWidth: 'calc(100vw - 20px)',
-            transformOrigin: 'center center',
-            willChange: isDragging ? 'top, left' : 'transform, opacity, filter',
-            contain: isDragging ? 'paint' : 'none',
-          }}
-        >
-          {/* Cyber HUD Corner Targeting Reticles */}
-          {open && animatingOpen && !isDragging && (
-            <div className="absolute inset-[-4px] pointer-events-none z-40 animate-cyber-corner">
-              <span className="absolute top-0 left-0 w-3.5 h-3.5 border-t-2 border-l-2 border-violet-400 rounded-tl-sm shadow-[0_0_8px_#a78bfa]" />
-              <span className="absolute top-0 right-0 w-3.5 h-3.5 border-t-2 border-r-2 border-violet-400 rounded-tr-sm shadow-[0_0_8px_#a78bfa]" />
-              <span className="absolute bottom-0 left-0 w-3.5 h-3.5 border-b-2 border-l-2 border-cyan-400 rounded-bl-sm shadow-[0_0_8px_#22d3ee]" />
-              <span className="absolute bottom-0 right-0 w-3.5 h-3.5 border-b-2 border-r-2 border-cyan-400 rounded-br-sm shadow-[0_0_8px_#22d3ee]" />
-            </div>
-          )}
+      {/* ─── SaaS Observability Command Center Window ─── */}
+      {open &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            id="system-alert-floating-window"
+            className="fixed z-[9990] flex flex-col rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#070B14] shadow-[0_24px_70px_rgba(2,6,23,0.45)] dark:shadow-[0_24px_80px_rgba(0,0,0,0.85)] overflow-hidden"
+            style={{
+              top: `${position.y}px`,
+              left: `${position.x}px`,
+              width: `min(${modalW}px, calc(100vw - 24px))`,
+              height: `min(${modalH}px, calc(100vh - 24px))`,
+              willChange: isDragging ? 'top, left' : 'auto',
+            }}
+          >
+            {/* Top Brand Accent */}
+            <div className="h-[2px] w-full bg-gradient-to-r from-cyan-500 via-indigo-500 to-emerald-500 flex-shrink-0" />
 
-          {/* Cyber Horizon Laser Beam Flare */}
-          {open && animatingOpen && !isDragging && (
-            <div className="absolute inset-0 pointer-events-none flex items-center justify-center overflow-hidden z-40">
-              <div
-                className="w-full h-0.5 animate-cyber-beam"
-                style={{
-                  background: isDark
-                    ? 'linear-gradient(90deg, transparent, #a78bfa, #ffffff, #22d3ee, transparent)'
-                    : 'linear-gradient(90deg, transparent, #7c3aed, #06b6d4, transparent)',
-                  boxShadow: '0 0 16px #a78bfa, 0 0 32px #22d3ee',
-                }}
-              />
-            </div>
-          )}
-
-          {/* Quantum Ambient Aura Glow */}
-          {open && animatingOpen && !isDragging && (
+            {/* ── Title Bar (Draggable) ── */}
             <div
-              className="absolute inset-[-10px] rounded-3xl pointer-events-none -z-10 animate-cyber-aura"
-              style={{
-                border: isDark ? '1px solid rgba(167, 139, 250, 0.45)' : '1px solid rgba(124, 58, 237, 0.40)',
-                boxShadow: isDark
-                  ? '0 0 35px rgba(139, 92, 246, 0.3), 0 0 70px rgba(6, 182, 212, 0.2)'
-                  : '0 0 30px rgba(124, 58, 237, 0.25)',
-              }}
-            />
-          )}
-
-          {/* Outer glow border */}
-          <div className="rounded-2xl p-px relative overflow-hidden"
-          style={{
-            background: isDark
-              ? (isDragging
-                ? 'linear-gradient(135deg, #7c3aed60, #06b6d440, #7c3aed60)'
-                : 'linear-gradient(135deg, #7c3aed30, #ffffff10, #06b6d420)')
-              : (isDragging
-                ? 'linear-gradient(135deg, #7c3aed80, #06b6d460, #7c3aed80)'
-                : 'linear-gradient(135deg, #7c3aed40, #cbd5e1, #06b6d430)'),
-            boxShadow: isDark
-              ? (isDragging
-                ? '0 0 60px rgba(124,58,237,0.3), 0 30px 60px rgba(0,0,0,0.8)'
-                : '0 0 40px rgba(124,58,237,0.15), 0 25px 50px rgba(0,0,0,0.9)')
-              : (isDragging
-                ? '0 15px 40px rgba(124,58,237,0.25), 0 10px 25px rgba(0,0,0,0.1)'
-                : '0 12px 35px rgba(0,0,0,0.12), 0 0 25px rgba(124,58,237,0.1)'),
-          }}
-        >
-          {/* Biometric Laser Scanline Sweep */}
-          {animatingOpen && !isDragging && (
-            <div className="absolute inset-0 pointer-events-none overflow-hidden z-30 rounded-2xl">
-              <div
-                className="absolute left-0 right-0 h-[2px] animate-cyber-scan"
-                style={{
-                  background: isDark
-                    ? 'linear-gradient(90deg, transparent 5%, #a78bfa 30%, #ffffff 50%, #22d3ee 70%, transparent 95%)'
-                    : 'linear-gradient(90deg, transparent 5%, #7c3aed 30%, #ffffff 50%, #06b6d4 70%, transparent 95%)',
-                  boxShadow: '0 0 14px #a78bfa, 0 0 28px rgba(167,139,250,0.5)',
-                }}
-              />
-            </div>
-          )}
-          <div className="rounded-2xl overflow-hidden flex flex-col" style={{
-            height: 'min(530px, calc(100vh - 30px))',
-            background: isDark
-              ? (isDragging || isThermalGuardActive() ? 'rgba(8,8,18,0.98)' : 'rgba(8,8,18,0.85)')
-              : (isDragging || isThermalGuardActive() ? 'rgba(255,255,255,0.99)' : 'rgba(255,255,255,0.94)'),
-            backdropFilter: open && !isThermalGuardActive() && !isDragging ? 'blur(30px)' : 'none',
-            WebkitBackdropFilter: open && !isThermalGuardActive() && !isDragging ? 'blur(30px)' : 'none',
-          }}>
-            {/* Scanline overlay */}
-            <div className="absolute inset-0 pointer-events-none rounded-2xl overflow-hidden z-10 opacity-[0.025]"
-              style={{
-                backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.5) 2px, rgba(255,255,255,0.5) 3px)',
-                backgroundSize: '100% 3px',
-              }} />
-
-            {/* ── Title Bar ── */}
-            <div
-              onPointerDown={handlePointerDown}
-              onPointerUp={handlePointerUp}
-              onPointerCancel={handlePointerUp}
-              className={`relative flex-shrink-0 flex items-center justify-between px-4 py-3 cursor-grab select-none touch-none ${isDragging ? 'cursor-grabbing' : ''}`}
-              style={{
-                background: 'linear-gradient(135deg, rgba(124,58,237,0.12), rgba(6,182,212,0.06))',
-                touchAction: 'none',
-                userSelect: 'none',
-                WebkitUserSelect: 'none',
-              }}
+              onPointerDown={handleHeaderPointerDown}
+              className={`flex-shrink-0 flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-200 dark:border-slate-800/90 bg-slate-50/90 dark:bg-[#0B1120] select-none touch-none ${
+                isDragging ? 'cursor-grabbing' : 'cursor-grab'
+              }`}
             >
-              {/* Neon bottom line */}
-              <div className="absolute bottom-0 left-0 right-0 h-px"
-                style={{ background: 'linear-gradient(90deg, transparent, #7c3aed60, #06b6d440, transparent)' }} />
-
-              {/* Left: logo + title */}
-              <div className="flex items-center gap-3 pointer-events-none select-none">
-                <div className="relative w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-                  style={{ background: 'linear-gradient(135deg, rgba(124,58,237,0.4), rgba(6,182,212,0.3))', border: '1px solid rgba(124,58,237,0.4)', boxShadow: '0 0 16px rgba(124,58,237,0.3)' }}>
-                  <svg className="w-4 h-4 text-violet-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18" />
-                  </svg>
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-cyan-500/20 to-indigo-500/20 border border-cyan-500/30 flex items-center justify-center flex-shrink-0">
+                  <Activity className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
                 </div>
-                <div>
-                  <p className="text-slate-900 dark:text-white text-[11px] font-black tracking-[0.15em] uppercase leading-none"
-                    style={{ textShadow: isDark ? '0 0 12px rgba(124,58,237,0.8)' : 'none' }}>
-                    Sys Monitor
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-bold text-slate-900 dark:text-white tracking-tight truncate">
+                      System Monitor
+                    </h2>
+                    <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-mono font-bold uppercase tracking-wider bg-slate-200/80 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                      {captureMode === 'docker_socket' ? 'Docker Daemon' : 'Live Hooks'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                    Real-time error detection, multi-service logs &amp; VPS telemetry
                   </p>
-                  <p className="text-slate-500 dark:text-gray-400 text-[9px] mt-0.5 tracking-widest uppercase font-semibold">Live Infrastructure Feed</p>
                 </div>
               </div>
 
-              {/* Center: status nodes */}
-              <div className="flex items-center gap-4 pointer-events-none select-none">
-                <StatusNode active={connected} color="text-emerald-400" neon="#34d399" label="Alerts" />
-                <StatusNode active={logConn} color="text-sky-400" neon="#38bdf8" label="Logs" />
-              </div>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                <span
+                  className={`hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[10px] font-mono font-bold uppercase ${
+                    connected
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-400'
+                      : 'bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-400'
+                  }`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`} />
+                  {connected ? 'Stream Live' : 'Reconnecting'}
+                </span>
 
-              {/* Right: close */}
-              <button
-                onPointerDown={(e) => e.stopPropagation()}
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={() => setOpen(false)}
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-500 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white transition-all border border-transparent hover:border-slate-200 dark:hover:border-white/10 hover:bg-slate-100 dark:hover:bg-white/10 cursor-pointer"
-                style={{ backdropFilter: 'blur(4px)' }}
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void refreshHistory();
+                    void fetchHealth();
+                  }}
+                  title="Refresh incidents & infrastructure health"
+                  className="w-8 h-8 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#070B14] text-slate-500 dark:text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 flex items-center justify-center transition-colors cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${healthLoading ? 'animate-spin' : ''}`} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setExpanded((v) => !v)}
+                  title={expanded ? 'Compact window' : 'Expand operations workspace'}
+                  className="hidden sm:flex w-8 h-8 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#070B14] text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white items-center justify-center transition-colors cursor-pointer"
+                >
+                  {expanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  title="Close System Monitor"
+                  className="w-8 h-8 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#070B14] text-slate-500 dark:text-slate-400 hover:text-rose-500 flex items-center justify-center transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
-            {/* ── Stats Bar ── */}
-            {tab === 'alerts' && (
-              <div className="flex-shrink-0 grid grid-cols-3 border-b" style={{ borderColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(226,232,240,0.8)', background: isDark ? 'rgba(0,0,0,0.3)' : 'rgba(241,245,249,0.8)' }}>
-                {[
-                  { label: 'CRITICAL', val: critical, neon: '#f87171', color: isDark ? 'text-red-400' : 'text-red-600' },
-                  { label: 'ERROR',    val: error,    neon: '#fb923c', color: isDark ? 'text-orange-400' : 'text-orange-600' },
-                  { label: 'WARNING',  val: warning,  neon: '#facc15', color: isDark ? 'text-yellow-400' : 'text-amber-600' },
-                ].map(({ label, val, neon, color }) => (
-                  <div key={label} className="flex flex-col items-center justify-center py-2.5 relative overflow-hidden">
-                    {val > 0 && (
-                      <div className="absolute inset-0 opacity-5" style={{ background: neon }} />
-                    )}
-                    <span className={`text-xl font-black ${color} leading-none`}
-                      style={val > 0 ? { textShadow: `0 0 16px ${neon}, 0 0 32px ${neon}50` } : {}}>
-                      {val}
-                    </span>
-                    <span className="text-[9px] font-bold tracking-widest mt-1" style={{ color: val > 0 ? (isDark ? neon + 'aa' : neon) : (isDark ? '#374151' : '#64748b') }}>{label}</span>
+            {/* ── Live Infrastructure Health Strip ── */}
+            <div className="flex-shrink-0 flex items-center justify-between gap-2 px-4 py-2 border-b border-slate-200 dark:border-slate-800/80 bg-white dark:bg-[#080D18] overflow-x-auto hide-scrollbar">
+              <div className="flex items-center gap-2">
+                {infraItems.map(({ label, status, Icon }) => (
+                  <div
+                    key={label}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200/80 dark:border-slate-800 bg-slate-50 dark:bg-[#0B1120] text-[10px] font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap"
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${getStatusDotClass(status)}`} />
+                    <Icon className="w-3 h-3 text-slate-400" />
+                    <span>{label}</span>
+                    <span className="font-mono text-[9.5px] uppercase text-slate-400">{status}</span>
                   </div>
                 ))}
               </div>
-            )}
-
-            {/* ── Tab Bar ── */}
-            <div className="flex-shrink-0 flex border-b" style={{ borderColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(226,232,240,0.8)' }}>
-              {(['alerts', 'logs', 'device'] as const).map(t => (
-                <button key={t} onClick={() => setTab(t)}
-                  className={`flex-1 py-2.5 text-[10px] font-black tracking-[0.16em] uppercase transition-all relative overflow-hidden ${tab === t ? 'text-violet-700 dark:text-white font-extrabold' : 'text-slate-500 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white'}`}
-                >
-                  {tab === t && (
-                    <>
-                      <div className="absolute inset-0 opacity-10"
-                        style={{ background: 'linear-gradient(135deg, #7c3aed, #06b6d4)' }} />
-                      <div className="absolute bottom-0 left-4 right-4 h-px rounded-full"
-                        style={{ background: 'linear-gradient(90deg, #7c3aed, #06b6d4)', boxShadow: '0 0 8px #7c3aed' }} />
-                    </>
-                  )}
-                  {t === 'alerts'
-                    ? `⬡ Alerts${alerts.length > 0 ? ` [${alerts.length}]` : ''}`
-                    : t === 'logs'
-                      ? '⬡ Live Feed'
-                      : '⬡ Device / VPS'}
-                </button>
-              ))}
+              {clientToVpsMs !== null && (
+                <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-[#0B1120] border border-slate-200/80 dark:border-slate-800 text-[10px] font-mono text-slate-500 dark:text-slate-400 whitespace-nowrap flex-shrink-0">
+                  <span>RTT</span>
+                  <span
+                    className={`font-bold ${
+                      clientToVpsMs <= 300
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : clientToVpsMs < 900
+                          ? 'text-amber-600 dark:text-amber-400'
+                          : 'text-rose-600 dark:text-rose-400'
+                    }`}
+                  >
+                    {Math.round(clientToVpsMs)}ms
+                  </span>
+                </div>
+              )}
             </div>
 
-            {/* ── Tab Content ── */}
-            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-              {tab === 'alerts' ? (
+            {/* ── Navigation Tabs ── */}
+            <div className="flex-shrink-0 flex items-center gap-1 px-4 pt-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-[#090E1A]">
+              {(
+                [
+                  { id: 'incidents', label: 'Incidents', icon: ShieldAlert, badge: activeAlerts.length },
+                  { id: 'logs', label: 'Live Logs', icon: Terminal, badge: logBatches.size || undefined },
+                  { id: 'telemetry', label: 'VPS & Latency', icon: Server, badge: undefined },
+                ] as const
+              ).map(({ id, label, icon: TabIcon, badge }) => {
+                const isActive = tab === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setTab(id)}
+                    className={`relative inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold transition-colors cursor-pointer border-b-2 -mb-px ${
+                      isActive
+                        ? 'border-cyan-500 text-cyan-700 dark:text-cyan-300'
+                        : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    <TabIcon className="w-3.5 h-3.5" />
+                    <span>{label}</span>
+                    {badge !== undefined && badge > 0 && (
+                      <span
+                        className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                          id === 'incidents' && activeSevereCount > 0
+                            ? 'bg-rose-500/20 text-rose-600 dark:text-rose-300'
+                            : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                        }`}
+                      >
+                        {badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* ── Tab Body ── */}
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-white dark:bg-[#070B14]">
+              {tab === 'incidents' ? (
                 <>
-                  <div className="flex-shrink-0 flex items-center justify-between px-4 py-1.5 border-b" style={{ borderColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(226,232,240,0.8)' }}>
-                    <p className="text-slate-500 dark:text-gray-400 text-[9px] font-mono tracking-wider font-semibold">{alerts.length} EVENTS STORED</p>
+                  {/* KPI Severity Filter Cards */}
+                  <div className="flex-shrink-0 grid grid-cols-4 gap-2 px-4 py-3 border-b border-slate-200/80 dark:border-slate-800/80 bg-slate-50/40 dark:bg-[#090E1A]/60">
+                    {(
+                      [
+                        {
+                          key: 'CRITICAL' as const,
+                          label: 'Critical',
+                          val: criticalCount,
+                          activeRing: 'border-rose-500/60 bg-rose-500/10',
+                          numColor: criticalCount > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-400 dark:text-slate-500',
+                        },
+                        {
+                          key: 'ERROR' as const,
+                          label: 'Errors',
+                          val: errorCount,
+                          activeRing: 'border-orange-500/60 bg-orange-500/10',
+                          numColor: errorCount > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-slate-400 dark:text-slate-500',
+                        },
+                        {
+                          key: 'WARNING' as const,
+                          label: 'Warnings',
+                          val: warningCount,
+                          activeRing: 'border-amber-500/60 bg-amber-500/10',
+                          numColor: warningCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400 dark:text-slate-500',
+                        },
+                      ] as const
+                    ).map((kpi) => {
+                      const selected = sevFilter === kpi.key && statusFilter !== 'resolved';
+                      return (
+                        <button
+                          key={kpi.key}
+                          type="button"
+                          onClick={() => {
+                            setStatusFilter('active');
+                            setSevFilter(selected ? 'ALL' : kpi.key);
+                          }}
+                          className={`rounded-xl border px-3 py-2 text-left transition-all cursor-pointer ${
+                            selected
+                              ? kpi.activeRing
+                              : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0B1120] hover:border-slate-300 dark:hover:border-slate-700'
+                          }`}
+                        >
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
+                            {kpi.label}
+                          </span>
+                          <span className={`text-lg font-mono font-black tabular-nums leading-tight ${kpi.numColor}`}>
+                            {kpi.val}
+                          </span>
+                        </button>
+                      );
+                    })}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSevFilter('ALL');
+                        setStatusFilter(statusFilter === 'resolved' ? 'active' : 'resolved');
+                      }}
+                      className={`rounded-xl border px-3 py-2 text-left transition-all cursor-pointer ${
+                        statusFilter === 'resolved'
+                          ? 'border-emerald-500/60 bg-emerald-500/10'
+                          : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0B1120] hover:border-slate-300 dark:hover:border-slate-700'
+                      }`}
+                    >
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
+                        Resolved
+                      </span>
+                      <span className="text-lg font-mono font-black tabular-nums leading-tight text-emerald-600 dark:text-emerald-400">
+                        {resolvedCount}
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* Filter & Actions Bar */}
+                  <div className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 border-b border-slate-200/80 dark:border-slate-800/80 flex-wrap">
+                    <div className="relative flex-1 min-w-[160px]">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search error message, traceback, logger..."
+                        className="w-full h-8 pl-8 pr-7 rounded-lg text-xs bg-slate-50 dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-cyan-500/60"
+                      />
+                      {searchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => setSearchQuery('')}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+
+                    {uniqueContainers.length > 0 && (
+                      <select
+                        value={containerFilter}
+                        onChange={(e) => setContainerFilter(e.target.value)}
+                        className="h-8 px-2.5 rounded-lg text-xs font-medium bg-slate-50 dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 focus:outline-none focus:border-cyan-500/60 cursor-pointer"
+                      >
+                        <option value="ALL">All Services</option>
+                        {uniqueContainers.map((c) => (
+                          <option key={c} value={c}>
+                            {getServiceMeta(c).label}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+
+                    <div className="flex items-center rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0B1120] p-0.5">
+                      {(['active', 'all', 'resolved'] as IncidentStatusFilter[]).map((st) => (
+                        <button
+                          key={st}
+                          type="button"
+                          onClick={() => setStatusFilter(st)}
+                          className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors cursor-pointer ${
+                            statusFilter === st
+                              ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm'
+                              : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                          }`}
+                        >
+                          {st}
+                        </button>
+                      ))}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => void handleTestAlert()}
+                      disabled={testingAlert}
+                      title="Emit a synthetic test alert to verify Redis persistence + WebSocket delivery"
+                      className="h-8 px-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0B1120] text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 hover:border-cyan-500/50 hover:text-cyan-600 dark:hover:text-cyan-300 inline-flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      <FlaskConical className="w-3 h-3" />
+                      <span>Test</span>
+                    </button>
+
+                    {activeAlerts.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => void acknowledgeAllAlerts()}
+                        title="Mark all active incidents as resolved"
+                        className="h-8 px-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0B1120] text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 hover:border-emerald-500/40 hover:text-emerald-600 dark:hover:text-emerald-400 inline-flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <CheckCircle2 className="w-3 h-3" />
+                        <span>Resolve All</span>
+                      </button>
+                    )}
+
                     {alerts.length > 0 && (
-                      <button onClick={() => { clearAlerts(); clearLatencyAlerts(); }}
-                        className="text-[9.5px] font-bold tracking-wider text-slate-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors uppercase cursor-pointer">
-                        Clear
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void clearAlerts();
+                          clearLatencyAlerts();
+                        }}
+                        title="Clear all stored incidents"
+                        className="h-8 px-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0B1120] text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 hover:border-rose-500/40 hover:text-rose-600 dark:hover:text-rose-400 inline-flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>Clear</span>
                       </button>
                     )}
                   </div>
-                  <div className="flex-1 overflow-y-auto p-3 space-y-2 scrollbar-thin">
-                    {alerts.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center h-full gap-4">
-                        <div className="relative">
-                          <div className="w-16 h-16 rounded-2xl flex items-center justify-center"
-                            style={{ background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.25)', boxShadow: '0 0 30px rgba(52,211,153,0.15)' }}>
-                            <svg className="w-7 h-7 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                          </div>
-                          <div className="absolute inset-0 rounded-2xl animate-pulse"
-                            style={{ border: '1px solid rgba(52,211,153,0.2)', boxShadow: '0 0 20px rgba(52,211,153,0.1)' }} />
+
+                  {/* Incident Cards List */}
+                  <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2.5 scrollbar-thin">
+                    {loadingHistory && alerts.length === 0 ? (
+                      <div className="space-y-2.5">
+                        {[0, 1, 2].map((i) => (
+                          <div
+                            key={i}
+                            className="h-20 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100/70 dark:bg-[#0B1120] animate-pulse"
+                          />
+                        ))}
+                      </div>
+                    ) : filteredAlerts.length === 0 ? (
+                      <div className="h-full flex flex-col items-center justify-center text-center py-10 gap-3">
+                        <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center">
+                          <ShieldCheck className="w-7 h-7 text-emerald-500" />
                         </div>
-                        <div className="text-center">
-                          <p className="text-emerald-500 dark:text-emerald-400 text-sm font-black tracking-wider uppercase"
-                            style={{ textShadow: isDark ? '0 0 12px #34d399' : 'none' }}>All Systems Nominal</p>
-                          <p className="text-slate-500 dark:text-gray-400 text-xs mt-1 font-mono">No anomalies detected</p>
+                        <div className="max-w-sm">
+                          <p className="text-sm font-bold text-slate-900 dark:text-white">
+                            {alerts.length === 0
+                              ? 'All Systems Operational'
+                              : 'No Incidents Match Filter'}
+                          </p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                            {alerts.length === 0
+                              ? 'Root logger, 5xx HTTP errors, Celery task crashes, and stderr tracebacks are actively monitored and persisted across refreshes.'
+                              : 'Adjust your severity, service, or status filter to view other recorded events.'}
+                          </p>
                         </div>
+                        {alerts.length === 0 && (
+                          <button
+                            type="button"
+                            onClick={() => void handleTestAlert()}
+                            disabled={testingAlert}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#0B1120] text-slate-700 dark:text-slate-200 hover:border-cyan-500/50 hover:text-cyan-600 dark:hover:text-cyan-300 transition-colors cursor-pointer"
+                          >
+                            <FlaskConical className="w-3.5 h-3.5" />
+                            Run Diagnostic Alert Test
+                          </button>
+                        )}
                       </div>
                     ) : (
-                      alerts.map(a => <AlertCard key={a.id} alert={a} />)
+                      filteredAlerts.map((alert) => {
+                        const meta = SEVERITY_META[alert.severity];
+                        const svc = getServiceMeta(alert.container, alert.display_name);
+                        const SevIcon = meta.Icon;
+                        const headline = getHeadline(alert);
+
+                        return (
+                          <div
+                            key={alert.id}
+                            onClick={() => setInspectedAlert(alert)}
+                            className={`group relative rounded-xl border bg-white dark:bg-[#0B1120] p-3.5 transition-all cursor-pointer overflow-hidden ${
+                              alert.acknowledged
+                                ? 'border-slate-200/80 dark:border-slate-800/80 opacity-75 hover:opacity-100'
+                                : meta.cardBorder
+                            }`}
+                          >
+                            <div
+                              className={`absolute left-0 top-0 bottom-0 w-1 ${
+                                alert.acknowledged ? 'bg-emerald-500/60' : meta.accentBar
+                              }`}
+                            />
+                            <div className="pl-2.5 space-y-2">
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span
+                                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${meta.pill}`}
+                                  >
+                                    <SevIcon className="w-3 h-3" />
+                                    {meta.label}
+                                  </span>
+                                  <span
+                                    className={`px-1.5 py-0.5 rounded-md text-[10px] font-mono font-bold border ${svc.badge}`}
+                                  >
+                                    {svc.short}
+                                  </span>
+                                  {alert.logger && (
+                                    <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500 truncate max-w-[180px]">
+                                      {alert.logger}
+                                    </span>
+                                  )}
+                                  {alert.acknowledged && (
+                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9.5px] font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                                      <CheckCircle2 className="w-2.5 h-2.5" /> Resolved
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className="text-[10px] font-mono text-slate-500 dark:text-slate-400"
+                                    title={new Date(alert.timestamp).toLocaleString()}
+                                  >
+                                    {formatRelativeTime(alert.timestamp)} · {formatExactTime(alert.timestamp)}
+                                  </span>
+                                  {!alert.acknowledged && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        void acknowledgeAlert(alert.id);
+                                      }}
+                                      title="Mark incident as resolved"
+                                      className="p-1 rounded-md text-slate-400 hover:text-emerald-500 hover:bg-emerald-500/10 transition-colors cursor-pointer"
+                                    >
+                                      <Check className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                  <Expand className="w-3.5 h-3.5 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                </div>
+                              </div>
+
+                              <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 break-words leading-snug">
+                                {headline}
+                              </p>
+
+                              {alert.snippet.length > 1 && (
+                                <div className="rounded-lg bg-slate-50 dark:bg-[#060913] border border-slate-200/80 dark:border-slate-800/80 px-2.5 py-1.5 font-mono text-[10px] text-slate-600 dark:text-slate-400 space-y-0.5">
+                                  {alert.snippet.slice(0, 2).map((line, i) => (
+                                    <p key={i} className="truncate">
+                                      {line}
+                                    </p>
+                                  ))}
+                                  {alert.snippet.length > 2 && (
+                                    <p className="text-[9.5px] text-cyan-600 dark:text-cyan-400 font-semibold">
+                                      +{alert.snippet.length - 2} more lines — click to inspect trace
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
                     )}
                   </div>
                 </>
               ) : tab === 'logs' ? (
-                <LogTerminal batches={logBatches} filter={logFilter} onFilter={setLogFilter} />
+                <LogStreamView
+                  batches={logBatches}
+                  logConn={logConn}
+                  paused={logsPaused}
+                  onTogglePause={() => setLogsPaused((v) => !v)}
+                  onClearLocal={() => setLogBatches(new Map())}
+                />
               ) : (
-                <DeviceTelemetryPanel active={open && tab === 'device'} />
+                <DeviceTelemetryPanel active={open && tab === 'telemetry'} />
               )}
             </div>
 
-            {/* ── Footer ── */}
-            <div className="flex-shrink-0 px-4 py-2 flex items-center justify-between border-t" style={{ borderColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(226,232,240,0.8)', background: isDark ? 'rgba(0,0,0,0.3)' : 'rgba(241,245,249,0.8)' }}>
-              <div className="flex items-center gap-1.5">
-                {['API', 'CLR', 'RDS', 'DB'].map((s, i) => {
-                  const colors = ['#38bdf8', '#a78bfa', '#fb7185', '#34d399'];
-                  return (
-                    <span key={s} className="text-[8px] font-black tracking-widest" style={{ color: colors[i] + '60' }}>{s}</span>
-                  );
-                })}
+            {/* ── Footer Status Bar ── */}
+            <div className="flex-shrink-0 px-4 py-2 border-t border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-[#0B1120] flex items-center justify-between gap-2 text-[10px] font-mono text-slate-500 dark:text-slate-400">
+              <div className="flex items-center gap-3">
+                <span>
+                  {activeAlerts.length} active · {resolvedCount} resolved
+                </span>
+                <span className="hidden sm:inline text-slate-300 dark:text-slate-700">|</span>
+                <span className="hidden sm:inline">
+                  Theme: {isDark ? 'Dark' : 'Light'} · Redis Persistent History
+                </span>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse" style={{ boxShadow: '0 0 4px #10b981' }} />
-                <p className="text-slate-500 dark:text-gray-400 text-[9px] font-mono tracking-wider font-semibold">STREAM · 2s</p>
+              <div className="flex items-center gap-1.5">
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    tab === 'logs'
+                      ? logConn
+                        ? 'bg-emerald-500'
+                        : 'bg-amber-500'
+                      : connected
+                        ? 'bg-emerald-500'
+                        : 'bg-amber-500'
+                  }`}
+                />
+                <span>
+                  {tab === 'logs'
+                    ? logConn
+                      ? logsPaused
+                        ? 'LOGS PAUSED'
+                        : 'LOGS STREAMING · 2s'
+                      : 'LOGS CONNECTING...'
+                    : connected
+                      ? 'REAL-TIME MONITOR'
+                      : 'RECONNECTING...'}
+                </span>
               </div>
             </div>
-          </div>
-        </div>
-      </div>,
-      document.body
-      )}
-
-      {/* Animations */}
-      <style>{`
-        @keyframes wiggle { 0%,100%{transform:rotate(0)} 20%{transform:rotate(-12deg)} 40%{transform:rotate(12deg)} 60%{transform:rotate(-6deg)} 80%{transform:rotate(6deg)} }
-        .animate-wiggle { animation: wiggle 0.6s ease-in-out; }
-      `}</style>
+          </div>,
+          document.body
+        )}
     </>
   );
 };

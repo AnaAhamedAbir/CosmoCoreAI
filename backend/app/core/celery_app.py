@@ -91,25 +91,98 @@ celery_app.conf.update(
 # Auto-discover tasks in packages
 celery_app.autodiscover_tasks(["app.tasks", "app.forex"])
 
-# Stream Celery worker & beat logs into Sys Monitor -> Live Feed (no docker.sock needed)
+# Stream Celery worker & beat logs + task failures into Sys Monitor (no docker.sock needed)
 try:
-    from celery.signals import after_setup_logger, after_setup_task_logger
+    from celery.signals import (
+        after_setup_logger,
+        after_setup_task_logger,
+        task_failure,
+        worker_process_init,
+        worker_process_shutdown,
+    )
 
     def _attach_celery_live_feed(logger=None, **kwargs):
         try:
-            from app.utils import RedisLogHandler, detect_service_container_name
-            if logger is not None and not any(isinstance(h, RedisLogHandler) for h in logger.handlers):
-                h = RedisLogHandler(
-                    container_name=detect_service_container_name(),
-                    publish_bot_logs=False,
-                )
-                import logging as _logging
-                h.setFormatter(_logging.Formatter("%(message)s"))
-                logger.addHandler(h)
+            from app.utils import (
+                attach_live_log_handler,
+                detect_service_container_name,
+                get_singleton_redis_log_handler,
+                install_error_capture_hooks,
+            )
+            cname = detect_service_container_name()
+            # Use singleton handler per process so worker & task loggers share one queue/pool
+            # and never overwrite each other's Redis snapshots.
+            # Preserve Celery's configured --loglevel=warning (min_level=None) to avoid INFO spam.
+            import logging as _logging
+            _logging.getLogger("sqlalchemy.engine").setLevel(_logging.WARNING)
+            attach_live_log_handler(
+                logger_names=("", "app", "celery", "celery.task", "celery.redirected"),
+                container_name=cname,
+                publish_bot_logs=False,
+                min_level=None,
+            )
+            if logger is not None:
+                h = get_singleton_redis_log_handler(container_name=cname, publish_bot_logs=False)
+                if not any(isinstance(existing, type(h)) for existing in logger.handlers):
+                    logger.addHandler(h)
+            install_error_capture_hooks(container_name=cname)
+        except Exception:
+            pass
+
+    def _on_worker_process_init(**kwargs):
+        """Re-initialize RedisLogHandler pool & drain thread inside newly forked Celery child processes."""
+        try:
+            from app.utils import get_singleton_redis_log_handler, detect_service_container_name
+            h = get_singleton_redis_log_handler(
+                container_name=detect_service_container_name(),
+                publish_bot_logs=False,
+            )
+            h.ensure_worker_alive()
+        except Exception:
+            pass
+
+    def _on_worker_process_shutdown(**kwargs):
+        """Flush queued logs/alerts before --max-tasks-per-child=1 worker exits."""
+        try:
+            from app.utils import get_singleton_redis_log_handler, detect_service_container_name
+            h = get_singleton_redis_log_handler(
+                container_name=detect_service_container_name(),
+                publish_bot_logs=False,
+            )
+            h.flush(timeout=2.0)
+        except Exception:
+            pass
+
+    def _on_celery_task_failure(sender=None, task_id=None, exception=None, traceback=None, einfo=None, **kwargs):
+        """Ensure every unhandled Celery task exception is captured as a CRITICAL/ERROR Sys Monitor alert."""
+        try:
+            import traceback as _tb
+            from app.utils import get_singleton_redis_log_handler, detect_service_container_name
+
+            cname = detect_service_container_name()
+            h = get_singleton_redis_log_handler(container_name=cname, publish_bot_logs=False)
+            task_name = getattr(sender, "name", None) or str(sender or "unknown_task")
+            tb_text = ""
+            if einfo is not None and getattr(einfo, "traceback", None):
+                tb_text = str(einfo.traceback)
+            elif exception is not None:
+                tb_text = "".join(_tb.format_exception(type(exception), exception, getattr(exception, "__traceback__", None)))
+            summary = f"Celery Task Failed [{task_name}] (id={task_id}): {type(exception).__name__ if exception else 'Error'}: {exception}"
+            full_msg = f"{summary}\n{tb_text}".strip() if tb_text else summary
+            h.enqueue_raw_event(
+                message=full_msg,
+                level="CRITICAL" if isinstance(exception, (MemoryError, SystemExit, RuntimeError)) else "ERROR",
+                logger_name=f"celery.task.{task_name}",
+                source="celery_task_failure",
+            )
+            h.flush(timeout=1.0)
         except Exception:
             pass
 
     after_setup_logger.connect(_attach_celery_live_feed, weak=False)
     after_setup_task_logger.connect(_attach_celery_live_feed, weak=False)
+    worker_process_init.connect(_on_worker_process_init, weak=False)
+    worker_process_shutdown.connect(_on_worker_process_shutdown, weak=False)
+    task_failure.connect(_on_celery_task_failure, weak=False)
 except Exception:
     pass

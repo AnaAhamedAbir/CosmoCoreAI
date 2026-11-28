@@ -10,7 +10,12 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     """
     Handle standard HTTPExceptions.
     Returns structured JSON: {"error": true, "message": "...", "details": ...}
+    Logs 5xx HTTPExceptions at ERROR level so Sys Monitor always captures server errors.
     """
+    if exc.status_code >= 500:
+        logger.error(
+            f"HTTP {exc.status_code} Server Error on {request.method} {request.url.path}: {exc.detail}"
+        )
     return JSONResponse(
         status_code=exc.status_code,
         content={

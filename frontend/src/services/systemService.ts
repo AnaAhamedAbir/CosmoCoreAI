@@ -77,6 +77,48 @@ export interface VpsHardwareTelemetry {
     timestamp: string;
 }
 
+export interface SystemAlertRecord {
+    id: string;
+    severity: 'CRITICAL' | 'ERROR' | 'WARNING';
+    container: string;
+    display_name: string;
+    message: string;
+    snippet: string[];
+    timestamp: string;
+    logger?: string;
+    source?: string;
+    category?: string;
+    acknowledged?: boolean;
+    acknowledged_at?: string;
+    acknowledged_by?: string;
+}
+
+export interface SystemAlertsResponse {
+    alerts: SystemAlertRecord[];
+    counts: {
+        critical: number;
+        error: number;
+        warning: number;
+        unacknowledged: number;
+    };
+    total: number;
+    capture_mode: 'docker_socket' | 'live_handler';
+    timestamp: string;
+}
+
+export interface ContainerLogLine {
+    line: string;
+    level: 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL';
+    ts?: string;
+}
+
+export interface ContainerLogBatchRecord {
+    container: string;
+    display_name: string;
+    lines: ContainerLogLine[];
+    timestamp: string;
+}
+
 export const systemService = {
     getKillSwitchStatus: async () => {
         const response = await client.get('/system/kill-switch');
@@ -90,6 +132,36 @@ export const systemService = {
 
     getSystemHealth: async (): Promise<SystemHealth> => {
         const response = await client.get('/system/health');
+        return response.data;
+    },
+
+    getSystemAlerts: async (params?: { limit?: number; severity?: string; container?: string }): Promise<SystemAlertsResponse> => {
+        const response = await client.get('/system/alerts', { params });
+        return response.data;
+    },
+
+    acknowledgeSystemAlert: async (alertId: string): Promise<{ ok: boolean; id: string; updated: boolean }> => {
+        const response = await client.post(`/system/alerts/${encodeURIComponent(alertId)}/ack`);
+        return response.data;
+    },
+
+    acknowledgeAllSystemAlerts: async (): Promise<{ ok: boolean; updated_count: number }> => {
+        const response = await client.post('/system/alerts/ack-all');
+        return response.data;
+    },
+
+    clearSystemAlerts: async (): Promise<{ ok: boolean; cleared: boolean }> => {
+        const response = await client.delete('/system/alerts');
+        return response.data;
+    },
+
+    sendTestSystemAlert: async (): Promise<{ ok: boolean; alert: SystemAlertRecord }> => {
+        const response = await client.post('/system/alerts/test');
+        return response.data;
+    },
+
+    getContainerLogsSnapshot: async (): Promise<{ batches: ContainerLogBatchRecord[]; timestamp: string }> => {
+        const response = await client.get('/system/logs/snapshot');
         return response.data;
     },
 

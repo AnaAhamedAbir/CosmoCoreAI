@@ -320,8 +320,8 @@ class AIService:
                             system_prompt, 
                             user_content
                         )
-                        if res_temp and "API Error 429" in res_temp:
-                            print(f"⚠️ Groq Quota limit on Key {index+1}, trying next...")
+                        if res_temp and any(err in res_temp for err in ("API Error 429", "API Error 401", "API Error 403")):
+                            print(f"⚠️ Groq Error on Key {index+1}, trying next...")
                             continue
                         break
                     return res_temp
@@ -342,7 +342,7 @@ class AIService:
                         system_prompt,
                         user_content
                     )
-                    if res_fb and "API Error 429" in res_fb:
+                    if res_fb and any(err in res_fb for err in ("API Error 429", "API Error 401", "API Error 403")):
                         continue
                     return res_fb
             

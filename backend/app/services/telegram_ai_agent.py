@@ -3,6 +3,7 @@ import json
 import asyncio
 import tempfile
 import urllib.parse
+import re
 from bs4 import BeautifulSoup
 import httpx
 import uuid
@@ -75,27 +76,86 @@ class TelegramAIAgent:
             "hashtags": "#CryptoNews"
         }
 
+    def _clean_tts_text(self, text: str) -> str:
+        """Strip HTML tags, markdown, bullet markers, URLs, and excess symbols for speech synthesis."""
+        if not text:
+            return ""
+        if isinstance(text, list):
+            text = " ".join([str(t) for t in text])
+        elif not isinstance(text, str):
+            text = str(text)
+
+        # Remove HTML tags
+        clean = re.sub(r'<[^>]+>', ' ', text)
+        # Remove URLs
+        clean = re.sub(r'https?://\S+', '', clean)
+        # Remove markdown bold/italics/backticks/hashtags
+        clean = re.sub(r'[*_`#~]', ' ', clean)
+        # Remove bullet symbols like • or - or numbered bullets
+        clean = re.sub(r'^[•\-\*\d+\.]+\s*', ' ', clean, flags=re.MULTILINE)
+        # Replace multiple whitespace / newlines with single space
+        clean = re.sub(r'\s+', ' ', clean).strip()
+        return clean
+
     async def generate_voice_note(self, text: str) -> str:
         """
-        Converts text to speech using Microsoft Edge Neural TTS for ultra-realistic Bengali voice.
-        Returns the path to the temporary mp3 file.
+        Converts text to speech using Microsoft Edge Neural TTS with retries and voice fallback.
+        Returns the path to the temporary mp3 file or None if synthesis fails.
         """
+        cleaned_text = self._clean_tts_text(text)
+        # Must have at least some spoken word characters
+        if not cleaned_text or not re.search(r'[\w\u0980-\u09FF]', cleaned_text):
+            logger.debug("TTS skipped: text is empty or contains no speakable characters.")
+            return None
+
+        # Truncate to maximum 800 characters to avoid socket timeout
+        if len(cleaned_text) > 800:
+            cleaned_text = cleaned_text[:800]
+
+        # Determine language & candidate voices
+        has_bengali = bool(re.search(r'[\u0980-\u09FF]', cleaned_text))
+        if has_bengali:
+            candidate_voices = [
+                "bn-BD-NabanitaNeural",
+                "bn-BD-PradeepNeural",
+                "bn-IN-BashkarNeural",
+                "bn-IN-TanishaaNeural",
+            ]
+        else:
+            candidate_voices = [
+                "en-US-ChristopherNeural",
+                "en-US-JennyNeural",
+                "en-US-GuyNeural",
+                "bn-BD-NabanitaNeural",
+            ]
+
         try:
             import edge_tts
-            if isinstance(text, list):
-                text = " ".join([str(t) for t in text])
-            elif not isinstance(text, str):
-                text = str(text)
-                
-            filename = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4()}_news.mp3")
-            # Using Bengali Neural voice from edge-tts (female voice: bd-Nabanita, male: bd-Pradeep)
-            # bn-BD-NabanitaNeural is high quality.
-            voice = "bn-BD-NabanitaNeural" 
-            communicate = edge_tts.Communicate(text, voice)
-            await communicate.save(filename)
-            return filename
-        except Exception as e:
-            logger.error(f"Neural Audio Generation failed: {e}")
+        except ImportError:
+            logger.warning("edge-tts is not installed. Skipping audio generation.")
             return None
+
+        filename = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4()}_news.mp3")
+
+        for attempt, voice in enumerate(candidate_voices):
+            try:
+                communicate = edge_tts.Communicate(cleaned_text, voice)
+                await communicate.save(filename)
+
+                # Verify file was written and is non-empty
+                if os.path.exists(filename) and os.path.getsize(filename) > 0:
+                    return filename
+                else:
+                    if os.path.exists(filename):
+                        os.remove(filename)
+            except Exception as e:
+                err_msg = str(e)
+                logger.debug(f"Neural Audio attempt {attempt + 1} with voice '{voice}' failed: {err_msg}")
+                if attempt < len(candidate_voices) - 1:
+                    await asyncio.sleep(0.5 * (attempt + 1))
+                continue
+
+        logger.warning(f"Neural Audio Generation skipped: all {len(candidate_voices)} candidate voices failed.")
+        return None
 
 telegram_ai_agent = TelegramAIAgent()

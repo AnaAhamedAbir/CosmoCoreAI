@@ -56,32 +56,47 @@ def _log_docker_unavailable_once() -> None:
 CRITICAL_PATTERNS = [
     re.compile(r'\bCRITICAL\b', re.IGNORECASE),
     re.compile(r'\bFATAL\b', re.IGNORECASE),
+    re.compile(r'\bPANIC\b'),
     re.compile(r'Traceback \(most recent call last\)', re.IGNORECASE),
     re.compile(r'\bSystemExit\b', re.IGNORECASE),
     re.compile(r'\bSegmentation fault\b', re.IGNORECASE),
+    re.compile(r'\bMemoryError\b'),
     re.compile(r'\bOOM\b'),  # Out of Memory
+    re.compile(r'Out of memory', re.IGNORECASE),
     re.compile(r'killed by signal', re.IGNORECASE),
+    re.compile(r'Exception in ASGI application', re.IGNORECASE),
+    re.compile(r'Task exception was never retrieved', re.IGNORECASE),
+    re.compile(r'Unhandled exception', re.IGNORECASE),
 ]
 
 # Patterns that indicate an ERROR (orange alert 🟠)
 ERROR_PATTERNS = [
-    re.compile(r'\bERROR\b'), # Case-sensitive to avoid matching variables like `error`
+    re.compile(r'\bERROR\b'),  # Case-sensitive to avoid matching variables like `error`
+    re.compile(r'\[error\]', re.IGNORECASE),  # Nginx / gunicorn bracketed error level
     re.compile(r'\bException\b'),
-    re.compile(r'\bError:\b'),
+    re.compile(r'\b[A-Za-z_]*Error(?::|\s|$)'),  # Matches ValueError:, TypeError:, RuntimeError:, Error: ...
     re.compile(r'sqlalchemy\.exc\.', re.IGNORECASE),
     re.compile(r'ConnectionRefusedError', re.IGNORECASE),
     re.compile(r'OperationalError', re.IGNORECASE),
     re.compile(r'IntegrityError', re.IGNORECASE),
+    re.compile(r'ProgrammingError', re.IGNORECASE),
+    re.compile(r'InterfaceError', re.IGNORECASE),
+    re.compile(r'DataError', re.IGNORECASE),
+    re.compile(r'DeadlockDetected', re.IGNORECASE),
+    re.compile(r'UndefinedColumn', re.IGNORECASE),
     re.compile(r'500 Internal Server Error', re.IGNORECASE),
     re.compile(r'502 Bad Gateway', re.IGNORECASE),
     re.compile(r'503 Service Unavailable', re.IGNORECASE),
     re.compile(r'504 Gateway Timeout', re.IGNORECASE),
-    re.compile(r'\bHTTP 5\d{2}\b'), # Any 5xx error
+    re.compile(r'\bHTTP 5\d{2}\b'),  # Any 5xx error
+    re.compile(r'HTTP/\d\.\d"\s+5\d{2}\b'),  # Uvicorn / Nginx access log 5xx (no trailing space needed)
     re.compile(r'celery\.exceptions', re.IGNORECASE),
     re.compile(r'Worker exited', re.IGNORECASE),
+    re.compile(r'WorkerLostError', re.IGNORECASE),
     re.compile(r'Connection refused', re.IGNORECASE),
     re.compile(r'\bFailed\b', re.IGNORECASE),
     re.compile(r'API Error', re.IGNORECASE),
+    re.compile(r'❌'),
 ]
 
 # Patterns that indicate a WARNING (yellow alert 🟡)
@@ -155,8 +170,7 @@ IGNORE_PATTERNS = [
     re.compile(r'Filter failure: LOT_SIZE', re.IGNORECASE),
     re.compile(r'Filter failure: PRICE_FILTER', re.IGNORECASE),
     re.compile(r'GET /api/v1/health', re.IGNORECASE),
-    re.compile(r'200 OK'),
-    re.compile(r'INFO:'),
+    re.compile(r'HTTP/\d\.\d"\s+200\b'),
     re.compile(r'^\s*$'),
     # ── Gym Deprecation / NumPy 2.0 Warning ───────────────────────────────
     re.compile(r'Gym has been unmaintained since 2022', re.IGNORECASE),
@@ -172,6 +186,7 @@ IGNORE_PATTERNS = [
     re.compile(r'Task .* succeeded'),
     re.compile(r'Task .* received'),
     re.compile(r'\[LogMonitor\]'),   # prevent infinite loops from our own logging!
+    re.compile(r'Listening to System Alert Stream', re.IGNORECASE),  # benign startup banner in main.py
     # ── Telegram / notification failures ─────────────────────────────────────
     # These are WARNING-level in notification.py, not real server errors.
     # Without these, a Telegram timeout creates an alert → which logs → which
@@ -319,16 +334,31 @@ WARNING_OVERRIDE_PATTERNS = [
     re.compile(r'Connection reset by peer', re.IGNORECASE),
     # ── WebSocket transient connection errors ─────────────────────────────
     re.compile(r'\[Errno 111\] Connect call failed', re.IGNORECASE),
+    # ── AI Key Rotation Fallbacks (handled automatically by next key) ─────
+    re.compile(r'Groq\s+Error\s+on\s+Key\s+\d+,\s*trying\s+next', re.IGNORECASE),
+    re.compile(r'Batch\s+translation\s+skipped', re.IGNORECASE),
+]
+
+# Patterns that ONLY apply to single-line informational noise (never used to
+# suppress an already-detected ERROR/CRITICAL context block when interleaved).
+INFO_ONLY_IGNORE_PATTERNS = [
+    re.compile(r'^\s*(?:\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[^\s]*\s+)?INFO:'),
+    re.compile(r'HTTP/\d\.\d"\s+200\b'),
+    re.compile(r'\b200 OK\b'),
 ]
 
 # Container names to monitor (must match docker-compose container_name)
 CONTAINERS_TO_MONITOR = [
     "cosmoquant_backend",
-    "cosmo_celery_worker",
+    "cosmo_celery_worker_default",
+    "cosmo_celery_worker_heavy",
+    "cosmo_celery_worker",  # Legacy fallback alias
     "cosmo_celery_beat",
+    "cosmo_telegram_bot",
     "cosmoquant_redis",
     "cosmoquant_db",
     "cosmoquant_frontend",
+    "cosmoquant_nginx",
 ]
 
 # Redis cooldown: same error won't trigger alert for N seconds
@@ -337,8 +367,61 @@ ALERT_COOLDOWN_SECONDS = 300  # 5 minutes
 # How many lines of logs to fetch per container per run
 LOG_TAIL_LINES = 100
 
-# Redis key that stores the last scan timestamp (to use with docker logs --since)
+# Redis key that stores the last scan timestamp per container (to use with docker logs --since)
 LAST_SCAN_KEY = "log_monitor:last_scan_ts"
+
+# Persistent alert history key (shared across Docker monitor, RedisLogHandler, and Latency Guard)
+SYS_ALERTS_HISTORY_KEY = "sys_monitor:alerts:history"
+SYS_ALERTS_HISTORY_MAX = 200
+SYS_ALERTS_HISTORY_TTL_SEC = 7 * 86400  # 7 days
+
+
+def record_and_publish_system_alert(
+    redis_client,
+    alert_dict: dict,
+    *,
+    publish: bool = True,
+) -> dict:
+    """
+    Persist a system alert to Redis history (bounded list) and optionally broadcast
+    it to the `system_alerts` Pub/Sub channel so alerts are never lost on page
+    reload, WS disconnect, or container restart.
+    """
+    import json as _json
+    import time as _time
+
+    payload = dict(alert_dict)
+    payload.setdefault("type", "system_alert")
+    payload.setdefault("id", f"alert-{int(_time.time() * 1000)}-{abs(hash(payload.get('message', ''))) % 100000}")
+    payload.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
+    payload.setdefault("acknowledged", False)
+    payload.setdefault("snippet", [])
+
+    raw = _json.dumps(payload)
+    try:
+        pipe = redis_client.pipeline(transaction=False)
+        pipe.lpush(SYS_ALERTS_HISTORY_KEY, raw)
+        pipe.ltrim(SYS_ALERTS_HISTORY_KEY, 0, SYS_ALERTS_HISTORY_MAX - 1)
+        pipe.expire(SYS_ALERTS_HISTORY_KEY, SYS_ALERTS_HISTORY_TTL_SEC)
+        if publish:
+            pipe.publish("system_alerts", raw)
+        pipe.execute()
+    except Exception:
+        # Fallback to direct publish if pipeline fails (e.g. unit test mocks)
+        if publish:
+            try:
+                redis_client.publish("system_alerts", raw)
+            except Exception:
+                pass
+    return payload
+
+
+def is_benign_ignored_line(line: str) -> bool:
+    """Return True if line matches a known-benign operational ignore pattern."""
+    for pattern in IGNORE_PATTERNS:
+        if pattern.search(line):
+            return True
+    return False
 
 
 # ============================================================
@@ -355,9 +438,8 @@ def classify_log_line(line: str) -> Optional[str]:
     — see scan_docker_logs_and_notify().
     """
     # Skip boring / harmless lines first (fast path)
-    for pattern in IGNORE_PATTERNS:
-        if pattern.search(line):
-            return None
+    if is_benign_ignored_line(line):
+        return None
 
     # Demote known-harmless WARNING-level noise to INFO (return None)
     # e.g. "Market News Fetch Completed. 3 new items." logged at WARNING level
@@ -370,9 +452,17 @@ def classify_log_line(line: str) -> Optional[str]:
         if pattern.search(line):
             return 'WARNING'
 
+    # Check CRITICAL before INFO-only ignores so embedded tracebacks / 500s are never masked
     for pattern in CRITICAL_PATTERNS:
         if pattern.search(line):
             return 'CRITICAL'
+
+    # Skip pure INFO / 200 OK access lines that don't contain CRITICAL markers or 5xx errors
+    for pattern in INFO_ONLY_IGNORE_PATTERNS:
+        if pattern.search(line):
+            # Still allow explicit 5xx or Python exception lines embedded in INFO logs
+            if not re.search(r'(?:HTTP/\d\.\d"\s+5\d{2}\b|Traceback \(most recent call last\)|\bCRITICAL\b|\bFATAL\b)', line):
+                return None
 
     for pattern in ERROR_PATTERNS:
         if pattern.search(line):
@@ -385,23 +475,43 @@ def classify_log_line(line: str) -> Optional[str]:
     return None
 
 
-def make_fingerprint(container: str, line: str) -> str:
+def make_fingerprint(container: str, line: str, context_lines: Optional[list[str]] = None) -> str:
     """
     Create a stable fingerprint for deduplication.
     Strips timestamps and dynamic values to group similar errors together.
+    For Python tracebacks, anchors on the root-cause exception line at the bottom
+    of the traceback so two different crashes never collide on 'Traceback (most recent call last):'.
     """
-    # Remove timestamps like [2026-04-03 12:34:56] or 2026-04-03T12:34:56
+    anchor = line
+    if context_lines and "traceback (most recent call last)" in line.lower():
+        # Pick the last non-empty, non-indented line (the actual exception type + message)
+        for ctx in reversed(context_lines[1:]):
+            stripped = ctx.strip()
+            if stripped and not ctx.startswith((" ", "\t")):
+                anchor = stripped
+                break
+        else:
+            # Fallback to last non-empty line in traceback
+            for ctx in reversed(context_lines):
+                if ctx.strip():
+                    anchor = ctx.strip()
+                    break
+
+    # Remove ISO timestamps like [2026-04-03 12:34:56] or 2026-04-03T12:34:56.123456Z
     cleaned = re.sub(
         r'\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?',
         '',
-        line
+        anchor,
     )
-    # Remove task IDs like [abc123-def456]
+    # Remove short HH:MM:SS timestamps like "09:58:01 |"
+    cleaned = re.sub(r'\b\d{2}:\d{2}:\d{2}(?:\.\d+)?\b', '', cleaned)
+    # Remove task IDs / UUIDs like [abc123-def456]
+    cleaned = re.sub(r'\[?[0-9a-f]{8}-[0-9a-f-]{12,}\]?', '', cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r'\[[0-9a-f-]{8,}\]', '', cleaned, flags=re.IGNORECASE)
     # Remove memory addresses like 0x7f3a2b
     cleaned = re.sub(r'0x[0-9a-f]+', '', cleaned, flags=re.IGNORECASE)
-    # Trim and lowercase
-    cleaned = cleaned.strip().lower()[:120]
+    # Normalize whitespace and trim
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip().lower()[:140]
     return f"log_alert:{container}:{cleaned}"
 
 
@@ -455,16 +565,21 @@ def format_alert_message(
 
 def _get_log_monitor_users():
     """Sync helper: fetch notification settings from DB (must be called outside async context)."""
+    from sqlalchemy import or_
     from app.db.session import SessionLocal
     from app.models.notification import NotificationSettings
 
     db = SessionLocal()
     try:
+        # Include BOTH custom-bot users (telegram_bot_token set) AND Master Bot users (use_master_bot=True)
         active_users = db.query(NotificationSettings).filter(
             NotificationSettings.is_enabled == True,
             NotificationSettings.alert_server_errors == True,
-            NotificationSettings.telegram_bot_token != None,
             NotificationSettings.telegram_chat_id != None,
+            or_(
+                NotificationSettings.telegram_bot_token != None,
+                NotificationSettings.use_master_bot == True,
+            ),
         ).all()
 
         wants_broadcast = db.query(NotificationSettings).filter(
@@ -481,8 +596,8 @@ async def scan_docker_logs_and_notify(active_users=None, wants_broadcast=None):
     Main entry point called by Celery task.
     1. Connects to Docker daemon via socket
     2. Reads recent logs from each container
-    3. Detects problems
-    4. Sends Telegram alerts via user NotificationSettings
+    3. Detects problems and ALWAYS persists/broadcasts them to Sys Monitor (`system_alerts`)
+    4. Sends Telegram alerts to users who have server-error Telegram notifications enabled
 
     NOTE: active_users and wants_broadcast should be pre-fetched by the
     sync caller (_get_log_monitor_users) to avoid MissingGreenlet errors
@@ -513,15 +628,10 @@ async def scan_docker_logs_and_notify(active_users=None, wants_broadcast=None):
 
     if active_users is None:
         active_users = []
-    if wants_broadcast is None:
-        wants_broadcast = False
 
     try:
-        if not active_users and not wants_broadcast:
-            logger.debug("[LogMonitor] No users with notifications enabled and no one wants live broadcast, skipping.")
-            return
-
         alerts_sent = 0
+        alerts_recorded = 0
 
         # --- Scan each container ---
         for container_name in CONTAINERS_TO_MONITOR:
@@ -534,13 +644,13 @@ async def scan_docker_logs_and_notify(active_users=None, wants_broadcast=None):
                 logger.warning(f"[LogMonitor] Error getting container '{container_name}': {e}")
                 continue
 
-            # Fetch logs only since the last scan (avoids re-processing old lines)
+            # Fetch logs only since the last scan for THIS container (avoids cross-container skip gaps)
+            per_container_ts_key = f"{LAST_SCAN_KEY}:{container_name}"
             try:
-                # Retrieve the timestamp of the previous scan from Redis.
-                # On first run (or after Redis flush) fall back to last 60 seconds.
-                last_ts_raw = redis.get(LAST_SCAN_KEY)
+                last_ts_raw = redis.get(per_container_ts_key) or redis.get(LAST_SCAN_KEY)
                 if last_ts_raw:
-                    since_dt = datetime.fromisoformat(last_ts_raw.decode())
+                    raw_str = last_ts_raw.decode() if isinstance(last_ts_raw, bytes) else str(last_ts_raw)
+                    since_dt = datetime.fromisoformat(raw_str)
                 else:
                     from datetime import timedelta
                     since_dt = now_utc - timedelta(seconds=70)  # slight overlap for safety
@@ -558,110 +668,111 @@ async def scan_docker_logs_and_notify(active_users=None, wants_broadcast=None):
                 continue
 
             # --- Analyze lines ---
-            # Process each line sequentially.  When an ERROR/CRITICAL trigger is
-            # found, up to 4 continuation lines are collected as context, then the
-            # outer loop advances past them so they are NOT re-evaluated as
-            # independent errors — eliminating spurious duplicate alerts (Bug #3).
             i = 0
             while i < len(log_lines):
-                line     = log_lines[i]
+                line = log_lines[i]
                 severity = classify_log_line(line)
 
-                # ── WARNING-only lines are silently skipped in the alert pipeline.
-                # They are still colour-coded in the live terminal (publish_all_container_logs)
-                # but must NOT appear in the system-monitor alert widget or Telegram.
+                # WARNING-only lines are colour-coded in the live terminal, not escalated as alerts.
                 if severity and severity != 'WARNING':
                     # ----------------------------------------------------------
-                    # Context collection: this line + up to 4 following related lines
+                    # Context collection:
+                    # - For Python Tracebacks: absorb up to 20 indented/frame lines
+                    #   PLUS the final exception line (e.g. "ValueError: ...").
+                    # - For regular errors: absorb up to 4 indented continuation lines only
+                    #   (NEVER absorb unrelated interleaved INFO / 200 OK lines!).
                     # ----------------------------------------------------------
-                    context_lines  = [line]
-                    lines_consumed = 0  # how many following lines we absorbed
+                    context_lines = [line]
+                    lines_consumed = 0
+                    is_traceback = "traceback (most recent call last)" in line.lower()
+                    max_lookahead = 24 if is_traceback else 5
 
-                    for j in range(1, 5):
+                    for j in range(1, max_lookahead):
                         if i + j >= len(log_lines):
                             break
 
                         next_line = log_lines[i + j]
-                        next_sev  = classify_log_line(next_line)
-
-                        # Case A — indented continuation: traceback body / stack frames.
-                        # ⚠ Bug #1 fix: check the ORIGINAL line, NOT strip()-ped version.
-                        #   next_line.strip().startswith(' ') is ALWAYS False because
-                        #   strip() removes all leading whitespace first — dead code.
-                        if next_line.startswith((' ', '\t')):
-                            context_lines.append(next_line)
-                            lines_consumed += 1
-
-                        # Case B — plain informational continuation (not a new error trigger)
-                        elif next_line.strip() and next_sev not in ('ERROR', 'CRITICAL'):
-                            context_lines.append(next_line)
-                            lines_consumed += 1
-
-                        else:
-                            # Independent new error encountered — stop collecting here;
-                            # the outer while-loop handles it in the next iteration.
+                        # Strip optional leading Docker ISO timestamp + single separator space ONLY
+                        # (preserving any leading indentation of traceback stack frames!)
+                        next_body = re.sub(
+                            r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z ',
+                            '',
+                            next_line,
+                        )
+                        if not next_body.strip():
                             break
 
-                    # Check if any line in collected context matches IGNORE_PATTERNS (e.g. benign manual trade rejections)
-                    is_context_ignored = False
-                    for ctx_line in context_lines:
-                        for pattern in IGNORE_PATTERNS:
-                            if pattern.search(ctx_line):
-                                is_context_ignored = True
-                                break
-                        if is_context_ignored:
+                        # Stop immediately if an interleaved normal INFO / HTTP 200 line appears
+                        if any(p.search(next_body) for p in INFO_ONLY_IGNORE_PATTERNS):
                             break
 
+                        # Case A — indented continuation: traceback body / stack frames
+                        if next_body.startswith((' ', '\t')):
+                            context_lines.append(next_line)
+                            lines_consumed += 1
+                            continue
+
+                        # Case B — final exception trailer at the bottom of a traceback
+                        if is_traceback and re.search(
+                            r'(?:Error|Exception|Exit|Interrupt|Warning|Fault)\b',
+                            next_body,
+                        ):
+                            context_lines.append(next_line)
+                            lines_consumed += 1
+                            break
+
+                        # Otherwise, stop so unrelated subsequent lines are evaluated independently
+                        break
+
+                    # Check ONLY benign-error ignore patterns (NEVER INFO_ONLY_IGNORE_PATTERNS)
+                    is_context_ignored = any(is_benign_ignored_line(ctx_line) for ctx_line in context_lines)
                     if is_context_ignored:
                         i += 1 + lines_consumed
                         continue
 
-                    # ----------------------------------------------------------
-                    # Atomic deduplication — Bug #2 fix
-                    # ─────────────────────────────────────────────────────────
-                    # ❌ Old (non-atomic, race-prone under concurrent workers):
-                    #     if not redis.exists(key):         ← Worker-A checks: False
-                    #         redis.setex(key, ttl, "1")   ← Worker-B also checked False
-                    #     → both workers send the alert
-                    #
-                    # ✅ New (single atomic SET-if-not-exists, Redis SETNX semantics):
-                    #     redis.set(key, nx=True, ex=ttl)  ← exactly ONE worker wins;
-                    #     the return value tells us if we won the "slot".
-                    # ----------------------------------------------------------
-                    fingerprint = make_fingerprint(container_name, line)
+                    fingerprint = make_fingerprint(container_name, line, context_lines)
                     was_set = redis.set(
                         fingerprint, "1",
-                        nx=True,                    # SET only if key does Not eXist
-                        ex=ALERT_COOLDOWN_SECONDS,  # auto-expire after cooldown window
+                        nx=True,
+                        ex=ALERT_COOLDOWN_SECONDS,
                     )
 
                     if was_set:
-                        # Build message
                         message = format_alert_message(
                             container=container_name,
                             severity=severity,
-                            log_lines=context_lines,
+                            log_lines=context_lines[:8],
                             now_utc=now_utc,
                         )
 
-                        # --- Publish to Redis for WebSocket broadcast (system monitor widget) ---
-                        # Only ERROR / CRITICAL reach this point — WARNINGs are excluded above.
+                        # Persist to Redis history + broadcast live to Sys Monitor WebSocket
                         try:
-                            import json as _json
-                            alert_payload = _json.dumps({
-                                "type": "system_alert",
-                                "severity": severity,
-                                "container": container_name,
-                                "display_name": container_name.replace("cosmoquant_", "").replace("cosmo_", "").replace("_", " ").upper(),
-                                "message": message,
-                                "snippet": context_lines[:3],
-                                "timestamp": now_utc.isoformat(),
-                            })
-                            redis.publish("system_alerts", alert_payload)
+                            display_name = (
+                                container_name
+                                .replace("cosmoquant_", "")
+                                .replace("cosmo_", "")
+                                .replace("_", " ")
+                                .upper()
+                            )
+                            record_and_publish_system_alert(
+                                redis,
+                                {
+                                    "type": "system_alert",
+                                    "severity": severity,
+                                    "container": container_name,
+                                    "display_name": display_name,
+                                    "source": "docker_monitor",
+                                    "message": message,
+                                    "snippet": [l.strip() for l in context_lines if l.strip()][:10],
+                                    "timestamp": now_utc.isoformat(),
+                                },
+                                publish=True,
+                            )
+                            alerts_recorded += 1
                         except Exception as pub_err:
                             logger.warning(f"[LogMonitor] Redis publish failed: {pub_err}")
 
-                        # Send Telegram alert to all users with notifications enabled
+                        # Send Telegram alert to all users with server-error alerts enabled
                         if active_users:
                             from app.db.session import SessionLocal
                             db = SessionLocal()
@@ -683,22 +794,26 @@ async def scan_docker_logs_and_notify(active_users=None, wants_broadcast=None):
                             finally:
                                 db.close()
 
-                    # Bug #3 fix: advance past the absorbed context lines so they are
-                    # NOT re-evaluated as independent errors in subsequent iterations.
                     i += lines_consumed
 
                 i += 1
 
-        # Save current scan timestamp so next run only reads NEW logs
+            # Save scan timestamp for this specific container only after reading it cleanly
+            try:
+                redis.set(per_container_ts_key, now_utc.isoformat())
+            except Exception as ts_err:
+                logger.warning(f"[LogMonitor] Could not save scan timestamp for {container_name}: {ts_err}")
+
+        # Keep legacy global key updated for compatibility
         try:
             redis.set(LAST_SCAN_KEY, now_utc.isoformat())
-        except Exception as ts_err:
-            logger.warning(f"[LogMonitor] Could not save scan timestamp: {ts_err}")
+        except Exception:
+            pass
 
-        if alerts_sent > 0:
-            logger.info(f"[LogMonitor] Scan complete. {alerts_sent} alert(s) sent.")
+        if alerts_recorded > 0 or alerts_sent > 0:
+            logger.info(f"[LogMonitor] Scan complete. {alerts_recorded} alert(s) recorded, {alerts_sent} Telegram alert(s) sent.")
         else:
-            logger.debug(f"[LogMonitor] Scan complete. No new alerts.")
+            logger.debug("[LogMonitor] Scan complete. No new alerts.")
 
     except Exception as e:
         logger.error(f"[LogMonitor] Unexpected error during scan: {e}", exc_info=True)

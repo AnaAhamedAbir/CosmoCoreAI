@@ -297,3 +297,186 @@ async def get_vps_hardware_telemetry(
         return data
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read VPS telemetry: {str(e)}")
+
+
+@router.get("/alerts")
+def get_system_alerts_history(
+    limit: int = 100,
+    severity: Optional[str] = None,
+    container: Optional[str] = None,
+    current_user: models.User = Depends(deps.get_current_active_superuser),
+):
+    """
+    Return persisted system monitor alerts + summary counters + active capture mode.
+    Owner/Superuser only.
+    """
+    import json as _json
+    from app.services.log_monitor_service import (
+        SYS_ALERTS_HISTORY_KEY,
+        is_docker_daemon_configured,
+    )
+
+    capped_limit = max(1, min(limit, 200))
+    r = get_redis_client()
+    alerts = []
+    try:
+        raw_items = r.lrange(SYS_ALERTS_HISTORY_KEY, 0, capped_limit - 1) or []
+        for raw in raw_items:
+            try:
+                text = raw.decode("utf-8", errors="ignore") if isinstance(raw, bytes) else str(raw)
+                item = _json.loads(text)
+                if severity and str(item.get("severity", "")).upper() != severity.upper():
+                    continue
+                if container and item.get("container") != container:
+                    continue
+                alerts.append(item)
+            except Exception:
+                continue
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load alert history: {e}")
+
+    counts = {"critical": 0, "error": 0, "warning": 0, "unacknowledged": 0}
+    for a in alerts:
+        sev = str(a.get("severity", "")).upper()
+        if sev == "CRITICAL":
+            counts["critical"] += 1
+        elif sev == "ERROR":
+            counts["error"] += 1
+        elif sev == "WARNING":
+            counts["warning"] += 1
+        if not a.get("acknowledged", False):
+            counts["unacknowledged"] += 1
+
+    return {
+        "alerts": alerts,
+        "counts": counts,
+        "total": len(alerts),
+        "capture_mode": "docker_socket" if is_docker_daemon_configured() else "live_handler",
+        "timestamp": datetime.now(pytz.utc).isoformat(),
+    }
+
+
+@router.post("/alerts/ack-all")
+def acknowledge_all_system_alerts(
+    current_user: models.User = Depends(deps.get_current_active_superuser),
+):
+    """Mark all persisted system alerts as acknowledged/resolved in one click."""
+    import json as _json
+    from app.services.log_monitor_service import SYS_ALERTS_HISTORY_KEY
+
+    r = get_redis_client()
+    raw_items = r.lrange(SYS_ALERTS_HISTORY_KEY, 0, -1) or []
+    now_iso = datetime.now(pytz.utc).isoformat()
+    updated_count = 0
+    for idx, raw in enumerate(raw_items):
+        try:
+            text = raw.decode("utf-8", errors="ignore") if isinstance(raw, bytes) else str(raw)
+            item = _json.loads(text)
+            if not item.get("acknowledged", False):
+                item["acknowledged"] = True
+                item["acknowledged_at"] = now_iso
+                item["acknowledged_by"] = current_user.email
+                r.lset(SYS_ALERTS_HISTORY_KEY, idx, _json.dumps(item))
+                updated_count += 1
+        except Exception:
+            continue
+
+    return {"ok": True, "updated_count": updated_count}
+
+
+@router.post("/alerts/{alert_id}/ack")
+def acknowledge_system_alert(
+    alert_id: str,
+    current_user: models.User = Depends(deps.get_current_active_superuser),
+):
+    """Mark a persisted system alert as acknowledged/resolved."""
+    import json as _json
+    from app.services.log_monitor_service import SYS_ALERTS_HISTORY_KEY
+
+    r = get_redis_client()
+    raw_items = r.lrange(SYS_ALERTS_HISTORY_KEY, 0, -1) or []
+    updated = False
+    for idx, raw in enumerate(raw_items):
+        try:
+            text = raw.decode("utf-8", errors="ignore") if isinstance(raw, bytes) else str(raw)
+            item = _json.loads(text)
+            if str(item.get("id")) == alert_id:
+                item["acknowledged"] = True
+                item["acknowledged_at"] = datetime.now(pytz.utc).isoformat()
+                item["acknowledged_by"] = current_user.email
+                r.lset(SYS_ALERTS_HISTORY_KEY, idx, _json.dumps(item))
+                updated = True
+                break
+        except Exception:
+            continue
+
+    return {"ok": True, "id": alert_id, "updated": updated}
+
+
+@router.delete("/alerts")
+def clear_system_alerts_history(
+    current_user: models.User = Depends(deps.get_current_active_superuser),
+):
+    """Clear all persisted system monitor alerts from Redis history."""
+    from app.services.log_monitor_service import SYS_ALERTS_HISTORY_KEY
+
+    r = get_redis_client()
+    r.delete(SYS_ALERTS_HISTORY_KEY)
+    return {"ok": True, "cleared": True}
+
+
+@router.post("/alerts/test")
+def emit_test_system_alert(
+    current_user: models.User = Depends(deps.get_current_active_superuser),
+):
+    """Emit a synthetic verification alert through the real Sys Monitor pipeline."""
+    from app.services.log_monitor_service import record_and_publish_system_alert
+
+    r = get_redis_client()
+    now_iso = datetime.now(pytz.utc).isoformat()
+    payload = record_and_publish_system_alert(
+        r,
+        {
+            "type": "system_alert",
+            "severity": "ERROR",
+            "container": "cosmoquant_backend",
+            "display_name": "BACKEND",
+            "logger": "app.api.v1.endpoints.system",
+            "source": "diagnostic_test",
+            "message": f"[Diagnostic Verification] Synthetic test alert triggered by {current_user.email}",
+            "snippet": [
+                f"Diagnostic alert pipeline check triggered by {current_user.email}",
+                "Verified: Redis persistence -> Pub/Sub broadcast -> WebSocket delivery",
+            ],
+            "timestamp": now_iso,
+            "acknowledged": False,
+        },
+        publish=True,
+    )
+    return {"ok": True, "alert": payload}
+
+
+@router.get("/logs/snapshot")
+def get_container_logs_snapshot(
+    current_user: models.User = Depends(deps.get_current_active_superuser),
+):
+    """Return latest live container log batches stored in Redis (instant REST fallback)."""
+    import json as _json
+    from app.utils import LIVE_CONTAINER_LOGS_KEY_PREFIX
+
+    r = get_redis_client()
+    batches = []
+    try:
+        keys = sorted(r.keys(f"{LIVE_CONTAINER_LOGS_KEY_PREFIX}*") or [])
+        for k in keys:
+            raw = r.get(k)
+            if not raw:
+                continue
+            try:
+                text = raw.decode("utf-8", errors="ignore") if isinstance(raw, bytes) else str(raw)
+                batches.append(_json.loads(text))
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return {"batches": batches, "timestamp": datetime.now(pytz.utc).isoformat()}

@@ -630,13 +630,18 @@ async def fetch_market_data_background():
 # --- Lifecycle Events ---
 
 def custom_asyncio_exception_handler(loop, context):
-    msg = context.get("exception", context.get("message"))
-    if isinstance(msg, Exception):
-        err_msg = str(msg)
+    exc = context.get("exception")
+    msg = context.get("message") or str(exc or "Unhandled asyncio exception")
+    if isinstance(exc, Exception):
+        err_msg = str(exc)
         if "Cannot write to closing transport" in err_msg:
             # Ignore this specific aiohttp internal error to prevent log spam
             return
-    # Log other unhandled exceptions normally
+    # Explicitly log unhandled background task exceptions so Sys Monitor captures them
+    if isinstance(exc, BaseException):
+        logger.error(f"Unhandled asyncio task exception: {msg}", exc_info=(type(exc), exc, exc.__traceback__))
+    else:
+        logger.error(f"Unhandled asyncio error: {msg}")
     loop.default_exception_handler(context)
 
 _startup_has_run = False
@@ -695,20 +700,23 @@ async def startup_event():
     await redis_manager.init_redis()
     app.state.redis = redis_manager.get_redis() # ✅ Store in app.state for easy access
     
-    # 1. Logging Setup
+    # 1. Logging Setup — attach singleton handler to root + non-propagating uvicorn loggers
+    #    AND install uncaught exception / stderr print hooks so NO error is missed without docker.sock.
+    #    Keep sqlalchemy.engine at WARNING so SQL queries don't flood logs while DB errors still propagate!
     logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
-    
-    redis_handler = RedisLogHandler(container_name="cosmoquant_backend", publish_bot_logs=True)
-    redis_handler.setFormatter(logging.Formatter('%(message)s'))
-    
-    # Hook Uvicorn, FastAPI, and App Loggers (idempotent — feeds Sys Monitor Live Feed without docker.sock)
-    for logger_name in ["uvicorn", "uvicorn.access", "uvicorn.error", "fastapi", "app"]:
-        log = logging.getLogger(logger_name)
-        if not any(isinstance(h, RedisLogHandler) for h in log.handlers):
-            log.addHandler(redis_handler)
-        log.setLevel(logging.INFO)
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+    logging.getLogger("sqlalchemy.pool").setLevel(logging.WARNING)
 
-    logger.info("✅ Backend System Logging attached to Redis Live Feed.")
+    from app.utils import attach_live_log_handler, install_error_capture_hooks
+    attach_live_log_handler(
+        logger_names=("", "uvicorn", "uvicorn.access", "uvicorn.error", "fastapi", "app", "asyncio"),
+        container_name="cosmoquant_backend",
+        publish_bot_logs=True,
+        min_level=logging.INFO,
+    )
+    install_error_capture_hooks(container_name="cosmoquant_backend")
+
+    logger.info("✅ Backend System Logging & Error Capture Hooks attached to Redis Live Feed.")
 
     # 1.5 Clean up orphaned Celery jobs (Server Restarted)
     try:
@@ -1218,7 +1226,7 @@ async def websocket_block_trades(websocket: WebSocket):
 
 @app.websocket("/ws/system-alerts")
 async def websocket_system_alerts(websocket: WebSocket):
-    """Live Docker log alert stream (Owner/Superuser only)."""
+    """Live system alert stream with persisted history replay (Owner/Superuser only)."""
     from app.core.ws_auth import authenticate_websocket
     from app.db.session import SessionLocal
 
@@ -1231,6 +1239,24 @@ async def websocket_system_alerts(websocket: WebSocket):
         db.close()
 
     await manager.connect(websocket, "system_alerts")
+    # Immediately replay persisted recent alerts so page refresh / WS reconnect never loses incidents
+    try:
+        from app.services.log_monitor_service import SYS_ALERTS_HISTORY_KEY
+        async_r = redis_manager.get_redis()
+        if async_r is not None:
+            raw_items = await async_r.lrange(SYS_ALERTS_HISTORY_KEY, 0, 99)
+            history = []
+            for item in raw_items or []:
+                try:
+                    history.append(json.loads(item))
+                except Exception:
+                    pass
+            await websocket.send_json({
+                "type": "system_alerts_history",
+                "alerts": history,
+            })
+    except Exception:
+        pass
     try:
         while True: await websocket.receive_text()
     except WebSocketDisconnect:

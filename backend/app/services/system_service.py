@@ -658,7 +658,7 @@ class SystemService:
                 f"Binance WS: {network_data.get('binance_ws_ms')} ms",
                 f"Status: {network_data.get('status')}",
             ]
-            payload = json.dumps({
+            payload_dict = {
                 "type": "system_alert",
                 "id": f"lat_{int(time.time() * 1000)}",
                 "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -666,10 +666,24 @@ class SystemService:
                 "display_name": "Network & Exchange Latency",
                 "severity": level,
                 "category": "NETWORK_LATENCY",
+                "source": "latency_guard",
                 "message": msg,
                 "snippet": snippet,
-            })
+                "acknowledged": False,
+            }
+            payload = json.dumps(payload_dict)
             r = get_redis_client()
+            try:
+                from app.services.log_monitor_service import (
+                    SYS_ALERTS_HISTORY_KEY,
+                    SYS_ALERTS_HISTORY_MAX,
+                    SYS_ALERTS_HISTORY_TTL_SEC,
+                )
+                r.lpush(SYS_ALERTS_HISTORY_KEY, payload)
+                r.ltrim(SYS_ALERTS_HISTORY_KEY, 0, SYS_ALERTS_HISTORY_MAX - 1)
+                r.expire(SYS_ALERTS_HISTORY_KEY, SYS_ALERTS_HISTORY_TTL_SEC)
+            except Exception:
+                pass
             r.publish("system_alerts", payload)
         except Exception:
             pass

@@ -252,6 +252,9 @@ class NewsService:
                         NotificationSettings.is_enabled == True,
                         NotificationSettings.alert_market_news == True
                     ).all()
+                    has_telegram_subscribers = any(
+                        bool(getattr(s, 'telegram_chat_id', None)) for s in active_notifications
+                    )
                     
                     # Batch translate titles to Bengali to avoid rate limits
                     bn_titles_map = {}
@@ -260,11 +263,16 @@ class NewsService:
                             translator = GoogleTranslator(source='auto', target='bn')
                             titles_to_translate = [r.title for r in new_resources]
                             
-                            # Use translate_batch as suggested by the error message
-                            bn_titles_list = await asyncio.to_thread(translator.translate_batch, titles_to_translate)
-                            
-                            if bn_titles_list and len(bn_titles_list) == len(titles_to_translate):
-                                bn_titles_map = dict(zip(titles_to_translate, bn_titles_list))
+                            # Chunk requests to avoid Google 429 TooManyRequests
+                            chunk_size = 8
+                            for i in range(0, len(titles_to_translate), chunk_size):
+                                chunk = titles_to_translate[i:i + chunk_size]
+                                chunk_res = await asyncio.to_thread(translator.translate_batch, chunk)
+                                if chunk_res and len(chunk_res) == len(chunk):
+                                    for orig, trans in zip(chunk, chunk_res):
+                                        bn_titles_map[orig] = trans
+                                if i + chunk_size < len(titles_to_translate):
+                                    await asyncio.sleep(0.3)
                         except Exception as e:
                             err_msg = type(e).__name__
                             logger.warning(f"⚠️ Batch translation skipped (network error: {err_msg}) — will use original titles.")
@@ -307,8 +315,10 @@ class NewsService:
                             if ai_hashtags and ai_hashtags != "#CryptoNews":
                                 hashtags = ai_hashtags
 
-                            if summary:
+                            if summary and has_telegram_subscribers:
                                 voice_path = await telegram_ai_agent.generate_voice_note(ai_data.get("bengali_summary", ""))
+                                if voice_path:
+                                    await asyncio.sleep(0.5)
 
                             # ── Score icon ──
                             score = r.impact_score

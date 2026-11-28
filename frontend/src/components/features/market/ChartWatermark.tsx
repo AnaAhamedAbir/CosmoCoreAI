@@ -7,7 +7,7 @@ interface ChartWatermarkProps {
 }
 
 /**
- * Binance-style centered institutional chart watermark ("CosmoQuant").
+ * Binance-style bottom-left institutional chart watermark ("CosmoQuantAI").
  * Renders cleanly behind the transparent Lightweight Charts canvas and L2 Heatmap
  * with zero pointer interference and ultra-lightweight GPU cost on mobile/tablet Chrome.
  */
@@ -19,19 +19,19 @@ export const ChartWatermark: React.FC<ChartWatermarkProps> = React.memo(({
     return (
         <div
             aria-hidden="true"
-            className="absolute inset-0 z-[1] pointer-events-none select-none flex items-center justify-center overflow-hidden"
+            className="absolute inset-0 z-[1] pointer-events-none select-none flex items-end justify-start overflow-hidden pl-3 pb-2.5 sm:pl-5 sm:pb-3.5"
             style={{
                 left: leftAxisOffset,
                 right: rightAxisOffset,
                 bottom: 26,
             }}
         >
-            <div className="flex items-center gap-2.5 sm:gap-3.5 text-slate-900/[0.13] dark:text-white/[0.12]">
+            <div className="flex items-center gap-2 sm:gap-2.5 text-slate-900/[0.16] dark:text-white/[0.15]">
                 {/* Minimalist CosmoQuantAI Geometric Mark (Binance-inspired crisp vector) */}
                 <svg
                     viewBox="0 0 40 40"
                     fill="none"
-                    className={compact ? 'w-7 h-7 shrink-0' : 'w-10 h-10 sm:w-12 sm:h-12 shrink-0'}
+                    className={compact ? 'w-5 h-5 shrink-0' : 'w-6 h-6 sm:w-7 sm:h-7 shrink-0'}
                 >
                     <path
                         d="M20 3L35 20L20 37L5 20L20 3Z"
@@ -51,10 +51,10 @@ export const ChartWatermark: React.FC<ChartWatermarkProps> = React.memo(({
 
                 <div className="flex flex-col leading-none">
                     <span
-                        className={`font-sans font-extrabold tracking-[0.06em] ${
+                        className={`font-sans font-extrabold tracking-[0.05em] ${
                             compact
-                                ? 'text-[22px]'
-                                : 'text-[28px] sm:text-[38px] md:text-[46px]'
+                                ? 'text-[15px]'
+                                : 'text-[18px] sm:text-[22px] md:text-[24px]'
                         }`}
                     >
                         CosmoQuantAI

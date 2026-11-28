@@ -4659,7 +4659,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
     return (
         <div ref={chartSplitContainerRef} className="w-full h-full flex flex-col absolute inset-0 bg-white dark:bg-[#000000]">
             <div className="flex-1 min-h-0 relative bg-white dark:bg-[#000000]">
-                {/* Binance-style centered CosmoQuant watermark strictly behind Heatmap & Candlesticks */}
+                {/* Binance-style bottom-left CosmoQuantAI watermark strictly behind Heatmap & Candlesticks */}
                 <ChartWatermark
                     leftAxisOffset={axisOffsets.left}
                     rightAxisOffset={axisOffsets.right}

@@ -186,6 +186,8 @@ export const HudWallMagnetBar: React.FC<HudWallMagnetBarProps> = ({
 };
 
 interface FullModalLimitWallPanelProps {
+  panelEnabled: boolean;
+  onTogglePanelEnabled: () => void;
   wallTargets: WallTargetsSummary;
   frontRunTicks: number;
   setFrontRunTicks: (ticks: number) => void;
@@ -199,6 +201,8 @@ interface FullModalLimitWallPanelProps {
 }
 
 export const FullModalLimitWallPanel: React.FC<FullModalLimitWallPanelProps> = ({
+  panelEnabled,
+  onTogglePanelEnabled,
   wallTargets,
   frontRunTicks,
   setFrontRunTicks,
@@ -219,61 +223,96 @@ export const FullModalLimitWallPanel: React.FC<FullModalLimitWallPanelProps> = (
   };
 
   return (
-    <div className="p-2.5 rounded-xl bg-gradient-to-r from-amber-950/25 via-[#060b16] to-cyan-950/25 border border-amber-500/30 space-y-2">
+    <div
+      className={`rounded-xl border transition-colors ${
+        panelEnabled
+          ? 'p-2.5 bg-gradient-to-r from-amber-950/25 via-[#060b16] to-cyan-950/25 border-amber-500/30 space-y-2'
+          : 'px-2.5 py-2 bg-[#04070e]/90 border-white/10'
+      }`}
+    >
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <Magnet className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-          <span className="text-[11px] font-extrabold uppercase tracking-wider text-amber-300 truncate">
+        <div
+          className="flex items-center gap-1.5 min-w-0 cursor-pointer select-none"
+          onClick={onTogglePanelEnabled}
+        >
+          <Magnet className={`w-3.5 h-3.5 shrink-0 ${panelEnabled ? 'text-amber-400' : 'text-gray-500'}`} />
+          <span className={`text-[11px] font-extrabold uppercase tracking-wider truncate ${panelEnabled ? 'text-amber-300' : 'text-gray-300'}`}>
             Liquidity-Wall Magnet
           </span>
-          <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-200 border border-amber-400/30 font-mono font-bold shrink-0">
-            1-Click Front-Run
-          </span>
+          {panelEnabled ? (
+            <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-200 border border-amber-400/30 font-mono font-bold shrink-0">
+              1-Click Front-Run
+            </span>
+          ) : (
+            <span className="text-[9px] px-1.5 py-0.2 rounded bg-white/5 text-gray-400 border border-white/10 font-mono font-bold uppercase shrink-0">
+              OFF
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
-          <div className="flex items-center bg-black/50 rounded p-0.5 border border-white/10 text-[9.5px] font-mono">
-            {[1, 2, 3].map((t) => (
+          {panelEnabled && (
+            <>
+              <div className="flex items-center bg-black/50 rounded p-0.5 border border-white/10 text-[9.5px] font-mono">
+                {[1, 2, 3].map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setFrontRunTicks(t)}
+                    className={`px-1.5 py-0.5 rounded font-bold cursor-pointer transition-all ${
+                      frontRunTicks === t
+                        ? 'bg-amber-500 text-slate-950'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                    title={`Place order ${t} tick(s) ahead of the Whale Wall`}
+                  >
+                    {t}t
+                  </button>
+                ))}
+              </div>
+
               <button
-                key={t}
                 type="button"
-                onClick={() => setFrontRunTicks(t)}
-                className={`px-1.5 py-0.5 rounded font-bold cursor-pointer transition-all ${
-                  frontRunTicks === t
-                    ? 'bg-amber-500 text-slate-950'
-                    : 'text-gray-400 hover:text-white'
+                onClick={() => setWallMagnetEnabled(!wallMagnetEnabled)}
+                className={`px-1.5 py-0.5 rounded text-[9.5px] font-mono font-extrabold border cursor-pointer transition-all ${
+                  wallMagnetEnabled
+                    ? 'bg-amber-500/30 border-amber-400 text-amber-200 shadow-[0_0_8px_rgba(245,158,11,0.35)]'
+                    : 'bg-white/5 border-white/10 text-gray-400 hover:text-white'
                 }`}
-                title={`Place order ${t} tick(s) ahead of the Whale Wall`}
+                title="When ON, dragging Buy/Sell/TP/SL onto the chart snaps automatically to the nearest Whale Wall!"
               >
-                {t}t
+                {wallMagnetEnabled ? '🧲 Drag Snap ON' : '🧲 Drag Snap'}
               </button>
-            ))}
-          </div>
+
+              <button
+                type="button"
+                onClick={onRefreshWalls}
+                className="p-1 rounded bg-white/5 hover:bg-amber-500/20 border border-white/10 text-gray-400 hover:text-amber-300 cursor-pointer"
+                title="Refresh L2 Walls from Orderbook"
+              >
+                <RefreshCw className={`w-3 h-3 ${isFetchingWalls ? 'animate-spin text-amber-400' : ''}`} />
+              </button>
+            </>
+          )}
 
           <button
             type="button"
-            onClick={() => setWallMagnetEnabled(!wallMagnetEnabled)}
-            className={`px-1.5 py-0.5 rounded text-[9.5px] font-mono font-extrabold border cursor-pointer transition-all ${
-              wallMagnetEnabled
-                ? 'bg-amber-500/30 border-amber-400 text-amber-200 shadow-[0_0_8px_rgba(245,158,11,0.35)]'
-                : 'bg-white/5 border-white/10 text-gray-400 hover:text-white'
+            onClick={onTogglePanelEnabled}
+            className={`relative w-8 h-4 rounded-full transition-colors cursor-pointer shrink-0 ${
+              panelEnabled ? 'bg-amber-500' : 'bg-gray-700 hover:bg-gray-600'
             }`}
-            title="When ON, dragging Buy/Sell/TP/SL onto the chart snaps automatically to the nearest Whale Wall!"
+            title={panelEnabled ? 'Turn OFF Liquidity-Wall Magnet panel' : 'Turn ON Liquidity-Wall Magnet panel'}
           >
-            {wallMagnetEnabled ? '🧲 Drag Snap ON' : '🧲 Drag Snap'}
-          </button>
-
-          <button
-            type="button"
-            onClick={onRefreshWalls}
-            className="p-1 rounded bg-white/5 hover:bg-amber-500/20 border border-white/10 text-gray-400 hover:text-amber-300 cursor-pointer"
-            title="Refresh L2 Walls from Orderbook"
-          >
-            <RefreshCw className={`w-3 h-3 ${isFetchingWalls ? 'animate-spin text-amber-400' : ''}`} />
+            <span
+              className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform ${
+                panelEnabled ? 'translate-x-4' : 'translate-x-0'
+              }`}
+            />
           </button>
         </div>
       </div>
 
+      {panelEnabled && (
       <div className="grid grid-cols-2 gap-1.5">
         <button
           type="button"
@@ -339,6 +378,7 @@ export const FullModalLimitWallPanel: React.FC<FullModalLimitWallPanelProps> = (
           </div>
         </button>
       </div>
+      )}
     </div>
   );
 };

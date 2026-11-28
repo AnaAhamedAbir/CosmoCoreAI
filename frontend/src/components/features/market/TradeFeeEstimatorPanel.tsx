@@ -21,6 +21,8 @@ import {
 } from '../../../utils/tradeFeeCalculator';
 
 interface TradeFeeEstimatorPanelProps {
+  enabled?: boolean;
+  onToggleEnabled?: () => void;
   breakdown: TradeFeeBreakdown;
   feeProfile: TradingFeeProfile;
   bnbDiscountEnabled: boolean;
@@ -85,6 +87,8 @@ function formatCompactNotional(val: number): string {
 }
 
 export const TradeFeeEstimatorPanel: React.FC<TradeFeeEstimatorPanelProps> = ({
+  enabled = true,
+  onToggleEnabled,
   breakdown,
   feeProfile,
   bnbDiscountEnabled,
@@ -227,51 +231,66 @@ export const TradeFeeEstimatorPanel: React.FC<TradeFeeEstimatorPanelProps> = ({
 
   return (
     <div
-      className={`rounded-xl border p-2.5 space-y-2 transition-colors ${
-        isNativeSl
-          ? 'bg-gradient-to-b from-[#090f1d] via-[#070b15] to-[#050811] border-cyan-400/35 shadow-[0_0_20px_rgba(34,211,238,0.06)]'
-          : 'bg-[#050914] border-white/12'
+      className={`rounded-xl border transition-colors ${
+        !enabled
+          ? 'bg-[#050914] border-white/10 p-2'
+          : isNativeSl
+            ? 'bg-gradient-to-b from-[#090f1d] via-[#070b15] to-[#050811] border-cyan-400/35 shadow-[0_0_20px_rgba(34,211,238,0.06)] p-2.5 space-y-2'
+            : 'bg-[#050914] border-white/12 p-2.5 space-y-2'
       }`}
     >
-      {/* 1. SaaS Header Row: Mode + Symbol + Live Rate Source + BNB Toggle */}
+      {/* 1. SaaS Header Row: Mode + Symbol + Live Rate Source + BNB Toggle + Master ON/OFF Switch */}
       <div className="flex items-center justify-between gap-1.5 flex-wrap">
-        <div className="flex items-center gap-1.5 min-w-0">
+        <div
+          className={`flex items-center gap-1.5 min-w-0 ${onToggleEnabled ? 'cursor-pointer select-none' : ''}`}
+          onClick={() => onToggleEnabled?.()}
+        >
           <div
             className={`p-1 rounded-md border shrink-0 ${
-              isNativeSl
-                ? 'bg-cyan-500/15 border-cyan-400/35 text-cyan-300'
-                : 'bg-amber-500/15 border-amber-400/35 text-amber-300'
+              !enabled
+                ? 'bg-white/5 border-white/10 text-gray-500'
+                : isNativeSl
+                  ? 'bg-cyan-500/15 border-cyan-400/35 text-cyan-300'
+                  : 'bg-amber-500/15 border-amber-400/35 text-amber-300'
             }`}
           >
             <Coins className="w-3 h-3" />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-1 flex-wrap">
-              <span className="text-[10.5px] font-black uppercase tracking-wider text-white">
+              <span className={`text-[10.5px] font-black uppercase tracking-wider ${enabled ? 'text-white' : 'text-gray-300'}`}>
                 Auto Fee Estimator
               </span>
-              <span
-                className={`text-[8.5px] px-1.5 py-0.2 rounded font-mono font-black uppercase border ${
-                  breakdown.isFutures
-                    ? 'bg-amber-500/15 text-amber-300 border-amber-400/35'
-                    : 'bg-cyan-500/15 text-cyan-200 border-cyan-400/35'
-                }`}
-              >
-                {marketModeLabel}
-              </span>
-              <span
-                className={`text-[8px] px-1.5 py-0.2 rounded font-mono font-bold uppercase border inline-flex items-center gap-1 ${sourceBadge.cls}`}
-                title={`${breakdown.tierLabel} (${breakdown.symbol})`}
-              >
-                <span className={`w-1.5 h-1.5 rounded-full ${sourceBadge.dot}`} />
-                {sourceBadge.label}
-              </span>
+              {!enabled ? (
+                <span className="text-[8.5px] px-1.5 py-0.2 rounded font-mono font-bold uppercase bg-white/5 text-gray-400 border border-white/10">
+                  OFF
+                </span>
+              ) : (
+                <>
+                  <span
+                    className={`text-[8.5px] px-1.5 py-0.2 rounded font-mono font-black uppercase border ${
+                      breakdown.isFutures
+                        ? 'bg-amber-500/15 text-amber-300 border-amber-400/35'
+                        : 'bg-cyan-500/15 text-cyan-200 border-cyan-400/35'
+                    }`}
+                  >
+                    {marketModeLabel}
+                  </span>
+                  <span
+                    className={`text-[8px] px-1.5 py-0.2 rounded font-mono font-bold uppercase border inline-flex items-center gap-1 ${sourceBadge.cls}`}
+                    title={`${breakdown.tierLabel} (${breakdown.symbol})`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${sourceBadge.dot}`} />
+                    {sourceBadge.label}
+                  </span>
+                </>
+              )}
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
-          {feeProfile.bnb_discount_supported && (
+          {enabled && feeProfile.bnb_discount_supported && (
             <button
               type="button"
               onClick={onToggleBnbDiscount}
@@ -285,7 +304,7 @@ export const TradeFeeEstimatorPanel: React.FC<TradeFeeEstimatorPanelProps> = ({
               BNB -{Math.round(feeProfile.bnb_discount_rate * 100)}%
             </button>
           )}
-          {onRefreshFees && (
+          {enabled && onRefreshFees && (
             <button
               type="button"
               onClick={onRefreshFees}
@@ -296,8 +315,27 @@ export const TradeFeeEstimatorPanel: React.FC<TradeFeeEstimatorPanelProps> = ({
               <RefreshCw className={`w-2.5 h-2.5 ${isLoadingFees ? 'animate-spin text-cyan-300' : ''}`} />
             </button>
           )}
+          {onToggleEnabled && (
+            <button
+              type="button"
+              onClick={onToggleEnabled}
+              className={`relative w-8 h-4 rounded-full transition-colors cursor-pointer shrink-0 ${
+                enabled ? 'bg-cyan-500' : 'bg-gray-700 hover:bg-gray-600'
+              }`}
+              title={enabled ? 'Turn OFF Auto Fee Estimator' : 'Turn ON Auto Fee Estimator'}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform ${
+                  enabled ? 'translate-x-4' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          )}
         </div>
       </div>
+
+      {enabled && (
+      <>
 
       {/* 2. Live Pair Rate Strip */}
       <div className="flex items-center justify-between gap-2 px-2 py-1 rounded-lg bg-black/45 border border-white/[0.07] text-[9.5px] font-mono flex-wrap">
@@ -687,6 +725,8 @@ export const TradeFeeEstimatorPanel: React.FC<TradeFeeEstimatorPanelProps> = ({
             </div>
           )}
         </div>
+      )}
+      </>
       )}
     </div>
   );

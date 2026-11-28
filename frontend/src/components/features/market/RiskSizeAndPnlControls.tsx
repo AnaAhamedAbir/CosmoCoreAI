@@ -93,6 +93,7 @@ interface LivePnlAndRRBarProps {
   orderType: 'Limit' | 'Market' | 'SmartPeg';
   isFutures: boolean;
   feeBreakdown?: TradeFeeBreakdown;
+  showFeeSummary?: boolean;
 }
 
 export const LivePnlAndRRBar: React.FC<LivePnlAndRRBarProps> = ({
@@ -100,12 +101,14 @@ export const LivePnlAndRRBar: React.FC<LivePnlAndRRBarProps> = ({
   orderType,
   isFutures,
   feeBreakdown,
+  showFeeSummary = true,
 }) => {
   const hasAnyMetric =
     preview.estProfitUsd !== null ||
     preview.maxLossUsd !== null ||
-    preview.makerFeeSavingsUsd > 0.01 ||
-    Boolean(feeBreakdown && feeBreakdown.hasPositionSize && feeBreakdown.roundTripSlFeeUsd > 0);
+    (showFeeSummary &&
+      (preview.makerFeeSavingsUsd > 0.01 ||
+        Boolean(feeBreakdown && feeBreakdown.hasPositionSize && feeBreakdown.roundTripSlFeeUsd > 0)));
   if (!hasAnyMetric || preview.notionalUsd <= 0) return null;
 
   const entryFeeUsd = feeBreakdown ? feeBreakdown.entryLeg.feeUsd : preview.takerFeeUsd;
@@ -178,7 +181,7 @@ export const LivePnlAndRRBar: React.FC<LivePnlAndRRBarProps> = ({
         )}
       </div>
 
-      {(feeBreakdown?.hasPositionSize || makerSavingsUsd >= 0.01) && (
+      {showFeeSummary && (feeBreakdown?.hasPositionSize || makerSavingsUsd >= 0.01) && (
         <div className="flex items-center justify-between gap-1.5 flex-wrap text-[9.5px] text-gray-400 pt-0.5 border-t border-white/5">
           {feeBreakdown ? (
             <>

@@ -97,7 +97,21 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     confirmIfHighLatency,
   } = useLatencyGuard();
   const [isOpen, setIsOpen] = useState(false);
-  const [isMinimized, setIsMinimized] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(true);
+  const [feeEstimatorEnabled, setFeeEstimatorEnabled] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('cosmo_manual_fee_estimator_enabled_v1');
+      if (saved !== null) return saved === 'true';
+    } catch { }
+    return true;
+  });
+  const [wallMagnetPanelEnabled, setWallMagnetPanelEnabled] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('cosmo_manual_wall_panel_enabled_v1');
+      if (saved !== null) return saved === 'true';
+    } catch { }
+    return false;
+  });
   const [hudDrawer, setHudDrawer] = useState<'none' | 'force' | 'ai' | 'wall'>('none');
   const [showFuturesPopover, setShowFuturesPopover] = useState(false);
   const [activeTerminalTab, setActiveTerminalTab] = useState<'order' | 'brackets' | 'ai' | 'orders'>('order');
@@ -357,14 +371,14 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
   const [positionData, setPositionData] = useState<FastPositionResponse | null>(null);
   const [isLoadingPosition, setIsLoadingPosition] = useState(false);
   const [tpConfig, setTpConfig] = useState({
-    enabled: true,
+    enabled: false,
     mode: 'price' as 'percentage' | 'price' | 'absolute' | 'atr',
     value: '0.00005',
     orderType: 'Limit' as 'Limit' | 'Market',
     timeoutMins: 0
   });
   const [slConfig, setSlConfig] = useState({
-    enabled: true,
+    enabled: false,
     type: 'smart_chase' as 'fixed' | 'trailing' | 'smart_chase' | 'trailing_chase',
     mode: 'price' as 'percentage' | 'price' | 'absolute' | 'atr',
     value: '0.0002',
@@ -1860,9 +1874,12 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     }
   }, [activeSymbol, activeExchangeId, smartPegWallMultiplier, smartPegFrontRunTicks, selectedApi]);
 
-  // Auto-fetch walls if modal is open and parent orderbookWalls lacks either buy or sell side
+  // Auto-fetch walls only when a wall-dependent feature is actually active
+  const isWallLookupNeeded = Boolean(
+    wallMagnetPanelEnabled || wallMagnetEnabled || hudDrawer === 'wall' || tpConfig.enabled
+  );
   React.useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !isWallLookupNeeded) return;
     const hasBuy = Boolean(orderbookWalls?.some((w) => w.type === 'buy'));
     const hasSell = Boolean(orderbookWalls?.some((w) => w.type === 'sell'));
     if (hasBuy && hasSell) return;
@@ -1873,7 +1890,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       }
     }, 3500);
     return () => clearInterval(tId);
-  }, [isOpen, orderbookWalls, fetchNearestWalls]);
+  }, [isOpen, isWallLookupNeeded, orderbookWalls, fetchNearestWalls]);
 
   // Persist Wall Magnet & SmartPeg strategy preferences across reloads
   React.useEffect(() => {
@@ -2206,7 +2223,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     exchangeId: activeExchangeId,
     isFutures,
     isInverse: isInverseFutures,
-    enabled: isOpen,
+    enabled: isOpen && feeEstimatorEnabled,
   });
 
   const tradePnlPreview = React.useMemo(() => {
@@ -2591,8 +2608,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
         const inferredSide: 'Buy' | 'Sell' = (effectiveCurrentPrice && clickedPrice < effectiveCurrentPrice) ? 'Buy' : 'Sell';
         handleSideChange(inferredSide);
       }
-      setIsOpen(true); // Auto-open modal whether triggered by top button or chart price click
-      setIsMinimized(false);
+      setIsOpen(true); // Auto-open minimized Quick-Trade HUD first when Manual Trade is triggered
+      setIsMinimized(true);
     } else if (!openTrigger || openTrigger === 0) {
       lastTriggerRef.current = 0;
     }
@@ -3778,7 +3795,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
             exit={{ scale: 0, opacity: 0 }}
             onClick={() => {
               setIsOpen(true);
-              setIsMinimized(false);
+              setIsMinimized(true);
             }}
             className={`absolute inset-0 w-full h-full rounded-full flex items-center justify-center border text-white ${isThermalGuardActive ? '' : 'backdrop-blur-md'} z-[999] transition-all focus:outline-none group ${activeBrackets.some(b => b.status === 'chasing' || b.status === 'pegging')
               ? 'bg-gradient-to-r from-red-600 via-amber-600 to-amber-500 border-amber-400 animate-pulse shadow-md dark:shadow-[0_0_20px_rgba(245,158,11,0.7)]'
@@ -4104,7 +4121,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           onClick={(e) => {
                             e.stopPropagation();
                             setIsOpen(false);
-                            setIsMinimized(false);
+                            setIsMinimized(true);
                             onClose?.();
                           }}
                           onPointerDown={(e) => e.stopPropagation()}
@@ -4934,7 +4951,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           onClick={(e) => {
                             e.stopPropagation();
                             setIsOpen(false);
-                            setIsMinimized(false);
+                            setIsMinimized(true);
                             onClose?.();
                           }}
                           onPointerDown={(e) => e.stopPropagation()}
@@ -5768,6 +5785,19 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                 </div>
 
                                 <FullModalLimitWallPanel
+                                  panelEnabled={wallMagnetPanelEnabled}
+                                  onTogglePanelEnabled={() => {
+                                    setWallMagnetPanelEnabled((prev) => {
+                                      const next = !prev;
+                                      if (!next) {
+                                        setWallMagnetEnabled(false);
+                                      }
+                                      try {
+                                        localStorage.setItem('cosmo_manual_wall_panel_enabled_v1', String(next));
+                                      } catch { }
+                                      return next;
+                                    });
+                                  }}
                                   wallTargets={wallTargets}
                                   frontRunTicks={smartPegFrontRunTicks}
                                   setFrontRunTicks={setSmartPegFrontRunTicks}
@@ -6617,6 +6647,16 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             formatDisplayPrice={formatDisplayPrice}
                             onSnapTpToWall={handleSnapTpToWall}
                             tradePnlPreview={tradePnlPreview}
+                            feeEstimatorEnabled={feeEstimatorEnabled}
+                            onToggleFeeEstimator={() => {
+                              setFeeEstimatorEnabled((prev) => {
+                                const next = !prev;
+                                try {
+                                  localStorage.setItem('cosmo_manual_fee_estimator_enabled_v1', String(next));
+                                } catch { }
+                                return next;
+                              });
+                            }}
                             feeBreakdown={tradeFeeBreakdown}
                             feeProfile={feeProfile}
                             bnbDiscountEnabled={bnbDiscountEnabled}
@@ -6742,6 +6782,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         orderType={orderType}
                         isFutures={isFutures}
                         feeBreakdown={tradeFeeBreakdown}
+                        showFeeSummary={feeEstimatorEnabled}
                       />
 
                       {/* Primary Execute + Drag-to-Chart CTA & Inline TP/SL Handles */}

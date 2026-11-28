@@ -93,6 +93,8 @@ interface BracketTpSlTabPanelProps {
   formatDisplayPrice: (val: number | undefined | null) => string;
   onSnapTpToWall: (frontRunPrice: number, wall: OrderbookWall) => void;
   tradePnlPreview: TradePnlPreview;
+  feeEstimatorEnabled?: boolean;
+  onToggleFeeEstimator?: () => void;
   feeBreakdown?: TradeFeeBreakdown;
   feeProfile?: TradingFeeProfile;
   bnbDiscountEnabled?: boolean;
@@ -149,6 +151,8 @@ export const BracketTpSlTabPanel: React.FC<BracketTpSlTabPanelProps> = ({
   formatDisplayPrice,
   onSnapTpToWall,
   tradePnlPreview,
+  feeEstimatorEnabled = true,
+  onToggleFeeEstimator,
   feeBreakdown,
   feeProfile,
   bnbDiscountEnabled = false,
@@ -335,7 +339,7 @@ export const BracketTpSlTabPanel: React.FC<BracketTpSlTabPanelProps> = ({
                 </span>
               )}
             </div>
-            {feeBreakdown && feeBreakdown.netSlMaxLossUsd !== null && feeBreakdown.roundTripSlFeeUsd > 0 && (
+            {feeEstimatorEnabled && feeBreakdown && feeBreakdown.netSlMaxLossUsd !== null && feeBreakdown.roundTripSlFeeUsd > 0 && (
               <div className="flex items-center justify-between text-[8.5px] text-gray-400 mt-0.5 pt-0.5 border-t border-white/5">
                 <span>Net incl. fee</span>
                 <span className="text-rose-200 font-bold">
@@ -382,7 +386,7 @@ export const BracketTpSlTabPanel: React.FC<BracketTpSlTabPanelProps> = ({
                 </span>
               )}
             </div>
-            {feeBreakdown && feeBreakdown.netTpProfitUsd !== null && feeBreakdown.roundTripTpFeeUsd > 0 && (
+            {feeEstimatorEnabled && feeBreakdown && feeBreakdown.netTpProfitUsd !== null && feeBreakdown.roundTripTpFeeUsd > 0 && (
               <div className="flex items-center justify-between text-[8.5px] text-gray-400 mt-0.5 pt-0.5 border-t border-white/5">
                 <span>Net after fee</span>
                 <span
@@ -975,7 +979,7 @@ export const BracketTpSlTabPanel: React.FC<BracketTpSlTabPanelProps> = ({
                   </div>
                   <span className="block text-[9px] text-gray-400 mt-0.5 leading-tight">
                     On Exchange Book •{' '}
-                    {feeBreakdown ? (
+                    {feeEstimatorEnabled && feeBreakdown ? (
                       <span className="text-amber-300 font-mono font-bold">
                         Taker {formatFeeRatePct(feeBreakdown.effectiveTakerRate)}
                         {feeBreakdown.hasPositionSize
@@ -1017,7 +1021,7 @@ export const BracketTpSlTabPanel: React.FC<BracketTpSlTabPanelProps> = ({
                   </div>
                   <span className="block text-[9px] text-gray-400 mt-0.5 leading-tight">
                     Bot Maker Loop •{' '}
-                    {feeBreakdown ? (
+                    {feeEstimatorEnabled && feeBreakdown ? (
                       <span className="text-emerald-300 font-mono font-bold">
                         Maker {formatFeeRatePct(feeBreakdown.effectiveMakerRate)}
                         {feeBreakdown.hasPositionSize
@@ -1231,6 +1235,8 @@ export const BracketTpSlTabPanel: React.FC<BracketTpSlTabPanelProps> = ({
               {/* Live Auto Fee & Leverage Impact Estimator */}
               {feeBreakdown && feeProfile && (
                 <TradeFeeEstimatorPanel
+                  enabled={feeEstimatorEnabled}
+                  onToggleEnabled={onToggleFeeEstimator}
                   breakdown={feeBreakdown}
                   feeProfile={feeProfile}
                   bnbDiscountEnabled={bnbDiscountEnabled}
@@ -1847,6 +1853,8 @@ export const BracketTpSlTabPanel: React.FC<BracketTpSlTabPanelProps> = ({
       {/* Always-available Auto Fee Estimator when Stop-Loss is OFF */}
       {!slConfig.enabled && feeBreakdown && feeProfile && (
         <TradeFeeEstimatorPanel
+          enabled={feeEstimatorEnabled}
+          onToggleEnabled={onToggleFeeEstimator}
           breakdown={feeBreakdown}
           feeProfile={feeProfile}
           bnbDiscountEnabled={bnbDiscountEnabled}

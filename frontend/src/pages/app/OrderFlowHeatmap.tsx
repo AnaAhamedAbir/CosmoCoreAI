@@ -7509,7 +7509,7 @@ const OrderFlowHeatmap: React.FC = () => {
                             <span className="text-[10px] font-mono font-black text-emerald-600 dark:text-emerald-400">
                                 {l2RadarTelemetry.bidDomPct.toFixed(0)}% B
                             </span>
-                            <div className="w-16 lg:w-20 h-1.5 rounded-full bg-rose-500/40 overflow-hidden flex">
+                            <div className="cosmo-radar-bar w-16 lg:w-20 h-1.5 rounded-full bg-rose-500/40 overflow-hidden flex">
                                 <div
                                     className="h-full bg-emerald-500"
                                     style={{ width: `${Math.min(96, Math.max(4, l2RadarTelemetry.bidDomPct))}%` }}
@@ -7559,7 +7559,7 @@ const OrderFlowHeatmap: React.FC = () => {
                                 </span>
                             )}
                             {l2RadarTelemetry.supportDistPct !== null && (
-                                <span className="opacity-80">
+                                <span className="cosmo-radar-dist opacity-80">
                                     (-{Math.abs(l2RadarTelemetry.supportDistPct).toFixed(2)}%)
                                 </span>
                             )}
@@ -7604,7 +7604,7 @@ const OrderFlowHeatmap: React.FC = () => {
                                 </span>
                             )}
                             {l2RadarTelemetry.resistDistPct !== null && (
-                                <span className="opacity-80">
+                                <span className="cosmo-radar-dist opacity-80">
                                     (+{Math.abs(l2RadarTelemetry.resistDistPct).toFixed(2)}%)
                                 </span>
                             )}

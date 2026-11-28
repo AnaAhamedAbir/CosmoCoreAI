@@ -29,6 +29,7 @@ import type { Trade, Exchange, Timeframe } from '@/types';
 import SmartOrderForm from '@/components/features/trading/SmartOrderForm';
 import { getThermalProfile, isThermalGuardActive } from '@/utils/deviceProfile';
 import { useDeviceProfile } from '@/hooks/useDeviceProfile';
+import { useViewportProfile } from '@/hooks/useViewportProfile';
 
 interface OrderBookEntry {
     price: number;
@@ -599,7 +600,10 @@ const Market: React.FC = () => {
     const { showToast } = useToast();
     const { apiKeys } = useSettings();
     const deviceProfile = useDeviceProfile();
+    const viewportProfile = useViewportProfile();
     const isPhoneMobileUI = deviceProfile.isPhoneMobileUI;
+    const stackMarketVertically =
+        isPhoneMobileUI || (deviceProfile.isTablet && viewportProfile.metrics.width < 960);
     const thermalGuard = isThermalGuardActive();
 
     const {
@@ -1221,9 +1225,9 @@ const Market: React.FC = () => {
 
     return (
         <div
-            data-viewport-lock={!isPhoneMobileUI ? 'true' : undefined}
+            data-viewport-lock={!stackMarketVertically ? 'true' : undefined}
             className={`flex flex-col ${
-                isPhoneMobileUI ? 'min-h-full gap-3 overflow-y-auto pb-6' : 'h-full gap-3 overflow-hidden'
+                stackMarketVertically ? 'min-h-full gap-3 overflow-y-auto pb-6' : 'h-full gap-3 overflow-hidden'
             }`}
         >
             {isModalOpen && (
@@ -1467,16 +1471,16 @@ const Market: React.FC = () => {
             {/* ── Main Workspace: Chart + OrderBook / Execution Dock ───────────── */}
             <div
                 ref={containerRef}
-                className={`flex-1 flex ${isPhoneMobileUI ? 'flex-col gap-3' : 'gap-2.5 min-h-0'} relative`}
+                className={`flex-1 flex ${stackMarketVertically ? 'flex-col gap-3' : 'gap-2.5 min-h-0'} relative`}
             >
                 {isResizing && <div className="absolute inset-0 z-50 cursor-col-resize" />}
 
                 {/* Left: TradingView Chart Card */}
                 <div
                     className={`flex flex-col ${
-                        isPhoneMobileUI ? 'w-full h-[360px] min-h-[320px]' : 'h-full'
+                        stackMarketVertically ? 'w-full h-[360px] min-h-[320px]' : 'h-full'
                     }`}
-                    style={isPhoneMobileUI ? undefined : { width: `${leftPaneWidth}%` }}
+                    style={stackMarketVertically ? undefined : { width: `${leftPaneWidth}%` }}
                 >
                     <div className="h-full rounded-2xl bg-white dark:bg-[#070b14] border border-slate-200 dark:border-white/10 shadow-sm overflow-hidden flex flex-col">
                         <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02]">
@@ -1517,7 +1521,7 @@ const Market: React.FC = () => {
                 </div>
 
                 {/* Desktop/Tablet Resizable Splitter */}
-                {!isPhoneMobileUI && (
+                {!stackMarketVertically && (
                     <div
                         className="w-1.5 cursor-col-resize flex items-center justify-center group flex-shrink-0"
                         onMouseDown={handleMouseDown}
@@ -1535,10 +1539,10 @@ const Market: React.FC = () => {
                 {/* Right: Execution, OrderBook & Tape Dock */}
                 <div
                     className={`flex flex-col gap-2.5 ${
-                        isPhoneMobileUI ? 'w-full min-h-[440px]' : 'h-full min-w-[300px]'
+                        stackMarketVertically ? 'w-full min-h-[440px]' : 'h-full min-w-[300px]'
                     }`}
                     style={
-                        isPhoneMobileUI
+                        stackMarketVertically
                             ? undefined
                             : { width: `calc(${100 - leftPaneWidth}% - 10px)` }
                     }

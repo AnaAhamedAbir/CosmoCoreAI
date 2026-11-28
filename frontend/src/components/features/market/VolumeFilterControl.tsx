@@ -79,7 +79,7 @@ export const VolumeFilterControl: React.FC<VolumeFilterControlProps> = ({
     };
 
     return (
-        <div className="flex items-center gap-2 bg-slate-100 dark:bg-[#0b101d] px-2.5 py-1 rounded-xl border border-slate-200 dark:border-white/10">
+        <div className="cosmo-whale-control flex items-center gap-2 bg-slate-100 dark:bg-[#0b101d] px-2.5 py-1 rounded-xl border border-slate-200 dark:border-white/10">
             <span className="cosmo-whale-filter-label inline-flex items-center gap-1 text-[10.5px] font-mono font-black uppercase tracking-wider text-slate-600 dark:text-gray-300 whitespace-nowrap">
                 <Filter className="w-3 h-3 text-amber-500" />
                 <span className="hidden sm:inline">Whale Filter</span>
@@ -151,7 +151,7 @@ export const VolumeFilterControl: React.FC<VolumeFilterControlProps> = ({
                 onKeyDown={(e) => {
                     if (e.key === 'Enter') handleInputBlur();
                 }}
-                className="w-14 bg-white dark:bg-[#050811] border border-slate-200 dark:border-white/10 focus:border-amber-400 rounded-md px-1.5 py-0.5 text-[11px] font-mono font-black text-amber-600 dark:text-amber-300 outline-none text-right"
+                className="cosmo-whale-input w-14 bg-white dark:bg-[#050811] border border-slate-200 dark:border-white/10 focus:border-amber-400 rounded-md px-1.5 py-0.5 text-[11px] font-mono font-black text-amber-600 dark:text-amber-300 outline-none text-right"
                 placeholder="5M"
                 title="Custom minimum wall size (e.g. 250K, 2.5M)"
             />

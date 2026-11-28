@@ -1242,7 +1242,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                 <div className="cosmo-studio-workbench w-full flex flex-col bg-white dark:bg-[#070B14] border border-slate-200 dark:border-slate-800/80 rounded-2xl p-3.5 laptop:p-3 shadow-sm relative overflow-hidden h-full">
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 laptop:gap-3.5 flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
                         {/* COLUMN 1: Core Parameters */}
-                        <div className={`${mobileColumnTab !== 'all' && mobileColumnTab !== 'core' ? 'hidden lg:flex' : 'flex'} flex-col h-full bg-slate-50/60 dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800/90 border-t-2 border-t-cyan-500 rounded-2xl overflow-hidden`}>
+                        <div className={`${mobileColumnTab !== 'all' && mobileColumnTab !== 'core' ? 'hidden lg:flex' : 'flex'} flex-col lg:h-full bg-slate-50/60 dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800/90 border-t-2 border-t-cyan-500 rounded-2xl overflow-hidden`}>
                             <div className="cosmo-studio-col-header px-4 py-3 bg-slate-100/80 dark:bg-[#070B14] border-b border-slate-200 dark:border-slate-800/80 flex items-center justify-between flex-shrink-0 relative z-20">
                                 <h3 className="text-xs font-bold text-cyan-600 dark:text-cyan-400 flex items-center gap-2 uppercase tracking-wider">
                                     <Settings className="w-4 h-4" /> 01 · Core Parameters &amp; Split
@@ -1564,7 +1564,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                         </div>
 
                         {/* COLUMN 2: Neural Architecture */}
-                        <div className={`${mobileColumnTab !== 'all' && mobileColumnTab !== 'neural' ? 'hidden lg:flex' : 'flex'} flex-col h-full bg-slate-50/60 dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800/90 border-t-2 border-t-indigo-500 rounded-2xl overflow-hidden`}>
+                        <div className={`${mobileColumnTab !== 'all' && mobileColumnTab !== 'neural' ? 'hidden lg:flex' : 'flex'} flex-col lg:h-full bg-slate-50/60 dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800/90 border-t-2 border-t-indigo-500 rounded-2xl overflow-hidden`}>
                             <div className="cosmo-studio-col-header px-4 py-3 bg-slate-100/80 dark:bg-[#070B14] border-b border-slate-200 dark:border-slate-800/80 flex items-center justify-between flex-shrink-0 relative z-20">
                                 <h3 className="text-xs font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-2 uppercase tracking-wider">
                                     <Cpu className="w-4 h-4" /> 02 · Neural Architecture
@@ -1938,7 +1938,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                         </div>
 
                         {/* COLUMN 3: Data Engine & Features */}
-                        <div className={`${mobileColumnTab !== 'all' && mobileColumnTab !== 'data' ? 'hidden lg:flex' : 'flex'} flex-col h-full bg-slate-50/60 dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800/90 border-t-2 border-t-emerald-500 rounded-2xl overflow-hidden`}>
+                        <div className={`${mobileColumnTab !== 'all' && mobileColumnTab !== 'data' ? 'hidden lg:flex' : 'flex'} flex-col lg:h-full bg-slate-50/60 dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800/90 border-t-2 border-t-emerald-500 rounded-2xl overflow-hidden`}>
                             <div className="cosmo-studio-col-header px-4 py-3 bg-slate-100/80 dark:bg-[#070B14] border-b border-slate-200 dark:border-slate-800/80 flex items-center justify-between flex-shrink-0 relative z-20">
                                 <h3 className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-2 uppercase tracking-wider">
                                     <Database className="w-4 h-4" /> 03 · Data Engine &amp; Features

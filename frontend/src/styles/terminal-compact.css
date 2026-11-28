@@ -3,35 +3,28 @@
    ============================================================================
    Ensures high-density institutional terminals (Wallhunter_Bot & Model Training
    Studio) keep their 1920x1080 single-row toolbar & multi-column proportions
-   on 1366x768 and 1440-1600 screens without wrapping toolbars onto extra rows
-   or squishing the main chart / configuration columns.
+   on 1366x768 and 1440-1600 screens without pushing options off-screen or
+   squishing the main chart / configuration columns.
    ============================================================================ */
 
 html.display-compact-hd:not(.mobile-phone-ui):not(.display-mode-native):not(.display-mode-comfort),
 html.display-standard-hd:not(.mobile-phone-ui):not(.display-mode-native):not(.display-mode-comfort) {
   /* --------------------------------------------------------------------------
      A. Wallhunter_Bot (OrderFlowHeatmap + HeatmapSubNav)
-     Prevent header & subnav from wrapping onto 4 rows on <=1600px monitors.
+     Tighten horizontal button/pill footprint so ALL options stay visible inside
+     1366px without scrolling off-screen or clipping dropdowns.
      -------------------------------------------------------------------------- */
   & .cosmo-heatmap-header {
-    flex-wrap: nowrap !important;
-    overflow-x: auto !important;
-    overflow-y: hidden !important;
-    scrollbar-width: none;
+    flex-wrap: wrap !important;
+    overflow: visible !important;
     padding: 0.25rem 0.5rem !important;
-    gap: 0.35rem !important;
-  }
-
-  & .cosmo-heatmap-header::-webkit-scrollbar,
-  & .cosmo-heatmap-subnav::-webkit-scrollbar,
-  & .cosmo-heatmap-panel-bar::-webkit-scrollbar {
-    display: none;
+    gap: 0.3rem !important;
   }
 
   & .cosmo-heatmap-header > div {
-    flex-wrap: nowrap !important;
-    flex-shrink: 0 !important;
-    gap: 0.3rem !important;
+    flex-wrap: wrap !important;
+    min-width: 0 !important;
+    gap: 0.25rem !important;
   }
 
   & .cosmo-heatmap-header button {
@@ -39,17 +32,15 @@ html.display-standard-hd:not(.mobile-phone-ui):not(.display-mode-native):not(.di
   }
 
   & .cosmo-heatmap-subnav {
-    flex-wrap: nowrap !important;
-    overflow-x: auto !important;
-    overflow-y: hidden !important;
-    scrollbar-width: none;
+    flex-wrap: wrap !important;
+    overflow: visible !important;
     padding: 0.2rem 0.5rem !important;
-    gap: 0.35rem !important;
+    gap: 0.3rem !important;
   }
 
   & .cosmo-heatmap-subnav > div {
-    flex-wrap: nowrap !important;
-    flex-shrink: 0 !important;
+    flex-wrap: wrap !important;
+    min-width: 0 !important;
     gap: 0.25rem !important;
   }
 
@@ -58,16 +49,15 @@ html.display-standard-hd:not(.mobile-phone-ui):not(.display-mode-native):not(.di
   }
 
   & .cosmo-heatmap-panel-bar {
-    flex-wrap: nowrap !important;
-    overflow-x: auto !important;
-    scrollbar-width: none;
+    flex-wrap: wrap !important;
+    overflow: visible !important;
     padding: 0.2rem 0.5rem !important;
-    gap: 0.35rem !important;
+    gap: 0.3rem !important;
   }
 
   & .cosmo-heatmap-panel-bar > div {
-    flex-wrap: nowrap !important;
-    flex-shrink: 0 !important;
+    flex-wrap: wrap !important;
+    min-width: 0 !important;
   }
 
   & .cosmo-heatmap-grid-wrap {
@@ -89,14 +79,14 @@ html.display-standard-hd:not(.mobile-phone-ui):not(.display-mode-native):not(.di
   }
 
   & .cosmo-studio-header {
-    flex-wrap: nowrap !important;
+    flex-wrap: wrap !important;
     padding: 0.4rem 0.65rem !important;
-    gap: 0.5rem !important;
+    gap: 0.4rem !important;
   }
 
   & .cosmo-studio-header > div:last-child {
-    flex-wrap: nowrap !important;
-    flex-shrink: 0 !important;
+    flex-wrap: wrap !important;
+    gap: 0.3rem !important;
   }
 
   & .cosmo-studio-header-sub {
@@ -134,14 +124,43 @@ html.display-standard-hd:not(.mobile-phone-ui):not(.display-mode-native):not(.di
   }
 }
 
-/* Extra-tight 1366x768 Compact HD refinements */
+/* Extra-tight 1366x768 Compact HD: keep all Wallhunter_Bot controls inside 1280px */
 html.display-compact-hd:not(.mobile-phone-ui):not(.display-mode-native):not(.display-mode-comfort) {
+  & .cosmo-heatmap-header > div:last-child button {
+    padding: 0.28rem 0.5rem !important;
+    font-size: 0.68rem !important;
+    gap: 0.25rem !important;
+  }
+
+  & .cosmo-radar-bar {
+    width: 2.5rem !important;
+  }
+
+  & .cosmo-radar-dist {
+    display: none !important;
+  }
+
+  & .cosmo-heatmap-subnav button {
+    padding: 0.22rem 0.4rem !important;
+    font-size: 0.65rem !important;
+  }
+
+  & .cosmo-whale-control {
+    padding: 0.18rem 0.4rem !important;
+    gap: 0.25rem !important;
+  }
+
   & .cosmo-whale-filter-label {
     display: none !important;
   }
 
   & .cosmo-whale-slider {
-    width: 3.25rem !important;
+    width: 2.75rem !important;
+  }
+
+  & .cosmo-whale-input {
+    width: 2.75rem !important;
+    font-size: 0.65rem !important;
   }
 
   & .cosmo-studio-root {

@@ -1036,7 +1036,7 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
                                     </div>
                                 </>
                             ) : (
-                                <div className="flex items-center justify-between gap-3 px-6 laptop:px-4 h-14 laptop:h-12 min-w-0">
+                                <div className="flex items-center justify-between gap-2 md:gap-3 px-3 md:px-6 laptop:px-4 h-14 laptop:h-12 min-w-0 overflow-x-auto hide-scrollbar">
                                     {/* Left — Live Terminal Breadcrumb & Market Switcher */}
                                     <div className="flex items-center gap-3 min-w-0">
                                         <div className="flex items-center gap-2.5 min-w-0">

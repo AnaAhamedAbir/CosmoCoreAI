@@ -809,7 +809,7 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 laptop:gap-3.5 flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
                         
                         {/* COLUMN 1: Core Parameters (Modularized) */}
-                        <div className={`${mobileColumnTab !== 'all' && mobileColumnTab !== 'core' ? 'hidden lg:flex' : 'flex'} flex-col h-full min-h-0`}>
+                        <div className={`${mobileColumnTab !== 'all' && mobileColumnTab !== 'core' ? 'hidden lg:flex' : 'flex'} flex-col lg:h-full min-h-0`}>
                         <ForexCoreParametersPanel
                             symbol={symbol}
                             setSymbol={setSymbol}
@@ -906,7 +906,7 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
                         </div>
 
                         {/* COLUMN 2: Neural Architecture */}
-                        <div className={`${mobileColumnTab !== 'all' && mobileColumnTab !== 'neural' ? 'hidden lg:flex' : 'flex'} flex-col h-full bg-slate-50/60 dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800/90 border-t-2 border-t-indigo-500 rounded-2xl overflow-hidden`}>
+                        <div className={`${mobileColumnTab !== 'all' && mobileColumnTab !== 'neural' ? 'hidden lg:flex' : 'flex'} flex-col lg:h-full bg-slate-50/60 dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800/90 border-t-2 border-t-indigo-500 rounded-2xl overflow-hidden`}>
                             <div className="px-4 py-3 bg-slate-100/80 dark:bg-[#070B14] border-b border-slate-200 dark:border-slate-800/80 flex items-center justify-between flex-shrink-0 relative z-20">
                                 <h3 className="text-xs font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-2 uppercase tracking-wider"><Cpu className="w-4 h-4" /> 02 · Neural &amp; Econometric Engine</h3>
                                 <span className="text-[10px] font-mono text-indigo-600 dark:text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/25 truncate max-w-[130px]">
@@ -1149,7 +1149,7 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
                         </div>
 
                         {/* COLUMN 3: Forex Data Engine (TradFi Data Pipeline) */}
-                        <div className={`${mobileColumnTab !== 'all' && mobileColumnTab !== 'data' ? 'hidden lg:flex' : 'flex'} flex-col h-full min-h-0`}>
+                        <div className={`${mobileColumnTab !== 'all' && mobileColumnTab !== 'data' ? 'hidden lg:flex' : 'flex'} flex-col lg:h-full min-h-0`}>
                         <ForexAdvancedPipeline 
                             selectedFeatures={selectedForexFeatures}
                             onToggleFeature={(id) => {

@@ -528,7 +528,7 @@ export const BacktesterContainer: React.FC = () => {
     const compareRuns = savedRuns.filter((r) => compareIds.includes(r.runId));
 
     return (
-        <div className={`flex flex-col ${isPhoneMobileUI ? 'min-h-full overflow-y-auto' : 'h-full overflow-hidden'} bg-white dark:bg-[#050505] rounded-xl border border-slate-200 dark:border-[#1F1F1F]`}>
+        <div data-viewport-lock={!isPhoneMobileUI ? 'true' : undefined} className={`flex flex-col ${isPhoneMobileUI ? 'min-h-full overflow-y-auto' : 'h-full overflow-hidden'} bg-white dark:bg-[#050505] rounded-xl border border-slate-200 dark:border-[#1F1F1F]`}>
             {/* Top Command Bar */}
             <div className="flex flex-wrap items-center justify-between px-3 py-2.5 border-b border-slate-200 dark:border-[#1F1F1F] bg-white dark:bg-[#0A0A0A] shrink-0 gap-2">
                 <div className="flex items-center gap-2.5">

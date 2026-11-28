@@ -122,7 +122,7 @@ const PineScriptStudio: React.FC = () => {
     };
 
     return (
-        <div ref={splitPaneRef} className="flex flex-col h-full relative bg-gray-100 dark:bg-[#000000] rounded-2xl border border-brand-border-light dark:border-gray-800 overflow-hidden shadow-2xl">
+        <div ref={splitPaneRef} data-viewport-lock="true" className="flex flex-col h-full relative bg-gray-100 dark:bg-[#000000] rounded-2xl border border-brand-border-light dark:border-gray-800 overflow-hidden shadow-2xl">
             {isResizing && <div className="absolute inset-0 z-50 cursor-row-resize" />}
             
             {/* Top Pane: Chart */}

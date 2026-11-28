@@ -7399,7 +7399,10 @@ const OrderFlowHeatmap: React.FC = () => {
     }, [l2DepthAndWallsSummary, radarRefPrice, isPhoneMobileUI, showSubNav]);
 
     return (
-        <div className="flex flex-col h-full bg-slate-100 dark:bg-[#04070e] text-slate-900 dark:text-white overflow-hidden rounded-2xl border border-slate-200 dark:border-cyan-500/25 shadow-sm">
+        <div
+            data-viewport-lock={!isPhoneMobileUI ? 'true' : undefined}
+            className="flex flex-col h-full bg-slate-100 dark:bg-[#04070e] text-slate-900 dark:text-white overflow-hidden rounded-2xl border border-slate-200 dark:border-cyan-500/25 shadow-sm"
+        >
             {isPhoneMobileUI && (
                 <div className="flex items-center justify-between gap-2 px-3 py-1.5 bg-white dark:bg-[#070b14] border-b border-slate-200 dark:border-white/10 shrink-0">
                     <div className="flex items-center gap-2 min-w-0">

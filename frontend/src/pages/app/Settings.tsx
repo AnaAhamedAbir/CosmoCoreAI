@@ -33,6 +33,7 @@ import { User, Shield, Key, Bell, Palette, Database, CreditCard } from 'lucide-r
 import TelegramConnectionPanel from '@/components/features/settings/TelegramConnectionPanel';
 import TwoFactorPanel from '@/components/features/settings/TwoFactorPanel';
 import PlanUsagePanel from '@/components/features/settings/PlanUsagePanel';
+import DisplayOptimizerWidget from '@/components/common/DisplayOptimizerWidget';
 import { useDeviceProfile } from '@/hooks/useDeviceProfile';
 
 
@@ -943,6 +944,10 @@ const Settings: React.FC<{ initialSection?: string | null }> = ({ initialSection
 
                     <span className="font-medium text-slate-900 dark:text-white">{isDarkMode ? 'Dark Mode' : 'Light Mode'}</span>
 
+                </div>
+
+                <div className="mt-6">
+                    <DisplayOptimizerWidget />
                 </div>
 
             </Card>

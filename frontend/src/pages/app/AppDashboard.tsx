@@ -7,6 +7,7 @@ import { getPathFromView, getViewFromPath } from '@/utils/routeUtils';
 import { AppView, TradingBot, IndicatorData } from '@/types';
 import { Cpu, Database, Activity, LineChart, Bot, Layers, Shield, Bell, Palette, Menu, X, Monitor, Smartphone, Search, Sparkles, Wallet, ArrowUpRight } from 'lucide-react';
 import { useDeviceProfile } from '@/hooks/useDeviceProfile';
+import { useViewportProfile } from '@/hooks/useViewportProfile';
 import { setPhoneViewMode } from '@/utils/deviceProfile';
 import AIAssistantModal from './AIAssistantModal';
 import ThemeToggle from '@/components/common/ThemeToggle';
@@ -825,6 +826,7 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
     const [isAssistantOpen, setIsAssistantOpen] = useState(false);
     const [modalView, setModalView] = useState<AppView | null>(null);
     const deviceProfile = useDeviceProfile();
+    useViewportProfile();
     const isPhoneMobileUI = deviceProfile.isPhoneMobileUI;
     const isTouchOverlaySidebar = deviceProfile.isMobileOrTablet && !isPhoneMobileUI;
     const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -1126,7 +1128,7 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
                                 </div>
                             )}
                         </header>
-                        <main className={`flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden touch-pan-y overscroll-y-contain relative ${isPhoneMobileUI ? 'p-3' : 'p-8 laptop:p-3 laptop-h:p-2.5'}`}>
+                        <main className={`cosmo-adaptive-main flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden touch-pan-y overscroll-y-contain relative ${isPhoneMobileUI ? 'p-3' : 'p-8 laptop:p-3 laptop-h:p-2.5'}`}>
                             <Suspense fallback={<div className="flex items-center justify-center h-full min-h-[240px] text-slate-400 text-xs">Loading module...</div>}>
                                 <DashboardContentRouter
                                     viewToRender={viewToRender}

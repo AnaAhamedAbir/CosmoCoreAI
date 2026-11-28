@@ -6,6 +6,8 @@ import { BrowserRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App';
 import './index.css';
+import './styles/viewport-adaptive.css';
+import '@/utils/viewportProfile';
 import { ThemeProvider } from '@/context/ThemeContext';
 import { ToastProvider } from '@/context/ToastContext';
 import { SettingsProvider } from '@/context/SettingsContext';

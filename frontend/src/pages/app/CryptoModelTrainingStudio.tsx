@@ -1084,7 +1084,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
     };
 
     return (
-        <div className="h-full flex flex-col space-y-2.5 relative overflow-hidden">
+        <div data-viewport-lock="true" className="h-full flex flex-col space-y-2.5 relative overflow-hidden">
             {/* Pro SaaS Command Header */}
             <header className="flex flex-wrap items-center justify-between gap-2.5 z-20 px-3 py-2.5 rounded-2xl bg-white dark:bg-[#070B14] border border-slate-200 dark:border-slate-800/80 shadow-sm flex-shrink-0">
                 <div className="flex items-center gap-3 min-w-0">

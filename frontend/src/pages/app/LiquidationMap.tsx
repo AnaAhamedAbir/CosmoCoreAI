@@ -47,7 +47,7 @@ const LiquidationMap: React.FC = () => {
             : godModeState?.current_price || 0;
 
     return (
-        <div className="h-full flex flex-col gap-3 relative overflow-hidden text-slate-900 dark:text-white">
+        <div data-viewport-flow="adaptive" className="h-full flex flex-col gap-3 relative overflow-hidden text-slate-900 dark:text-white">
             <LiquidationCommandBar
                 exchanges={exchanges}
                 selectedExchange={selectedExchange}

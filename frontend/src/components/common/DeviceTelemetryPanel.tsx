@@ -20,6 +20,7 @@ import { useLatencyGuard } from '@/context/LatencyGuardContext';
 import { usePwaInstall } from '@/hooks/usePwaInstall';
 import type { ThermalMode, PhoneViewMode } from '@/utils/deviceProfile';
 import { setPhoneViewMode } from '@/utils/deviceProfile';
+import DisplayOptimizerWidget from '@/components/common/DisplayOptimizerWidget';
 
 interface DeviceTelemetryPanelProps {
   active: boolean;
@@ -474,6 +475,9 @@ const DeviceTelemetryPanel: React.FC<DeviceTelemetryPanelProps> = ({ active, cli
         )}
       </div>
       )}
+
+      {/* ─── Display Resolution Auto-Optimizer ─── */}
+      <DisplayOptimizerWidget compact />
 
       {/* ─── Section 3: Network Latency + PWA App Status ─── */}
       <div className="rounded-xl border border-emerald-500/25 bg-white/80 dark:bg-white/[0.03] p-3 space-y-2.5 shadow-sm dark:shadow-none">

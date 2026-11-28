@@ -1221,6 +1221,7 @@ const Market: React.FC = () => {
 
     return (
         <div
+            data-viewport-lock={!isPhoneMobileUI ? 'true' : undefined}
             className={`flex flex-col ${
                 isPhoneMobileUI ? 'min-h-full gap-3 overflow-y-auto pb-6' : 'h-full gap-3 overflow-hidden'
             }`}

@@ -1,0 +1,204 @@
+/* ============================================================================
+   MODULAR MULTI-MONITOR & VIEWPORT AUTO-OPTIMIZATION LAYER
+   ============================================================================
+   Driven dynamically by src/utils/viewportProfile.ts + useViewportProfile.ts:
+   - Reference baseline (1920x1080 -> html.display-full-hd): 100% untouched 16px UI.
+   - Compact HD (1366x768 / 1280x720 / VPS windows -> html.display-compact-hd):
+     Preserves crisp readable component sizing (no tiny 13.5px shrink or 9rem
+     crushed charts), reclaims shell chrome padding, and prevents overflow-hidden
+     pages from clipping bottom panels/charts off-screen.
+   - Standard HD (1440x900 / 1536x864 / 1600x900 -> html.display-standard-hd):
+     Balanced intermediate shell proportions.
+   - QHD / 4K (2560x1440+ -> html.display-qhd-4k):
+     Gentle scale-up so UI stays sharp and comfortable on high-res panels.
+   - Strictly excluded when html.mobile-phone-ui or html.display-mode-native.
+   ============================================================================ */
+
+html:not(.mobile-phone-ui) {
+  font-size: var(--ui-root-font, 16px);
+}
+
+/* ----------------------------------------------------------------------------
+   1. COMPACT HD & STANDARD HD SHELL ADAPTATIONS (1366x768, 1280x720, 1536x864)
+   ---------------------------------------------------------------------------- */
+html.display-compact-hd:not(.mobile-phone-ui):not(.display-mode-native),
+html.display-standard-hd:not(.mobile-phone-ui):not(.display-mode-native) {
+  /* Sidebar width adapts smoothly instead of taking 288px on narrow displays */
+  & aside.w-72 {
+    width: var(--shell-sidebar-w, 220px) !important;
+  }
+
+  /* Compact sidebar logo & nav items so all categories stay accessible */
+  & aside .h-\[136px\].w-\[136px\] {
+    height: 88px !important;
+    width: 88px !important;
+  }
+
+  & aside .p-6 {
+    padding: 0.875rem !important;
+  }
+
+  & aside nav .mb-8 {
+    margin-bottom: 1rem !important;
+  }
+
+  & aside nav a.px-4.py-3 {
+    padding: 0.45rem 0.75rem !important;
+    margin-bottom: 0.125rem !important;
+  }
+
+  /* Slimmer desktop header bar to maximize vertical workspace */
+  & header .h-16,
+  & header .h-14 {
+    height: var(--shell-header-h, 48px) !important;
+  }
+
+  /* Main workspace padding controlled by viewport token */
+  & main.cosmo-adaptive-main {
+    padding: var(--shell-main-pad, 12px) !important;
+  }
+
+  /* Modals stay comfortably inside 768px height */
+  & .modal-container {
+    max-height: 92vh !important;
+    overflow-y: auto !important;
+  }
+
+  & [class*="max-h-[70vh]"] {
+    max-height: 82vh !important;
+  }
+
+  /* Slim scrollbars reclaim horizontal pixels */
+  & ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+}
+
+/* ----------------------------------------------------------------------------
+   2. FULL-VIEW VISIBILITY & ANTI-CLIPPING ENGINE FOR 1366x768 (COMPACT HD)
+   ---------------------------------------------------------------------------- */
+html.display-compact-hd:not(.mobile-phone-ui):not(.display-mode-native) {
+  /* Keep headings proportional without shrinking body text or buttons */
+  & main .text-3xl {
+    font-size: clamp(1.35rem, 1.8vw, 1.65rem) !important;
+    line-height: 1.25 !important;
+  }
+
+  & main .text-4xl {
+    font-size: clamp(1.5rem, 2.2vw, 1.95rem) !important;
+    line-height: 1.2 !important;
+  }
+
+  /* Gentle spacing adjustments so panels fit cleanly without shrinking controls */
+  & main .gap-6 {
+    gap: var(--panel-gap, 0.875rem) !important;
+  }
+
+  & main .gap-8 {
+    gap: 1.125rem !important;
+  }
+
+  & main .space-y-8 > * + * {
+    margin-top: 1.125rem !important;
+  }
+
+  & main .space-y-6 > * + * {
+    margin-top: 0.875rem !important;
+  }
+
+  & main .mb-6 {
+    margin-bottom: 0.75rem !important;
+  }
+
+  /* Keep charts tall enough to read clearly (never crushed to 9rem / 121px) */
+  & main .h-64 {
+    height: var(--chart-h-md, clamp(200px, 32vh, 256px)) !important;
+  }
+
+  & main .h-72 {
+    height: var(--chart-h-lg, clamp(224px, 38vh, 288px)) !important;
+  }
+
+  /* Prevent oversized fixed min-heights from pushing sibling widgets off-screen */
+  & main [class*="min-h-[400px]"],
+  & main [class*="min-h-[420px]"],
+  & main [class*="min-h-[450px]"] {
+    min-height: clamp(260px, 44vh, 400px) !important;
+  }
+
+  & main [class*="h-[460px]"],
+  & main [class*="h-[400px]"] {
+    height: clamp(260px, 46vh, 400px) !important;
+  }
+
+  /* CRITICAL VISIBILITY FIX:
+     Pages with `h-full overflow-hidden` clip bottom charts/tables on 768px screens.
+     Unlock page-level vertical scrolling while preserving full-bleed chart pages
+     that opt in with [data-viewport-lock="true"] (Market, OrderFlowHeatmap). */
+  & main > .h-full.overflow-hidden:not([data-viewport-lock="true"]),
+  & main > * > .h-full.overflow-hidden:not([data-viewport-lock="true"]) {
+    height: auto !important;
+    min-height: 100% !important;
+    overflow-y: visible !important;
+    overflow-x: hidden !important;
+  }
+
+  /* Ensure LiquidationMap & nested absolute inset-0 views expand naturally on 768px */
+  & main [data-viewport-flow="adaptive"] .absolute.inset-0 {
+    position: relative !important;
+    inset: auto !important;
+    min-height: 540px;
+  }
+
+  & main [data-viewport-flow="adaptive"] .absolute.inset-0 > .h-full.overflow-hidden {
+    height: auto !important;
+    min-height: 100% !important;
+    overflow-y: visible !important;
+    overflow-x: hidden !important;
+  }
+
+  /* Ensure wide data tables scroll cleanly inside main instead of shrinking cards */
+  & main table {
+    max-width: 100%;
+  }
+
+  & main table td,
+  & main table th {
+    padding-top: 0.45rem !important;
+    padding-bottom: 0.45rem !important;
+  }
+}
+
+/* ----------------------------------------------------------------------------
+   3. FIT MODE EXTRA PACKING (Optional "Full Fit" mode for multi-monitor desks)
+   ---------------------------------------------------------------------------- */
+html.display-mode-fit.display-compact-hd:not(.mobile-phone-ui) {
+  & aside .h-\[136px\].w-\[136px\] {
+    height: 72px !important;
+    width: 72px !important;
+  }
+
+  & main .p-6 {
+    padding: 0.875rem !important;
+  }
+
+  & main .p-5 {
+    padding: 0.75rem !important;
+  }
+}
+
+html.display-mode-native:not(.mobile-phone-ui) {
+  & main.cosmo-adaptive-main {
+    padding: 2rem !important;
+  }
+}
+
+/* ----------------------------------------------------------------------------
+   4. QHD / 4K HIGH-RES MONITORS (2560x1440, 3840x2160)
+   ---------------------------------------------------------------------------- */
+html.display-qhd-4k:not(.mobile-phone-ui):not(.display-mode-native) {
+  & main.cosmo-adaptive-main {
+    padding: var(--shell-main-pad, 28px) !important;
+  }
+}

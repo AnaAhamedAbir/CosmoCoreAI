@@ -1,4 +1,4 @@
-﻿
+
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import Card from '@/components/common/Card';
@@ -346,6 +346,7 @@ RULES:
     return (
         <div 
             ref={containerRef} 
+            data-viewport-lock="true"
             className="h-full flex flex-col lg:flex-row animate-fade-in-slide-up overflow-hidden relative"
         >
             

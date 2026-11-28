@@ -11,6 +11,7 @@ import ResetPasswordScreen from '@/pages/public/ResetPasswordScreen';
 import { AppView } from '@/types';
 import { Toaster } from 'react-hot-toast';
 import { syncThermalDocumentClass } from '@/utils/deviceProfile';
+import { useViewportProfile } from '@/hooks/useViewportProfile';
 import MaintenanceOverlay from '@/components/common/MaintenanceOverlay';
 import VersionUpdateBanner from '@/components/common/VersionUpdateBanner';
 
@@ -39,6 +40,7 @@ const clearPortfolioSessionCache = () => {
 };
 
 function App() {
+  useViewportProfile();
   const navigate = useNavigate();
   const [appState, setAppState] = useState<AppState>(() => {
     if (typeof window !== 'undefined') {

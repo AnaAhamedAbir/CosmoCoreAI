@@ -383,9 +383,11 @@ class MarketDepthService:
         for level in orders:
             price, amount = level[0], level[1]
             if bucket_size > 0:
-                # Group both bids and asks into uniform buckets to avoid artificial spreads
-                # Floor division ensures everything snaps to the same grid
-                bucket_price = math.floor(price / bucket_size) * bucket_size
+                # Match L2HeatmapRecorder grid: bids floor down, asks ceil up so spread never collapses
+                if is_bid:
+                    bucket_price = math.floor((price / bucket_size) + 1e-9) * bucket_size
+                else:
+                    bucket_price = math.ceil((price / bucket_size) - 1e-9) * bucket_size
             else:
                 bucket_price = price
                 
@@ -411,7 +413,7 @@ class MarketDepthService:
         """
         Returns a list of all exchanges supported by CCXT + OANDA.
         """
-        popular = ['binance', 'kraken', 'coinbase', 'kucoin', 'bybit', 'okx', 'bitfinex', 'gate', 'htx', 'mexc', 'oanda']
+        popular = ['binance', 'kraken', 'coinbase', 'kucoin', 'bybit', 'okx', 'bitget', 'bitfinex', 'gate', 'htx', 'mexc', 'oanda']
         return popular
 
     @staticmethod
@@ -540,7 +542,15 @@ class MarketDepthService:
         """
         import time as _time
 
-        BATCH_SIZE = 1000
+        ex_id = str(getattr(exchange, "id", "") or "").lower()
+        if "okx" in ex_id:
+            BATCH_SIZE = 300
+        elif "bybit" in ex_id or "bitget" in ex_id:
+            BATCH_SIZE = 200
+        elif "kucoin" in ex_id:
+            BATCH_SIZE = 500
+        else:
+            BATCH_SIZE = 1000
         all_ohlcv: List[List[float]] = []
 
         if fetch_limit <= BATCH_SIZE:
@@ -550,11 +560,12 @@ class MarketDepthService:
             now_ms: int = int(_time.time() * 1000)
             since_ms: int = now_ms - (fetch_limit * tf_ms)
 
-            # Build non-overlapping time windows (up to 5 parallel batches = 5,000 candles)
+            # Build non-overlapping time windows (up to 6 parallel batches) scaled to exchange per-page cap
             batch_specs: List[tuple[int, int]] = []
             cursor = since_ms
             remaining = fetch_limit
-            while remaining > 0 and len(batch_specs) < 5:
+            max_chunks = 6 if BATCH_SIZE >= 500 else 8
+            while remaining > 0 and len(batch_specs) < max_chunks:
                 batch = min(remaining, BATCH_SIZE)
                 batch_specs.append((cursor, batch))
                 cursor += batch * tf_ms
@@ -703,7 +714,14 @@ class MarketDepthService:
             return merged_1s[-limit:]
         return self._resample_ohlcv(merged_1s, target_ms)[-limit:]
 
-    async def fetch_ohlcv(self, symbol: str, exchange_id: str, timeframe: str = '1h', limit: int = 100) -> List[Dict[str, Any]]:
+    async def fetch_ohlcv(
+        self,
+        symbol: str,
+        exchange_id: str,
+        timeframe: str = '1h',
+        limit: int = 100,
+        include_patterns: bool = True,
+    ) -> List[Dict[str, Any]]:
         """
         Fetches OHLCV data for a symbol with:
         - Exchange alias & futures normalization (gateio -> gate, kucoin/kraken futures)
@@ -886,11 +904,12 @@ class MarketDepthService:
                         logger.error(f"yfinance fallback failed for {symbol}: {e}")
                         raise e
 
-                from app.helpers.candlestick_patterns import attach_candlestick_patterns
-                formatted_data = attach_candlestick_patterns(formatted_data)
+                if include_patterns and formatted_data:
+                    from app.helpers.candlestick_patterns import attach_candlestick_patterns
+                    formatted_data = await asyncio.to_thread(attach_candlestick_patterns, formatted_data)
 
-                if redis and formatted_data:
-                    oanda_ttl = 2 if target_sec <= 5 else (5 if target_sec < 60 else 60)
+                if redis and formatted_data and include_patterns:
+                    oanda_ttl = 2 if target_sec <= 5 else (5 if target_sec < 60 else 10)
                     cache_payload = {"candles": formatted_data, "exhausted": len(formatted_data) < limit}
                     await redis.setex(cache_key, oanda_ttl, json.dumps(cache_payload))
 
@@ -966,21 +985,22 @@ class MarketDepthService:
                     for c in all_ohlcv
                 ]
 
-                # Decorate with candlestick pattern analysis
-                from app.helpers.candlestick_patterns import attach_candlestick_patterns
-                formatted_data = attach_candlestick_patterns(formatted_data)
+                # Decorate with candlestick pattern analysis off the event loop when requested
+                if include_patterns and formatted_data:
+                    from app.helpers.candlestick_patterns import attach_candlestick_patterns
+                    formatted_data = await asyncio.to_thread(attach_candlestick_patterns, formatted_data)
 
-                # ── Dynamic cache TTL based on timeframe ───────────────────────
+                # ── Short live-candle-safe cache TTL (prevents stale forming candle on reload) ──
                 tf_ttl_map = {
-                    '1s': 1, '5s': 2, '15s': 5, '30s': 5,
-                    '1m': 30, '3m': 60, '5m': 120, '15m': 300,
-                    '30m': 600, '45m': 600, '1h': 1800,
-                    '2h': 3600, '4h': 7200, '6h': 10800, '12h': 21600,
-                    '1d': 43200, '1w': 86400, '1M': 86400,
+                    '1s': 1, '5s': 2, '15s': 3, '30s': 4,
+                    '1m': 5, '3m': 8, '5m': 8, '15m': 10,
+                    '30m': 10, '45m': 10, '1h': 10,
+                    '2h': 10, '4h': 10, '6h': 10, '12h': 10,
+                    '1d': 10, '1w': 15, '1M': 15,
                 }
-                cache_ttl = tf_ttl_map.get(timeframe, 60)
+                cache_ttl = tf_ttl_map.get(timeframe, 10)
 
-                if redis and formatted_data:
+                if redis and formatted_data and include_patterns:
                     cache_payload = {
                         "candles": formatted_data,
                         "exhausted": len(formatted_data) < fetch_limit,
@@ -1010,12 +1030,14 @@ class MarketDepthService:
                 cached_ob = await redis.get(f"latest_orderbook:{internal_ex}:{ob_sym}")
                 if cached_ob:
                     data = json.loads(cached_ob)
+                    raw_ts = data.get("ts")
+                    ob_ts_ms = int(float(raw_ts) * 1000) if raw_ts and float(raw_ts) < 1e11 else (int(float(raw_ts)) if raw_ts else int(time.time() * 1000))
                     return {
                         "symbol": symbol,
                         "exchange": base_ex,
                         "bids": [{"price": b["price"], "size": b["size"]} for b in data.get("bids", [])][:limit],
                         "asks": [{"price": a["price"], "size": a["size"]} for a in data.get("asks", [])][:limit],
-                        "timestamp": int(time.time() * 1000),
+                        "timestamp": ob_ts_ms,
                         "datetime": None
                     }
 

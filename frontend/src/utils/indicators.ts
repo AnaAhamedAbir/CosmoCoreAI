@@ -129,8 +129,10 @@ export const DEFAULT_EMA_TIMEFRAMES: Record<string, EmaTimeframeStyle> = {
 
 export const intervalToSeconds = (interval: string): number => {
     if (!interval) return 60;
-    const str = interval.toLowerCase().trim();
-    const val = parseInt(str) || 1;
+    const raw = interval.trim();
+    const val = parseInt(raw, 10) || 1;
+    if (raw.endsWith('M')) return val * 86400 * 30;
+    const str = raw.toLowerCase();
     if (str.endsWith('s')) return val;
     if (str.endsWith('m')) return val * 60;
     if (str.endsWith('h')) return val * 3600;

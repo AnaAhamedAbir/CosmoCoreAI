@@ -18,10 +18,10 @@ import { marketDepthService } from '../../services/marketDepthService';
 import { HeatmapSymbolSelector } from '../../components/features/market/HeatmapSymbolSelector';
 import { TimeframeSelector } from '../../components/features/market/TimeframeSelector';
 import { VolumeFilterControl } from '../../components/features/market/VolumeFilterControl';
-import { LiquidityHeatmapRenderer, HeatmapDataPoint } from '../../components/features/market/LiquidityHeatmapRenderer';
+import { LiquidityHeatmapRenderer, HeatmapDataPoint, HeatmapPalette } from '../../components/features/market/LiquidityHeatmapRenderer';
 import { VolumeProfileWidget, VPVRData } from '../../components/features/market/VolumeProfileWidget';
 import { CVDChart, CVDDataPoint } from '../../components/features/market/CVDChart';
-import { FootprintRenderer, FootprintCandleData, FootprintDataTick } from '../../components/features/market/FootprintRenderer';
+import { FootprintRenderer, FootprintCandleData, FootprintDataTick, FootprintMode } from '../../components/features/market/FootprintRenderer';
 import { LiquidationRenderer } from '../../components/features/market/LiquidationRenderer';
 import { SmartMoneyHUD } from '../../components/features/market/SmartMoneyHUD';
 import { useGodModeData } from '../../hooks/useGodModeData';
@@ -100,29 +100,27 @@ import { CandlestickTooltip, TooltipCandleData } from '../../components/features
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, ChevronRight, SlidersHorizontal, Zap, X } from 'lucide-react';
 import { isThermalGuardActive } from '@/utils/deviceProfile';
-// Helper to convert interval string to ms
-const parseIntervalToMs = (interval: string): number => {
-    const value = parseInt(interval, 10) || 1;
-    const unit = interval.replace(/[0-9]/g, '') || 'm';
-    switch (unit) {
-        case 's': return value * 1000;
-        case 'm': return value * 60 * 1000;
-        case 'h': return value * 60 * 60 * 1000;
-        case 'd': return value * 24 * 60 * 60 * 1000;
-        case 'w': return value * 7 * 24 * 60 * 60 * 1000;
-        case 'M': return value * 30 * 24 * 60 * 60 * 1000; // approximation for month
-        default: return value * 60 * 1000; // default to minutes
-    }
-};
+import {
+    intervalToMs,
+    alignCandleBucketSec,
+    alignCandleBucketMs,
+    getNextCandleCloseMs,
+    sanitizeAndSortCandles,
+} from '../../utils/candleTime';
+
+// Helper to convert interval string to ms (delegated to modular calendar-aware candleTime utility)
+const parseIntervalToMs = (interval: string): number => intervalToMs(interval);
 
 const formatDisplayPrice = (price: number | undefined | null): string => {
     if (price === undefined || price === null || !Number.isFinite(price)) return '---';
-    if (price < 0.000001) return price.toFixed(12);
-    if (price < 0.00001) return price.toFixed(10);
-    if (price < 0.0001) return price.toFixed(8);
-    if (price < 0.001) return price.toFixed(7);
-    if (price < 1) return price.toFixed(5);
-    if (price < 10) return price.toFixed(4);
+    const abs = Math.abs(price);
+    if (abs === 0) return '0.00';
+    if (abs < 0.000001) return price.toFixed(12);
+    if (abs < 0.00001) return price.toFixed(10);
+    if (abs < 0.0001) return price.toFixed(8);
+    if (abs < 0.001) return price.toFixed(7);
+    if (abs < 1) return price.toFixed(5);
+    if (abs < 10) return price.toFixed(4);
     return price.toFixed(2);
 };
 
@@ -139,26 +137,12 @@ const CandleCountdown = React.memo<{
         const tick = () => {
             if (typeof document !== 'undefined' && document.hidden) return;
             const now = Date.now();
-            let remaining = 0;
-
-            if (lastCandleRef.current && lastCandleRef.current.time) {
-                let candleTimeMs = Number(lastCandleRef.current.time);
-                if (Number.isFinite(candleTimeMs) && candleTimeMs > 0) {
-                    if (candleTimeMs < 10000000000) {
-                        candleTimeMs = candleTimeMs * 1000;
-                    }
-                    const nextCandleTimeMs = candleTimeMs + intervalMs;
-                    remaining = nextCandleTimeMs - now;
-                } else {
-                    const nextBoundary = Math.ceil(now / intervalMs) * intervalMs;
-                    remaining = nextBoundary - now;
-                }
-            } else {
-                const nextBoundary = Math.ceil(now / intervalMs) * intervalMs;
-                remaining = nextBoundary - now;
-            }
-
-            if (remaining < 0) remaining = 0;
+            const nextCloseMs = getNextCandleCloseMs(
+                lastCandleRef.current ? Number(lastCandleRef.current.time) : null,
+                interval,
+                now
+            );
+            const remaining = Math.max(0, nextCloseMs - now);
 
             const isSubMinute = intervalMs < 60000;
             const totalSec = isSubMinute ? Math.ceil(remaining / 1000) : Math.floor(remaining / 1000);
@@ -376,6 +360,8 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
     wallsRef.current = walls;
     const footprintDataRef = useRef(footprintData);
     footprintDataRef.current = footprintData;
+    const cvdDataRef = useRef(cvdData);
+    cvdDataRef.current = cvdData;
     const showHeatmapOverlay = Boolean(showVPVR || indicatorSettings.showHeatmap);
     const { heatmapData: realHeatmapData, bucketSize: heatmapBucketSize } = useHeatmapData(symbol, exchange, showHeatmapOverlay, interval, bids, asks);
     useIcebergEvents(symbol);
@@ -431,6 +417,33 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
 
     const [isDraggingQuantumAi, setIsDraggingQuantumAi] = useState(false);
     const dragStartRef = useRef({ x: 0, y: 0 });
+    const quantumAiHudPosRef = useRef(quantumAiHudPos);
+    quantumAiHudPosRef.current = quantumAiHudPos;
+
+    // Live identity refs for async stale-response guards (syncMtfEma, tab-resume backfill, scrollback)
+    const activeSymbolRef = useRef(symbol);
+    activeSymbolRef.current = symbol;
+    const activeExchangeRef = useRef(exchange);
+    activeExchangeRef.current = exchange;
+    const activeIntervalRef = useRef(interval);
+    activeIntervalRef.current = interval;
+
+    // Order Flow Pro View Controls (Heatmap Palette & Footprint Mode) + dynamic axis widths
+    const [heatmapPalette, setHeatmapPalette] = useState<HeatmapPalette>(() => {
+        try {
+            const saved = localStorage.getItem('cosmo_heatmap_palette') as HeatmapPalette | null;
+            if (saved && ['emerald-amber', 'bookmap', 'ice-fire', 'viridis'].includes(saved)) return saved;
+        } catch {}
+        return 'emerald-amber';
+    });
+    const [footprintMode, setFootprintMode] = useState<FootprintMode>(() => {
+        try {
+            const saved = localStorage.getItem('cosmo_footprint_mode') as FootprintMode | null;
+            if (saved && ['bid-ask', 'delta', 'imbalance'].includes(saved)) return saved;
+        } catch {}
+        return 'bid-ask';
+    });
+    const [axisOffsets, setAxisOffsets] = useState<{ left: number; right: number }>({ left: 0, right: 64 });
 
     // Handle window resize to keep HUD in view if needed
     useEffect(() => {
@@ -444,28 +457,31 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         return () => window.removeEventListener('resize', handleResize);
     }, []);
 
-    // ── Quantum AI HUD Draggable Logic ──
+    // ── Quantum AI HUD Draggable Logic (only attaches listeners while dragging; persists on drop) ──
     const handleHudMouseDown = (e: React.MouseEvent) => {
         setIsDraggingQuantumAi(true);
         dragStartRef.current = {
-            x: e.clientX - quantumAiHudPos.x,
-            y: e.clientY - quantumAiHudPos.y
+            x: e.clientX - quantumAiHudPosRef.current.x,
+            y: e.clientY - quantumAiHudPosRef.current.y
         };
     };
 
     useEffect(() => {
+        if (!isDraggingQuantumAi) return;
         const handleMouseMove = (e: MouseEvent) => {
-            if (!isDraggingQuantumAi) return;
             const newPos = {
                 x: e.clientX - dragStartRef.current.x,
                 y: e.clientY - dragStartRef.current.y
             };
+            quantumAiHudPosRef.current = newPos;
             setQuantumAiHudPos(newPos);
-            localStorage.setItem('quantumAiHudPos', JSON.stringify(newPos));
         };
 
         const handleMouseUp = () => {
             setIsDraggingQuantumAi(false);
+            try {
+                localStorage.setItem('quantumAiHudPos', JSON.stringify(quantumAiHudPosRef.current));
+            } catch {}
         };
 
         window.addEventListener('mousemove', handleMouseMove);
@@ -474,7 +490,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             window.removeEventListener('mousemove', handleMouseMove);
             window.removeEventListener('mouseup', handleMouseUp);
         };
-    }, [isDraggingQuantumAi, quantumAiHudPos]);
+    }, [isDraggingQuantumAi]);
 
     // Throttling State
     const marketDataBufferRef = useRef<{ price: number; trade: any } | null>(null);
@@ -544,12 +560,14 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                 type: 'custom',
                 minMove: 0.0000000001,
                 formatter: (price: number) => {
-                    if (price < 0.000001) return price.toFixed(12);
-                    if (price < 0.00001) return price.toFixed(10);
-                    if (price < 0.0001) return price.toFixed(8);
-                    if (price < 0.001) return price.toFixed(7);
-                    if (price < 1) return price.toFixed(5);
-                    if (price < 10) return price.toFixed(4);
+                    const abs = Math.abs(price);
+                    if (abs === 0) return '0.00';
+                    if (abs < 0.000001) return price.toFixed(12);
+                    if (abs < 0.00001) return price.toFixed(10);
+                    if (abs < 0.0001) return price.toFixed(8);
+                    if (abs < 0.001) return price.toFixed(7);
+                    if (abs < 1) return price.toFixed(5);
+                    if (abs < 10) return price.toFixed(4);
                     return price.toFixed(2);
                 }
             }
@@ -643,9 +661,25 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                     }
 
                     if (candleData) {
+                        // Enrich tooltip with per-bar Order Flow metrics (Delta, Buy%, POC) when available
+                        const tNum = Number(candleData.time);
+                        const fpMatch = footprintDataRef.current.find((f) => Number(f.time) === tNum);
+                        const cvdMatch = cvdDataRef.current.find((c) => Number(c.time) === tNum);
+                        const enrichedTooltip: TooltipCandleData = { ...candleData };
+                        if (cvdMatch && cvdMatch.delta !== undefined) {
+                            enrichedTooltip.delta = cvdMatch.delta;
+                            const b = cvdMatch.buyVolume || 0;
+                            const s = cvdMatch.sellVolume || 0;
+                            if (b + s > 0) enrichedTooltip.buyPct = (b / (b + s)) * 100;
+                        } else if (fpMatch && fpMatch.totalDelta !== undefined) {
+                            enrichedTooltip.delta = fpMatch.totalDelta;
+                        }
+                        if (fpMatch && fpMatch.pocPrice && fpMatch.pocPrice > 0) {
+                            enrichedTooltip.pocPrice = fpMatch.pocPrice;
+                        }
                         lastTooltipUpdateAtRef.current = nowMs;
                         lastTooltipTimeRef.current = candleData.time as any;
-                        setTooltipData(candleData);
+                        setTooltipData(enrichedTooltip);
                         setTooltipPos({ x: param.point.x, y: param.point.y });
                     } else if (lastTooltipTimeRef.current !== null) {
                         lastTooltipTimeRef.current = null;
@@ -709,23 +743,13 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
 
                 if (!isMounted) return;
 
-                const candles = (Array.isArray(data) ? data : [])
-                    .filter((k: any) => k && k.time != null && !isNaN(Number(k.close)))
-                    .map((k: any) => ({
-                        time: k.time as any,
-                        open: parseFloat(k.open),
-                        high: parseFloat(k.high),
-                        low: parseFloat(k.low),
-                        close: parseFloat(k.close),
-                        volume: parseFloat(k.volume || 100),
-                        patterns: k.patterns || [],
-                    }));
+                const candles = sanitizeAndSortCandles(Array.isArray(data) ? data : []);
                 if (candlestickSeriesRef.current && isMounted) {
-                    candlestickSeriesRef.current.setData(candles);
+                    candlestickSeriesRef.current.setData(candles as any);
                     allCandlesRef.current = candles;
                     candlesVersionRef.current += 1;
                     if (candles.length > 0) {
-                        lastCandleRef.current = { ...candles[candles.length - 1] };
+                        lastCandleRef.current = { ...candles[candles.length - 1] } as any;
                         // Reconcile stale REST history against the freshest live WS trade tick immediately
                         // so initial load / timeframe switch never snaps the last candle or price line backwards.
                         const liveTick = getLatestLiveTick(symbol, exchange);
@@ -742,8 +766,9 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                                 lastTradeSideRef.current = side;
                                 lastTickPriceRef.current = liveTick.price;
                                 let reconciled: any;
-                                if (tickMs >= candleTimeMs + intervalMs) {
-                                    const nextMs = Math.floor(tickMs / intervalMs) * intervalMs;
+                                const nextBoundaryMs = getNextCandleCloseMs(candleTimeMs, interval, candleTimeMs);
+                                if (tickMs >= nextBoundaryMs) {
+                                    const nextMs = alignCandleBucketMs(tickMs, interval);
                                     const nextTime = isSec ? Math.floor(nextMs / 1000) : nextMs;
                                     reconciled = {
                                         time: nextTime,
@@ -777,8 +802,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                         if (liveTick && liveTick.price > 0) {
                             const rawTs = liveTick.timestamp || Date.now();
                             const tickMs = rawTs < 10000000000 ? rawTs * 1000 : rawTs;
-                            const intervalMs = parseIntervalToMs(interval);
-                            const bucketSec = Math.floor(Math.floor(tickMs / intervalMs) * intervalMs / 1000);
+                            const bucketSec = alignCandleBucketSec(Math.floor(tickMs / 1000), interval);
                             const seeded: any = {
                                 time: bucketSec,
                                 open: liveTick.price,
@@ -1005,10 +1029,21 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             }
         };
 
-        // Attach handlers to window for access inside QuickTradeToolbar and ManualTradeModal
-        (window as any)._handleQuickTradeDragStart = handleQuickTradeDragStart;
-        (window as any)._handleQuickTradeDragMove = handleQuickTradeDragMove;
-        (window as any)._handleQuickTradeDragEnd = handleQuickTradeDragEnd;
+        // Attach handlers to window for access inside QuickTradeToolbar and ManualTradeModal (scoped per chartId + active chart)
+        const quickDragKey = chartId || 'main';
+        if (!(window as any)._quickTradeDragHandlers) {
+            (window as any)._quickTradeDragHandlers = {};
+        }
+        (window as any)._quickTradeDragHandlers[quickDragKey] = {
+            start: handleQuickTradeDragStart,
+            move: handleQuickTradeDragMove,
+            end: handleQuickTradeDragEnd,
+        };
+        if (isActiveChart || quickDragKey === 'main') {
+            (window as any)._handleQuickTradeDragStart = handleQuickTradeDragStart;
+            (window as any)._handleQuickTradeDragMove = handleQuickTradeDragMove;
+            (window as any)._handleQuickTradeDragEnd = handleQuickTradeDragEnd;
+        }
 
         const clearChartBracketGhostLine = () => {
             if (typeof window !== 'undefined') {
@@ -1174,18 +1209,96 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
 
         fetchKlines();
 
+        const measureAxisOffsets = () => {
+            try {
+                const leftW = Math.round(chart.priceScale('left')?.width?.() || 0);
+                const rightW = Math.max(54, Math.round(chart.priceScale('right')?.width?.() || 64));
+                setAxisOffsets((prev) =>
+                    prev.left === leftW && prev.right === rightW ? prev : { left: leftW, right: rightW }
+                );
+            } catch {}
+        };
+
         const resizeObserver = new ResizeObserver(entries => {
             if (entries.length === 0 || entries[0].target !== chartContainerRef.current) { return; }
             const newRect = entries[0].contentRect;
             chart.applyOptions({ height: newRect.height, width: newRect.width });
+            measureAxisOffsets();
         });
 
         if (chartContainerRef.current) {
             resizeObserver.observe(chartContainerRef.current);
         }
+        const axisInitTimer = setTimeout(measureAxisOffsets, 120);
+
+        // Automatic Tab-Resume Gap Backfill: when user returns after tab suspension, backfill any missed candles seamlessly
+        let hiddenAtMs = 0;
+        let isBackfilling = false;
+        const handleVisibilityBackfill = async () => {
+            if (typeof document === 'undefined') return;
+            if (document.hidden) {
+                hiddenAtMs = Date.now();
+                return;
+            }
+            const awayMs = hiddenAtMs > 0 ? Date.now() - hiddenAtMs : 0;
+            hiddenAtMs = 0;
+            const thresholdMs = Math.max(parseIntervalToMs(interval), 15000);
+            if (awayMs < thresholdMs || isBackfilling || !isMounted || !candlestickSeriesRef.current) return;
+            isBackfilling = true;
+            try {
+                const missedBars = Math.min(500, Math.max(60, Math.ceil(awayMs / Math.max(1000, parseIntervalToMs(interval))) + 20));
+                const fresh = await marketDepthService.getOHLCV(symbol.toUpperCase(), exchange, interval, missedBars);
+                if (!isMounted || !candlestickSeriesRef.current || !Array.isArray(fresh) || fresh.length === 0) return;
+                const sanitized = sanitizeAndSortCandles(fresh);
+                if (sanitized.length === 0) return;
+                const mergedMap = new Map<number, any>();
+                for (let i = 0; i < allCandlesRef.current.length; i++) {
+                    mergedMap.set(Number(allCandlesRef.current[i].time), allCandlesRef.current[i]);
+                }
+                for (let i = 0; i < sanitized.length; i++) {
+                    mergedMap.set(Number(sanitized[i].time), sanitized[i]);
+                }
+                const merged = Array.from(mergedMap.values())
+                    .sort((a, b) => Number(a.time) - Number(b.time))
+                    .slice(-2000);
+                allCandlesRef.current = merged;
+                candlesVersionRef.current += 1;
+                candlestickSeriesRef.current.setData(merged as any);
+                if (volumeSeriesRef.current) {
+                    volumeSeriesRef.current.setData(
+                        merged.map((k: any) => ({
+                            time: k.time,
+                            value: k.volume,
+                            color: k.close >= k.open ? 'rgba(34, 197, 94, 0.5)' : 'rgba(239, 68, 68, 0.5)',
+                        })) as any
+                    );
+                }
+                lastCandleRef.current = { ...merged[merged.length - 1] };
+                setCandlesReadyTick((t) => t + 1);
+            } catch {
+                // ignore transient network failure on resume
+            } finally {
+                isBackfilling = false;
+            }
+        };
+        if (typeof document !== 'undefined') {
+            document.addEventListener('visibilitychange', handleVisibilityBackfill);
+        }
 
         return () => {
             isMounted = false;
+            clearTimeout(axisInitTimer);
+            if (typeof document !== 'undefined') {
+                document.removeEventListener('visibilitychange', handleVisibilityBackfill);
+            }
+            if ((window as any)._quickTradeDragHandlers?.[quickDragKey]?.start === handleQuickTradeDragStart) {
+                delete (window as any)._quickTradeDragHandlers[quickDragKey];
+            }
+            if ((window as any)._handleQuickTradeDragStart === handleQuickTradeDragStart) {
+                (window as any)._handleQuickTradeDragStart = undefined;
+                (window as any)._handleQuickTradeDragMove = undefined;
+                (window as any)._handleQuickTradeDragEnd = undefined;
+            }
             clearChartBracketGhostLine();
             if (chartDragBracketRegistry.get(registryKey) === registryEntry) {
                 chartDragBracketRegistry.delete(registryKey);
@@ -1210,7 +1323,8 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             }
             chart.remove();
 
-            // Cleanup refs so they respawn on the newly created chart instance
+            // Cleanup refs so they respawn cleanly on the newly created chart instance
+            chartRef.current = null;
             candlestickSeriesRef.current = null;
             markersPluginRef.current = null;
             currentPriceLineRef.current = null;
@@ -1390,24 +1504,22 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                 ? cached.candles
                 : null;
 
-            // Fetch authentic candles for tf whenever needed
+            // Fetch authentic candles for tf whenever needed (guarded via live refs to prevent stale symbol bleed)
             const currentSymbol = symbol.toUpperCase();
             const currentExchange = exchange;
+            const currentInterval = interval;
             if (!tfCandles) {
                 marketDepthService.getOHLCV(currentSymbol, currentExchange, tf, 300)
                     .then((fetched) => {
-                        if (symbol.toUpperCase() !== currentSymbol || exchange !== currentExchange) return;
+                        if (
+                            activeSymbolRef.current.toUpperCase() !== currentSymbol ||
+                            activeExchangeRef.current !== currentExchange ||
+                            activeIntervalRef.current !== currentInterval
+                        ) return;
                         if (Array.isArray(fetched) && fetched.length > 0) {
-                            const formatted = fetched.map((k: any) => ({
-                                time: k.time,
-                                open: parseFloat(k.open),
-                                high: parseFloat(k.high),
-                                low: parseFloat(k.low),
-                                close: parseFloat(k.close),
-                                volume: parseFloat(k.volume || 100),
-                            }));
+                            const formatted = sanitizeAndSortCandles(fetched);
                             htfCandlesCacheRef.current[cacheKey] = { candles: formatted, lastFetch: Date.now() };
-                            const refinedPts = calculateMTFEMA(allCandlesRef.current, interval, tf, period, mode, formatted);
+                            const refinedPts = calculateMTFEMA(allCandlesRef.current, currentInterval, tf, period, mode, formatted);
                             const s = emaSeriesMapRef.current.get(tf);
                             if (s && refinedPts.length > 0) {
                                 s.setData(refinedPts as any);
@@ -1808,7 +1920,8 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         indicatorSettings.luxNDOGMax,
         indicatorSettings.luxFibMode,
         indicatorSettings.luxFibExtend,
-        indicatorSettings.luxShowKillzones
+        indicatorSettings.luxShowKillzones,
+        candlesReadyTick
     ]);
 
     // Fetch ICT PO3 Data from Backend API
@@ -1942,10 +2055,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                 const data = await marketDepthService.getOHLCV(symbol.toUpperCase(), exchange, tf, 500);
                 if (!isMounted) return;
 
-                const formatted = data.map((k: any) => ({
-                    time: k.time, open: parseFloat(k.open), high: parseFloat(k.high),
-                    low: parseFloat(k.low), close: parseFloat(k.close), volume: parseFloat(k.volume || 100)
-                }));
+                const formatted = sanitizeAndSortCandles(Array.isArray(data) ? data : []);
                 setWickSRCandles(formatted);
 
                 const result = calculateWickRejectionSR(
@@ -2293,11 +2403,20 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         const utData = pro.fastPoints;
         if (candles.length === 0) return;
 
-        // If a new bar spawned since the last update, fall through to setData once so the just-closed bar gets its final color
+        // Only call full setData when a new bar closed AND its final trend color actually changed (prevents 1,000-bar flash on every close!)
         const barCountChanged = candles.length !== lastUtBotCandleCountRef.current;
         lastUtBotCandleCountRef.current = candles.length;
 
-        if (liveLastOnly && !barCountChanged) {
+        const prevClosedColorUnchanged = (() => {
+            if (!liveLastOnly || !barCountChanged || candles.length < 2 || utData.length < 2) return false;
+            const prevBar = candles[candles.length - 2];
+            const prevUt = utData[utData.length - 2];
+            if (!prevBar || !prevUt || prevBar.time !== prevUt.time) return false;
+            const expectedColor = prevUt.color === 'green' ? '#22c55e' : prevUt.color === 'red' ? '#ef4444' : '#3b82f6';
+            return prevBar.color === expectedColor;
+        })();
+
+        if (liveLastOnly && (!barCountChanged || prevClosedColorUnchanged)) {
             if (utData.length === 0) return;
             const lastUT = utData[utData.length - 1];
             const lastIdx = candles.length - 1;
@@ -2649,10 +2768,9 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         // Once REST history finishes empty (e.g. quiet sub-minute pair or OANDA 1s), seed the first live candle directly from ticks!
         if (!lastCandleRef.current) {
             if (historyLoadedRef.current) {
-                const intervalMsSeed = parseIntervalToMs(interval);
                 const rawTsSeed = (trade && trade.timestamp) ? trade.timestamp : Date.now();
                 const eventTsSeed = rawTsSeed < 10000000000 ? rawTsSeed * 1000 : rawTsSeed;
-                const bucketSec = Math.floor(Math.floor(eventTsSeed / intervalMsSeed) * intervalMsSeed / 1000);
+                const bucketSec = alignCandleBucketSec(Math.floor(eventTsSeed / 1000), interval);
                 const tradeHighSeed = trade?.high !== undefined ? trade.high : livePrice;
                 const tradeLowSeed = trade?.low !== undefined ? trade.low : livePrice;
                 const seededCandle: any = {
@@ -2683,7 +2801,6 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         }
 
         const lastCandle = lastCandleRef.current as any;
-        const intervalMs = parseIntervalToMs(interval);
         let candleTimeMs = Number(lastCandle.time);
         const isSeconds = candleTimeMs < 10000000000;
         if (isSeconds) candleTimeMs *= 1000;
@@ -2701,10 +2818,11 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
 
         let updatedCandle: any;
         let isNewCandle = false;
+        const nextBoundaryMs = getNextCandleCloseMs(candleTimeMs, interval, candleTimeMs);
 
-        if (eventTimestamp >= candleTimeMs + intervalMs) {
-            // Crossed timeframe boundary: cleanly spawn next candle
-            const nextCandleTimeMs = Math.floor(eventTimestamp / intervalMs) * intervalMs;
+        if (eventTimestamp >= nextBoundaryMs) {
+            // Crossed calendar-aware timeframe boundary (handles 1w Monday & 1M 1st-of-month cleanly)
+            const nextCandleTimeMs = alignCandleBucketMs(eventTimestamp, interval);
             const nextCandleTime = isSeconds ? Math.floor(nextCandleTimeMs / 1000) : nextCandleTimeMs;
 
             if (nextCandleTime > (isSeconds ? Math.floor(candleTimeMs / 1000) : candleTimeMs)) {
@@ -3816,18 +3934,34 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             }
         };
 
+        const restoreChartInteractionOptions = () => {
+            chartRef.current?.applyOptions({
+                handleScroll: {
+                    mouseWheel: true,
+                    pressedMouseMove: true,
+                    horzTouchDrag: true,
+                    vertTouchDrag: false,
+                },
+                handleScale: true,
+            });
+        };
+
         const finishDragAt = async (clientY: number | null) => {
-            dragPreviewRef.current = null;
-            dragOverlaySyncRef.current?.();
             if (!isDown || !draggingOrderIdRef.current || !ghostLineRef.current) {
-                isDown = false;
-                draggingOrderIdRef.current = null;
-                chartRef.current?.applyOptions({ handleScroll: true, handleScale: true });
+                if (isDown) {
+                    isDown = false;
+                    draggingOrderIdRef.current = null;
+                    dragPreviewRef.current = null;
+                    dragOverlaySyncRef.current?.();
+                    restoreChartInteractionOptions();
+                }
                 return;
             }
 
+            dragPreviewRef.current = null;
+            dragOverlaySyncRef.current?.();
             isDown = false;
-            chartRef.current?.applyOptions({ handleScroll: true, handleScale: true });
+            restoreChartInteractionOptions();
             container.style.cursor = 'crosshair';
 
             const chartRect = container.getBoundingClientRect();
@@ -3969,7 +4103,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                 } catch {}
                 ghostLineRef.current = null;
             }
-            chartRef.current?.applyOptions({ handleScroll: true, handleScale: true });
+            restoreChartInteractionOptions();
         };
 
         const handleTouchStart = (e: TouchEvent) => {
@@ -4030,7 +4164,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                     isPinchingChart = false;
                     pinchStartDist = 0;
                     pinchStartRange = null;
-                    chartRef.current?.applyOptions({ handleScroll: true, handleScale: true });
+                    restoreChartInteractionOptions();
                 }
                 return;
             }
@@ -4367,7 +4501,77 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         <div ref={chartSplitContainerRef} className="w-full h-full flex flex-col absolute inset-0 bg-white dark:bg-[#000000]">
             <div className="flex-1 min-h-0 relative bg-white dark:bg-[#000000]">
                 <div ref={chartContainerRef} className="w-full h-full absolute inset-0 z-0 touch-none select-none bg-white dark:bg-[#000000]" />
-                <CandlestickTooltip candle={tooltipData} position={tooltipPos} chartContainerRef={chartContainerRef} />
+                <CandlestickTooltip
+                    candle={tooltipData}
+                    position={tooltipPos}
+                    chartContainerRef={chartContainerRef}
+                    leftAxisOffset={axisOffsets.left}
+                />
+                {/* Compact Pro Order Flow Controls (only shown when Heatmap or Footprint is active) */}
+                {(showHeatmapOverlay || showFootprint) && (
+                    <div
+                        className="absolute top-2 z-30 flex flex-wrap items-center gap-1.5 pointer-events-auto"
+                        style={{ left: Math.max(8, axisOffsets.left + 8) }}
+                    >
+                        {showHeatmapOverlay && (
+                            <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-lg bg-white/90 dark:bg-[#070b14]/88 border border-slate-200 dark:border-white/10 shadow-sm text-[9.5px] font-mono">
+                                <span className="text-slate-400 font-bold uppercase pr-1">L2</span>
+                                {(
+                                    [
+                                        { id: 'emerald-amber', label: 'Std' },
+                                        { id: 'bookmap', label: 'Bookmap' },
+                                        { id: 'ice-fire', label: 'Ice/Fire' },
+                                        { id: 'viridis', label: 'Viridis' },
+                                    ] as Array<{ id: HeatmapPalette; label: string }>
+                                ).map((p) => (
+                                    <button
+                                        key={p.id}
+                                        type="button"
+                                        onClick={() => {
+                                            setHeatmapPalette(p.id);
+                                            try { localStorage.setItem('cosmo_heatmap_palette', p.id); } catch {}
+                                        }}
+                                        className={`px-1.5 py-0.5 rounded font-bold transition-colors cursor-pointer ${
+                                            heatmapPalette === p.id
+                                                ? 'bg-cyan-500 text-slate-950'
+                                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                                        }`}
+                                    >
+                                        {p.label}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                        {showFootprint && (
+                            <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-lg bg-white/90 dark:bg-[#070b14]/88 border border-slate-200 dark:border-white/10 shadow-sm text-[9.5px] font-mono">
+                                <span className="text-slate-400 font-bold uppercase pr-1">FP</span>
+                                {(
+                                    [
+                                        { id: 'bid-ask', label: 'Bid×Ask' },
+                                        { id: 'delta', label: 'Delta' },
+                                        { id: 'imbalance', label: 'Imb' },
+                                    ] as Array<{ id: FootprintMode; label: string }>
+                                ).map((m) => (
+                                    <button
+                                        key={m.id}
+                                        type="button"
+                                        onClick={() => {
+                                            setFootprintMode(m.id);
+                                            try { localStorage.setItem('cosmo_footprint_mode', m.id); } catch {}
+                                        }}
+                                        className={`px-1.5 py-0.5 rounded font-bold transition-colors cursor-pointer ${
+                                            footprintMode === m.id
+                                                ? 'bg-amber-500 text-slate-950'
+                                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                                        }`}
+                                    >
+                                        {m.label}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
                 {showCrosshairAIPredict && (
                     <button
                         ref={crosshairBtnRef}
@@ -4416,7 +4620,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                         formatPrice={formatDisplayPrice}
                     />
                 </div>
-                <div className="absolute inset-0 z-10 pointer-events-none overflow-hidden" style={{ right: 60, bottom: 26 }}>
+                <div className="absolute inset-0 z-10 pointer-events-none overflow-hidden" style={{ right: axisOffsets.right, bottom: 26 }}>
                     {indicatorSettings.showDualEngine && <DualEngineDashboard settings={indicatorSettings} candles={allCandlesRef.current} currentPrice={currentPrice} />}
                     {indicatorSettings.showWatchlistScanner && <WatchlistScanner settings={indicatorSettings} exchange={exchange} interval={interval} />}
                     {/* ── Advanced Metrics ── */}
@@ -4440,7 +4644,16 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                     {advancedMetrics.showDeltaDivergence && <DeltaDivergenceRenderer chart={chartRef.current} series={candlestickSeriesRef.current} visible={advancedMetrics.showDeltaDivergence} data={advancedMetricsData?.divergenceData} />}
                     {indicatorSettings.showAetherFlow && <AetherFlowRenderer chart={chartRef.current} series={candlestickSeriesRef.current!} data={aetherFlowData} settings={indicatorSettings} />}
 
-                    {showHeatmapOverlay && <LiquidityHeatmapRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={realHeatmapData} bucketSize={heatmapBucketSize} />}
+                    {showHeatmapOverlay && (
+                        <LiquidityHeatmapRenderer
+                            chart={chartRef.current}
+                            series={candlestickSeriesRef.current}
+                            data={realHeatmapData}
+                            bucketSize={heatmapBucketSize}
+                            palette={heatmapPalette}
+                            leftAxisOffset={axisOffsets.left}
+                        />
+                    )}
                     {indicatorSettings.showAutoFibo && <FibonacciCloudRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={fiboData} />}
                     {indicatorSettings.showBB && <BollingerBandsRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={bbData} visible={indicatorSettings.showBB} />}
                     {indicatorSettings.showMACD && (
@@ -4464,7 +4677,16 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                             hideLowConfidenceTrend={indicatorSettings.hideLowConfidenceTrend}
                         />
                     )}
-                    {showFootprint && <FootprintRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={footprintData} visible={showFootprint} />}
+                    {showFootprint && (
+                        <FootprintRenderer
+                            chart={chartRef.current}
+                            series={candlestickSeriesRef.current}
+                            data={footprintData}
+                            visible={showFootprint}
+                            mode={footprintMode}
+                            leftAxisOffset={axisOffsets.left}
+                        />
+                    )}
                     {indicatorSettings.showLiquidationHeatmap && (
                         <LiquidationRenderer
                             chart={chartRef.current}
@@ -4718,7 +4940,16 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                     )}
                 </div>
                 {indicatorSettings.showSessions && <SessionsDashboard settings={indicatorSettings} statuses={sessionStatuses} />}
-                {showVPVR && <VolumeProfileWidget chart={chartRef.current} series={candlestickSeriesRef.current} data={vpvrData} />}
+                {showVPVR && (
+                    <div className="absolute inset-0 z-10 pointer-events-none overflow-hidden" style={{ right: axisOffsets.right, bottom: 26 }}>
+                        <VolumeProfileWidget
+                            chart={chartRef.current}
+                            series={candlestickSeriesRef.current}
+                            data={vpvrData}
+                            leftAxisOffset={axisOffsets.left}
+                        />
+                    </div>
+                )}
 
                 {/* ── Quantum AI v8 Dashboard HUD ── */}
                 {indicatorSettings.showQuantumAI && quantumAiData.length > 0 && (() => {
@@ -5297,7 +5528,14 @@ const OrderBook: React.FC<{
     // ── STEP 3 + 4 + 5: Absorption, Spoof, Event Detection ───────────────────
     // eslint-disable-next-line react-hooks/rules-of-hooks
     useEffect(() => {
-        if (bids.length === 0 && asks.length === 0) return;
+        if (bids.length === 0 && asks.length === 0) {
+            // Reset stateful tracking cleanly on symbol switch / empty book so zero phantom spoof alerts fire
+            prevBidsRef.current.clear();
+            prevAsksRef.current.clear();
+            wallTimestampsRef.current.clear();
+            setEvents([]);
+            return;
+        }
         const sigSize = volumeThreshold > 0 ? volumeThreshold : maxTotal * 0.05;
         const nowMs = Date.now();
         const curBids = new Map<number, number>(bids.map((b: any) => [b.price, b.size * b.price]));
@@ -6028,9 +6266,7 @@ const OrderFlowChartPanel = React.memo<{
         </div>
     );
 
-    if (isFullscreen && typeof document !== 'undefined') {
-        return createPortal(panelContent, document.body);
-    }
+    // Keep panel mounted in-tree (CSS fixed inset-0 handles Fullscreen cleanly without destroying canvas & WS state!)
     return panelContent;
 });
 
@@ -6339,7 +6575,7 @@ const OrderFlowHeatmap: React.FC = () => {
             symbol: c.symbol,
             exchange: c.exchange,
             isMain: c.isMain,
-            price: c.isMain ? currentPrice : (chartPrices[c.id] || currentPrice)
+            price: c.isMain ? currentPrice : (chartPrices[c.id] || 0)
         }));
     }, [allCharts, chartPrices, currentPrice]);
 
@@ -6357,7 +6593,9 @@ const OrderFlowHeatmap: React.FC = () => {
         }
     }, []);
     const modalThrottleMs = deviceProfile.timings.modalPriceThrottleMs;
-    const rawModalPrice = chartPrices[activeChart?.id || 'main'] || (activeChart?.isMain ? currentPrice : (chartPrices[activeChart?.id || ''] || currentPrice));
+    const rawModalPrice = activeChart?.isMain
+        ? (chartPrices[activeChart.id] || currentPrice)
+        : (chartPrices[activeChart?.id || ''] || 0);
     const [throttledModalPrice, setThrottledModalPrice] = useState<number>(rawModalPrice);
     const [throttledChartPrices, setThrottledChartPrices] = useState<Record<string, number>>(chartPrices);
     const lastModalPriceFlushRef = useRef<number>(0);

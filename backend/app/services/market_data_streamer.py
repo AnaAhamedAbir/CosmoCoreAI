@@ -74,6 +74,7 @@ class MarketDataStreamer:
         self._stream_idle_ttl: Dict[str, float] = {}
         self._reaper_task: Optional[asyncio.Task] = None
         self._lock = asyncio.Lock()
+        self._start_lock = asyncio.Lock()
         self._initialized = True
 
     EXCHANGE_ALIASES: Dict[str, str] = {
@@ -172,21 +173,22 @@ class MarketDataStreamer:
         internal_exchange_id, _, _ = self._normalize_exchange_and_key(exchange_id, symbol)
         stream_key = f"{internal_exchange_id}:{symbol}"
 
-        self._last_touch_ts[stream_key] = time.monotonic()
-        self._stream_idle_ttl[stream_key] = self.IDLE_STREAM_TTL_SECONDS
-        self._ensure_reaper()
+        async with self._start_lock:
+            self._last_touch_ts[stream_key] = time.monotonic()
+            self._stream_idle_ttl[stream_key] = self.IDLE_STREAM_TTL_SECONDS
+            self._ensure_reaper()
 
-        if stream_key in self._active_streams:
+            if stream_key in self._active_streams:
+                return stream_key
+
+            await self._evict_if_over_cap(stream_key)
+            self._active_streams.add(stream_key)
+
+            task_ob = asyncio.create_task(self._stream_order_book(internal_exchange_id, symbol, stream_key))
+            task_trades = asyncio.create_task(self._stream_trades(internal_exchange_id, symbol, stream_key))
+            task_bbo = asyncio.create_task(self._stream_bbo(internal_exchange_id, symbol, stream_key))
+            self._tasks[stream_key] = [task_ob, task_trades, task_bbo]
             return stream_key
-
-        await self._evict_if_over_cap(stream_key)
-        self._active_streams.add(stream_key)
-
-        task_ob = asyncio.create_task(self._stream_order_book(internal_exchange_id, symbol, stream_key))
-        task_trades = asyncio.create_task(self._stream_trades(internal_exchange_id, symbol, stream_key))
-        task_bbo = asyncio.create_task(self._stream_bbo(internal_exchange_id, symbol, stream_key))
-        self._tasks[stream_key] = [task_ob, task_trades, task_bbo]
-        return stream_key
 
     async def acquire_stream(self, exchange_id: str, symbol: str) -> str:
         """Increment WS subscriber refcount and ensure stream is running."""
@@ -336,7 +338,8 @@ class MarketDataStreamer:
         last_publish_mono = 0.0
         last_bbo_write_mono = 0.0
         last_bbo_pair: Tuple[float, float] = (0.0, 0.0)
-        depth_limit = self._normalize_order_book_limit(exchange_id, 50)
+        # Request deep institutional L2 depth (up to 200-500 levels per side) so BTC/ETH heatmaps span 20+ bands
+        depth_limit = self._normalize_order_book_limit(exchange_id, 200)
         sym_upper = symbol.upper()
 
         while stream_key in self._active_streams:
@@ -420,11 +423,14 @@ class MarketDataStreamer:
                         await pipe.execute()
 
                 try:
+                    # Feed full deep book (up to 250 levels/side) to the 5s L2 heatmap recorder for wide Bookmap coverage
+                    hm_bids = [{"price": float(b[0]), "size": float(b[1])} for b in raw_bids[:250]]
+                    hm_asks = [{"price": float(a[0]), "size": float(a[1])} for a in raw_asks[:250]]
                     await l2_heatmap_recorder.record_orderbook(
                         exchange_id=exchange_id,
                         symbol=symbol,
-                        bids=bids,
-                        asks=asks,
+                        bids=hm_bids,
+                        asks=hm_asks,
                     )
                 except Exception as hm_err:
                     logger.debug(f"L2HeatmapRecorder orderbook hook err: {hm_err}")
@@ -448,6 +454,16 @@ class MarketDataStreamer:
                 if is_fatal:
                     if redis:
                         await redis.publish(channel, json.dumps({"error": f"Invalid symbol {symbol} or exchange error"}))
+                    self._active_streams.discard(stream_key)
+                    self._bbo_stream_active.discard(stream_key)
+                    self._subscriber_counts.pop(stream_key, None)
+                    self._last_touch_ts.pop(stream_key, None)
+                    self._stream_idle_ttl.pop(stream_key, None)
+                    self._latest_bbo_mem.pop(stream_key, None)
+                    current_task = asyncio.current_task()
+                    for t in self._tasks.pop(stream_key, []):
+                        if t is not current_task and not t.done():
+                            t.cancel()
                     break
 
                 await asyncio.sleep(5)
@@ -494,6 +510,19 @@ class MarketDataStreamer:
             raw_ts = batch_raw[-1].get("timestamp")
             trade_ts = int(raw_ts) if raw_ts else int(time.time() * 1000)
 
+            # Include lossless compact trade tuples [price, amount, isBuy(1/0), ts_ms] for CVD & Footprint accuracy
+            compact_ticks = []
+            for tr in batch_raw[-64:]:
+                try:
+                    tp = float(tr.get("price") or 0.0)
+                    ta = float(tr.get("amount") or 0.0)
+                    if tp > 0 and ta > 0:
+                        tside = 1 if str(tr.get("side") or "").lower() == "buy" else 0
+                        tts = int(tr.get("timestamp") or trade_ts)
+                        compact_ticks.append([tp, ta, tside, tts])
+                except (TypeError, ValueError):
+                    continue
+
             payload = {
                 "type": "trade",
                 "currentPrice": last_p,
@@ -502,6 +531,7 @@ class MarketDataStreamer:
                 "recentVolume": recent_volume,
                 "timestamp": trade_ts,
                 "side": batch_raw[-1].get("side"),
+                "trades": compact_ticks,
             }
 
             if redis:

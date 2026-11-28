@@ -4,10 +4,10 @@ import { HeatmapDataPoint } from '../components/features/market/LiquidityHeatmap
 import { isThermalGuardActive } from '@/utils/deviceProfile';
 import { OrderBookLevel } from '@/services/liveMarketHub';
 import {
-    parseOrderflowIntervalSec,
     computeAdaptivePriceStep,
     snapPriceToStep,
 } from '../utils/orderflowMath';
+import { alignCandleBucketSec, toUnixSec } from '../utils/candleTime';
 
 function aggregateLiveBookToLevels(
     bids: OrderBookLevel[],
@@ -83,8 +83,6 @@ export const useHeatmapData = (
             return;
         }
 
-        const intervalSec = parseOrderflowIntervalSec(interval);
-
         const fetchHistory = async () => {
             if (!symbol || !exchange) return;
             if (isThermalGuardActive() && typeof document !== 'undefined' && document.hidden) return;
@@ -107,11 +105,13 @@ export const useHeatmapData = (
                 const parsed: HeatmapDataPoint[] = snaps
                     .filter((s: any) => s && Number.isFinite(Number(s.time)) && Array.isArray(s.levels))
                     .map((s: any) => ({
-                        time: Math.floor(Number(s.time) / intervalSec) * intervalSec,
+                        time: alignCandleBucketSec(toUnixSec(Number(s.time)), interval),
                         bucketSize: Number(s.bucket_size || serverBucket || 0),
                         levels: s.levels.map((lv: any) => ({
                             price: Number(lv.price),
                             volume: Number(lv.volume),
+                            peakVolume: Number(lv.peak_volume || lv.volume),
+                            pulledDelta: Number(lv.pulled_delta || 0),
                             notional: Number(lv.notional || Number(lv.price) * Number(lv.volume)),
                             type: lv.type === 'bid' ? 'bid' : 'ask',
                         })),
@@ -161,8 +161,7 @@ export const useHeatmapData = (
         if (nowMs - lastLiveMergeAtRef.current < minThrottleMs) return;
         lastLiveMergeAtRef.current = nowMs;
 
-        const intervalSec = parseOrderflowIntervalSec(interval);
-        const barTime = Math.floor(Math.floor(nowMs / 1000) / intervalSec) * intervalSec;
+        const barTime = alignCandleBucketSec(Math.floor(nowMs / 1000), interval);
         const { levels, bucketSize: calcBucket } = aggregateLiveBookToLevels(
             liveBids,
             liveAsks,
@@ -182,9 +181,29 @@ export const useHeatmapData = (
         };
 
         setHeatmapData((prev) => {
-            const next = prev.length > 0 && prev[prev.length - 1].time === barTime
-                ? [...prev.slice(0, -1), livePoint]
-                : [...prev, livePoint];
+            if (prev.length > 0 && barTime < prev[prev.length - 1].time) {
+                return prev;
+            }
+            if (prev.length > 0 && prev[prev.length - 1].time === barTime) {
+                // Preserve peakVolume across live updates in the same candle bar to detect pulled/spoofed walls
+                const prevBar = prev[prev.length - 1];
+                const prevPeaks = new Map<string, number>();
+                for (let i = 0; i < prevBar.levels.length; i++) {
+                    const lv = prevBar.levels[i];
+                    prevPeaks.set(`${lv.type}:${lv.price}`, lv.peakVolume ?? lv.volume);
+                }
+                const enrichedLevels = levels.map((lv) => {
+                    const prevPeak = prevPeaks.get(`${lv.type}:${lv.price}`) ?? lv.volume;
+                    const peakVolume = Math.max(prevPeak, lv.volume);
+                    return {
+                        ...lv,
+                        peakVolume,
+                        pulledDelta: lv.volume - peakVolume,
+                    };
+                });
+                return [...prev.slice(0, -1), { ...livePoint, levels: enrichedLevels }];
+            }
+            const next = [...prev, livePoint];
             return next.length > 240 ? next.slice(-240) : next;
         });
     }, [enabled, symbol, exchange, interval, liveBids, liveAsks]);

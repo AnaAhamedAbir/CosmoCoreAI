@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import math
@@ -6,6 +7,7 @@ from collections import OrderedDict
 from typing import Any, Dict, List, Optional
 
 from app.core.redis import redis_manager
+from app.utils.candle_time import align_candle_bucket_sec
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +53,7 @@ class L2HeatmapRecorder:
 
     RECORD_INTERVAL_SEC: float = 5.0
     MAX_SNAPSHOTS: int = 720          # 720 * 5s = 1 hour of resting liquidity history
+    MAX_TRACKED_SYMBOLS: int = 40     # Cap resident in-memory symbols to prevent unbounded RAM growth
     REDIS_TTL_SECONDS: int = 7200     # 2 hours TTL
     MAX_LEVELS_PER_SIDE: int = 35
     PRUNE_INTERVAL_SEC: float = 60.0
@@ -60,7 +63,25 @@ class L2HeatmapRecorder:
         self._history: Dict[str, "OrderedDict[int, Dict[str, Any]]"] = {}
         self._last_record_ts: Dict[str, float] = {}
         self._last_prune_ts: Dict[str, float] = {}
+        self._last_access_ts: Dict[str, float] = {}
         self._hydrated: set[str] = set()
+        self._hydrate_locks: Dict[str, asyncio.Lock] = {}
+
+    def _evict_if_over_cap(self, keep_key: str) -> None:
+        if len(self._history) <= self.MAX_TRACKED_SYMBOLS:
+            return
+        candidates = sorted(
+            ((self._last_access_ts.get(k, 0.0), k) for k in self._history if k != keep_key),
+            key=lambda item: item[0],
+        )
+        while len(self._history) > self.MAX_TRACKED_SYMBOLS and candidates:
+            _, victim = candidates.pop(0)
+            self._history.pop(victim, None)
+            self._last_record_ts.pop(victim, None)
+            self._last_prune_ts.pop(victim, None)
+            self._last_access_ts.pop(victim, None)
+            self._hydrated.discard(victim)
+            self._hydrate_locks.pop(victim, None)
 
     @staticmethod
     def _make_key(exchange_id: str, symbol: str) -> str:
@@ -163,6 +184,8 @@ class L2HeatmapRecorder:
         series[ts_sec] = snapshot
         while len(series) > self.MAX_SNAPSHOTS:
             series.popitem(last=False)
+        self._last_access_ts[key] = now
+        self._evict_if_over_cap(key)
 
         redis = redis_manager.get_redis()
         if not redis:
@@ -210,33 +233,38 @@ class L2HeatmapRecorder:
         key = self._make_key(internal_ex, norm_sym)
         interval_sec = max(1, market_depth_service._timeframe_to_seconds(interval))
 
-        # Hydrate once from Redis Hash (survives restarts)
+        self._last_access_ts[key] = time.time()
+
+        # Hydrate once from Redis Hash (survives restarts) with per-key lock so transient errors never lock out hydration
         if key not in self._hydrated:
-            self._hydrated.add(key)
-            redis = redis_manager.get_redis()
-            if redis:
-                try:
-                    raw_map = await redis.hgetall(self._redis_key(key))
-                    if raw_map:
-                        series = self._history.setdefault(key, OrderedDict())
-                        for raw_k, raw_v in raw_map.items():
-                            try:
-                                ts_k = int(raw_k.decode() if isinstance(raw_k, (bytes, bytearray)) else str(raw_k))
-                                if ts_k in series:
-                                    continue
-                                val_s = raw_v.decode() if isinstance(raw_v, (bytes, bytearray)) else str(raw_v)
-                                parsed = json.loads(val_s)
-                                if isinstance(parsed, dict) and parsed.get("levels"):
-                                    series[ts_k] = parsed
-                            except Exception:
-                                continue
-                        if series:
-                            ordered = OrderedDict(sorted(series.items(), key=lambda kv: kv[0]))
-                            while len(ordered) > self.MAX_SNAPSHOTS:
-                                ordered.popitem(last=False)
-                            self._history[key] = ordered
-                except Exception as e:
-                    logger.debug(f"[L2HeatmapRecorder] Redis hydrate err for {key}: {e}")
+            lock = self._hydrate_locks.setdefault(key, asyncio.Lock())
+            async with lock:
+                if key not in self._hydrated:
+                    redis = redis_manager.get_redis()
+                    if redis:
+                        try:
+                            raw_map = await redis.hgetall(self._redis_key(key))
+                            if raw_map:
+                                series = self._history.setdefault(key, OrderedDict())
+                                for raw_k, raw_v in raw_map.items():
+                                    try:
+                                        ts_k = int(raw_k.decode() if isinstance(raw_k, (bytes, bytearray)) else str(raw_k))
+                                        if ts_k in series:
+                                            continue
+                                        val_s = raw_v.decode() if isinstance(raw_v, (bytes, bytearray)) else str(raw_v)
+                                        parsed = json.loads(val_s)
+                                        if isinstance(parsed, dict) and parsed.get("levels"):
+                                            series[ts_k] = parsed
+                                    except Exception:
+                                        continue
+                                if series:
+                                    ordered = OrderedDict(sorted(series.items(), key=lambda kv: kv[0]))
+                                    while len(ordered) > self.MAX_SNAPSHOTS:
+                                        ordered.popitem(last=False)
+                                    self._history[key] = ordered
+                            self._hydrated.add(key)
+                        except Exception as e:
+                            logger.debug(f"[L2HeatmapRecorder] Redis hydrate err for {key}: {e}")
 
         series = self._history.get(key)
         raw_snaps: List[Dict[str, Any]] = list(series.values()) if series else []
@@ -264,25 +292,89 @@ class L2HeatmapRecorder:
                 except Exception:
                     pass
 
-        # Align snapshot timestamps onto exact candlestick open boundaries
-        aligned_buckets: Dict[int, Dict[str, Any]] = {}
+        # Align & aggregate ALL 5s snapshots inside each candlestick bucket (time-weighted mean + peak/pulled detection)
+        bucket_groups: Dict[int, List[Dict[str, Any]]] = {}
         latest_bucket_size = 0.0
         for snap in raw_snaps:
             ts = int(snap.get("time", 0))
             if ts <= 0:
                 continue
-            bar_time = (ts // interval_sec) * interval_sec
+            bar_time = align_candle_bucket_sec(ts, interval)
             b_sz = float(snap.get("bucket_size") or 0.0)
             if b_sz > 0:
                 latest_bucket_size = b_sz
-            aligned_buckets[bar_time] = {
-                "time": bar_time,
-                "bucket_size": b_sz,
-                "mid_price": float(snap.get("mid_price") or 0.0),
-                "levels": snap.get("levels", []),
-            }
+            bucket_groups.setdefault(bar_time, []).append(snap)
 
-        ordered_snaps = [aligned_buckets[k] for k in sorted(aligned_buckets.keys())][-limit:]
+        ordered_snaps: List[Dict[str, Any]] = []
+        for bar_time in sorted(bucket_groups.keys())[-limit:]:
+            snaps_in_bar = bucket_groups[bar_time]
+            last_snap = snaps_in_bar[-1]
+            bar_b_sz = float(last_snap.get("bucket_size") or latest_bucket_size or 0.0)
+            bar_mid = float(last_snap.get("mid_price") or 0.0)
+
+            if len(snaps_in_bar) == 1:
+                ordered_snaps.append({
+                    "time": bar_time,
+                    "bucket_size": bar_b_sz,
+                    "mid_price": bar_mid,
+                    "levels": last_snap.get("levels", []),
+                })
+                continue
+
+            # Aggregate across all 5s samples in this candle bar: preserve average resting liquidity, peak wall size, and latest size
+            n_samples = float(len(snaps_in_bar))
+            # (price, side) -> [sum_vol, peak_vol, last_vol]
+            acc: Dict[tuple[float, str], List[float]] = {}
+            for s in snaps_in_bar:
+                for lv in s.get("levels") or []:
+                    try:
+                        p = float(lv.get("price") or 0.0)
+                        v = float(lv.get("volume") or 0.0)
+                        side = str(lv.get("type") or "bid")
+                    except (TypeError, ValueError):
+                        continue
+                    if p <= 0 or v <= 0:
+                        continue
+                    lk = (p, side)
+                    entry = acc.get(lk)
+                    if entry is None:
+                        acc[lk] = [v, v, v]
+                    else:
+                        entry[0] += v
+                        if v > entry[1]:
+                            entry[1] = v
+                        entry[2] = v
+
+            agg_levels: List[Dict[str, Any]] = []
+            bid_items = sorted(
+                ((p, vals) for (p, side), vals in acc.items() if side == "bid"),
+                key=lambda x: x[0],
+                reverse=True,
+            )[: self.MAX_LEVELS_PER_SIDE]
+            ask_items = sorted(
+                ((p, vals) for (p, side), vals in acc.items() if side == "ask"),
+                key=lambda x: x[0],
+            )[: self.MAX_LEVELS_PER_SIDE]
+
+            for side_name, items in (("bid", bid_items), ("ask", ask_items)):
+                for p, (sum_v, peak_v, last_v) in items:
+                    avg_v = sum_v / n_samples
+                    agg_levels.append({
+                        "price": p,
+                        "volume": round(avg_v, 6),
+                        "peak_volume": round(peak_v, 6),
+                        "pulled_delta": round(last_v - peak_v, 6),
+                        "notional": round(p * avg_v, 2),
+                        "type": side_name,
+                    })
+
+            ordered_snaps.append({
+                "time": bar_time,
+                "bucket_size": bar_b_sz,
+                "mid_price": bar_mid,
+                "levels": agg_levels,
+            })
+
         return {
             "symbol": norm_sym,
             "exchange": base_ex,

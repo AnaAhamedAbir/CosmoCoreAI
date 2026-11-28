@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import math
@@ -6,6 +7,7 @@ from collections import OrderedDict
 from typing import Any, Dict, List, Optional
 
 from app.core.redis import redis_manager
+from app.utils.candle_time import align_candle_bucket_sec, parse_timestamp_ms
 
 logger = logging.getLogger(__name__)
 
@@ -67,57 +69,71 @@ def enrich_footprint_candle(candle: Dict[str, Any], tick_step: float) -> Dict[st
             poc_price = float(t["price"])
         t["isImbalance"] = False
         t["imbalanceType"] = None
+        t["isAskImbalance"] = False
+        t["isBidImbalance"] = False
         t["isStackedImbalance"] = False
         t["isUnfinishedAuction"] = False
         t["isAbsorption"] = False
 
     avg_row_vol = (total_vol / n) if n > 0 else 0.0
     min_meaningful_vol = max(avg_row_vol * 0.25, 1e-9)
+    step_tol = max(tick_step * 0.15, 1e-9) if tick_step > 0 else 1e-9
+
+    def _is_adjacent(higher_p: float, lower_p: float) -> bool:
+        if tick_step <= 0:
+            return True
+        return abs((higher_p - lower_p) - tick_step) <= step_tol
 
     # 1. Diagonal 300% Imbalances (descending order: i+1 is 1 step LOWER, i-1 is 1 step HIGHER)
     for i in range(n):
         t = ticks[i]
+        cur_p = float(t["price"])
         bv = float(t["bidVolume"])
         av = float(t["askVolume"])
         rv = bv + av
 
-        # Ask (buy) diagonal imbalance compares ask[i] against bid[i+1] (one tick lower)
-        if i + 1 < n:
+        ask_ratio = 0.0
+        bid_ratio = 0.0
+
+        # Ask (buy) diagonal imbalance compares ask[i] against bid[i+1] ONLY when contiguous (1 tick_step lower)
+        if i + 1 < n and _is_adjacent(cur_p, float(ticks[i + 1]["price"])):
             lower_bid = float(ticks[i + 1]["bidVolume"])
             if av >= min_meaningful_vol and (
                 (lower_bid > 0 and av >= lower_bid * 3.0)
                 or (lower_bid == 0 and av >= avg_row_vol * 1.25)
             ):
-                t["isImbalance"] = True
-                t["imbalanceType"] = "ask"
+                t["isAskImbalance"] = True
+                ask_ratio = (av / lower_bid) if lower_bid > 0 else 99.0
 
-        # Bid (sell) diagonal imbalance compares bid[i] against ask[i-1] (one tick higher)
-        if i - 1 >= 0 and not t["isImbalance"]:
+        # Bid (sell) diagonal imbalance compares bid[i] against ask[i-1] ONLY when contiguous (1 tick_step higher)
+        if i - 1 >= 0 and _is_adjacent(float(ticks[i - 1]["price"]), cur_p):
             higher_ask = float(ticks[i - 1]["askVolume"])
             if bv >= min_meaningful_vol and (
                 (higher_ask > 0 and bv >= higher_ask * 3.0)
                 or (higher_ask == 0 and bv >= avg_row_vol * 1.25)
             ):
-                t["isImbalance"] = True
-                t["imbalanceType"] = "bid"
+                t["isBidImbalance"] = True
+                bid_ratio = (bv / higher_ask) if higher_ask > 0 else 99.0
 
-        # 2. Unfinished Auction at top (high) or bottom (low) extreme
-        if (i == 0 or i == n - 1) and bv > 0 and av > 0:
+        if t["isAskImbalance"] or t["isBidImbalance"]:
+            t["isImbalance"] = True
+            t["imbalanceType"] = "ask" if ask_ratio >= bid_ratio else "bid"
+
+        # 2. Unfinished Auction at top (high) or bottom (low) extreme (requires >= 2 distinct price rows)
+        if n >= 2 and (i == 0 or i == n - 1) and bv > 0 and av > 0:
             t["isUnfinishedAuction"] = True
 
         # 3. Absorption Node (> 3x average row volume)
         if avg_row_vol > 0 and rv > (avg_row_vol * 3.0):
             t["isAbsorption"] = True
 
-    # 4. Stacked Imbalance (3+ consecutive same-side diagonal imbalances)
+    # 4. Stacked Imbalance (3+ contiguous same-side diagonal imbalances)
     for i in range(n - 2):
         t0, t1, t2 = ticks[i], ticks[i + 1], ticks[i + 2]
-        if (
-            t0["isImbalance"]
-            and t1["isImbalance"]
-            and t2["isImbalance"]
-            and t0["imbalanceType"]
-            and t0["imbalanceType"] == t1["imbalanceType"] == t2["imbalanceType"]
+        if not (_is_adjacent(float(t0["price"]), float(t1["price"])) and _is_adjacent(float(t1["price"]), float(t2["price"]))):
+            continue
+        if (t0["isAskImbalance"] and t1["isAskImbalance"] and t2["isAskImbalance"]) or (
+            t0["isBidImbalance"] and t1["isBidImbalance"] and t2["isBidImbalance"]
         ):
             t0["isStackedImbalance"] = True
             t1["isStackedImbalance"] = True
@@ -153,6 +169,7 @@ class FootprintRecorder:
     """
 
     MAX_BASE_BARS: int = 180          # 3 hours of real 1m footprint bars per active pair
+    MAX_TRACKED_SYMBOLS: int = 40     # Cap resident in-memory symbols to prevent unbounded RAM growth
     REDIS_TTL_SECONDS: int = 10800    # 3 hours TTL
     FLUSH_INTERVAL_SEC: float = 2.0
     PRUNE_INTERVAL_SEC: float = 60.0
@@ -163,7 +180,26 @@ class FootprintRecorder:
         self._dirty: Dict[str, set[int]] = {}
         self._last_flush: Dict[str, float] = {}
         self._last_prune: Dict[str, float] = {}
+        self._last_access: Dict[str, float] = {}
         self._hydrated: set[str] = set()
+        self._hydrate_locks: Dict[str, asyncio.Lock] = {}
+
+    def _evict_if_over_cap(self, keep_key: str) -> None:
+        if len(self._bars) <= self.MAX_TRACKED_SYMBOLS:
+            return
+        candidates = sorted(
+            ((self._last_access.get(k, 0.0), k) for k in self._bars if k != keep_key),
+            key=lambda item: item[0],
+        )
+        while len(self._bars) > self.MAX_TRACKED_SYMBOLS and candidates:
+            _, victim = candidates.pop(0)
+            self._bars.pop(victim, None)
+            self._dirty.pop(victim, None)
+            self._last_flush.pop(victim, None)
+            self._last_prune.pop(victim, None)
+            self._last_access.pop(victim, None)
+            self._hydrated.discard(victim)
+            self._hydrate_locks.pop(victim, None)
 
     @staticmethod
     def _make_key(exchange_id: str, symbol: str) -> str:
@@ -189,9 +225,9 @@ class FootprintRecorder:
             if raw_ts is None or raw_px is None or raw_amt is None:
                 continue
             try:
-                ts_ms = int(float(raw_ts))
-                if ts_ms < 10_000_000_000:
-                    ts_ms *= 1000
+                ts_ms = parse_timestamp_ms(raw_ts)
+                if ts_ms is None:
+                    continue
                 px = float(raw_px)
                 amt = float(raw_amt)
             except (TypeError, ValueError):
@@ -240,6 +276,8 @@ class FootprintRecorder:
 
         while len(series) > self.MAX_BASE_BARS:
             series.popitem(last=False)
+        self._last_access[key] = time.time()
+        self._evict_if_over_cap(key)
 
         now_mono = time.monotonic()
         if (now_mono - self._last_flush.get(key, 0.0)) >= self.FLUSH_INTERVAL_SEC:
@@ -257,15 +295,16 @@ class FootprintRecorder:
             dirty.clear()
             return
 
+        flushed_bars = list(dirty)
         mapping: Dict[str, str] = {}
-        for b_sec in list(dirty):
+        for b_sec in flushed_bars:
             bar = series.get(b_sec)
             if bar is not None:
                 mapping[str(b_sec)] = json.dumps(bar, separators=(",", ":"))
-        dirty.clear()
         self._last_flush[key] = time.monotonic()
 
         if not mapping:
+            dirty.difference_update(flushed_bars)
             return
 
         rkey = self._redis_key(key)
@@ -274,6 +313,9 @@ class FootprintRecorder:
                 pipe.hset(rkey, mapping=mapping)
                 pipe.expire(rkey, self.REDIS_TTL_SECONDS)
                 await pipe.execute()
+
+            # Only clear flushed bars AFTER Redis write succeeds so transient failures retry cleanly
+            dirty.difference_update(flushed_bars)
 
             now = time.time()
             if (now - self._last_prune.get(key, 0.0)) >= self.PRUNE_INTERVAL_SEC:
@@ -323,32 +365,37 @@ class FootprintRecorder:
             }
         interval_sec = raw_interval_sec
 
+        self._last_access[key] = time.time()
+
         if key not in self._hydrated:
-            self._hydrated.add(key)
-            redis = redis_manager.get_redis()
-            if redis:
-                try:
-                    raw_map = await redis.hgetall(self._redis_key(key))
-                    if raw_map:
-                        series = self._bars.setdefault(key, OrderedDict())
-                        for raw_k, raw_v in raw_map.items():
-                            try:
-                                b_sec = int(raw_k.decode() if isinstance(raw_k, (bytes, bytearray)) else str(raw_k))
-                                if b_sec in series:
-                                    continue
-                                val_s = raw_v.decode() if isinstance(raw_v, (bytes, bytearray)) else str(raw_v)
-                                parsed = json.loads(val_s)
-                                if isinstance(parsed, dict) and parsed.get("levels"):
-                                    series[b_sec] = parsed
-                            except Exception:
-                                continue
-                        if series:
-                            ordered = OrderedDict(sorted(series.items(), key=lambda kv: kv[0]))
-                            while len(ordered) > self.MAX_BASE_BARS:
-                                ordered.popitem(last=False)
-                            self._bars[key] = ordered
-                except Exception as e:
-                    logger.debug(f"[FootprintRecorder] Redis hydrate err for {key}: {e}")
+            lock = self._hydrate_locks.setdefault(key, asyncio.Lock())
+            async with lock:
+                if key not in self._hydrated:
+                    redis = redis_manager.get_redis()
+                    if redis:
+                        try:
+                            raw_map = await redis.hgetall(self._redis_key(key))
+                            if raw_map:
+                                series = self._bars.setdefault(key, OrderedDict())
+                                for raw_k, raw_v in raw_map.items():
+                                    try:
+                                        b_sec = int(raw_k.decode() if isinstance(raw_k, (bytes, bytearray)) else str(raw_k))
+                                        if b_sec in series:
+                                            continue
+                                        val_s = raw_v.decode() if isinstance(raw_v, (bytes, bytearray)) else str(raw_v)
+                                        parsed = json.loads(val_s)
+                                        if isinstance(parsed, dict) and parsed.get("levels"):
+                                            series[b_sec] = parsed
+                                    except Exception:
+                                        continue
+                                if series:
+                                    ordered = OrderedDict(sorted(series.items(), key=lambda kv: kv[0]))
+                                    while len(ordered) > self.MAX_BASE_BARS:
+                                        ordered.popitem(last=False)
+                                    self._bars[key] = ordered
+                            self._hydrated.add(key)
+                        except Exception as e:
+                            logger.debug(f"[FootprintRecorder] Redis hydrate err for {key}: {e}")
 
         series = self._bars.get(key)
         base_bars = list(series.values()) if series else []
@@ -368,7 +415,7 @@ class FootprintRecorder:
 
         for b in sorted(base_bars, key=lambda x: int(x["time"])):
             t_sec = int(b["time"])
-            bucket_t = (t_sec // interval_sec) * interval_sec
+            bucket_t = align_candle_bucket_sec(t_sec, interval)
             cur = agg.get(bucket_t)
             if cur is None:
                 cur = {

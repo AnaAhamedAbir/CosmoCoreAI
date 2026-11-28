@@ -4,13 +4,13 @@ import { VPVRData } from '../components/features/market/VolumeProfileWidget';
 import { CVDDataPoint, CVDMeta } from '../components/features/market/CVDChart';
 import { FootprintCandleData, FootprintDataTick } from '../components/features/market/FootprintRenderer';
 import { isThermalGuardActive } from '@/utils/deviceProfile';
-import { subscribeLiveTradeTicks } from '@/services/liveMarketHub';
+import { subscribeLiveTradeBatch, TradeTickEvent } from '@/services/liveMarketHub';
 import {
-    parseOrderflowIntervalSec,
     computeAdaptivePriceStep,
     snapPriceToStep,
     enrichFootprintCandleClient,
 } from '../utils/orderflowMath';
+import { alignCandleBucketSec, toUnixSec } from '../utils/candleTime';
 
 interface OrderFlowData {
     vpvrData: VPVRData[];
@@ -46,18 +46,29 @@ export const useOrderFlowData = (
             return;
         }
 
+        // Immediately reset prior symbol/interval state to prevent cross-symbol bleed during async fetch
+        setVpvrData([]);
+        setCvdData([]);
+        setCvdMeta(null);
+        setFootprintData([]);
+
         let isMounted = true;
         let cvdHistoryResolved = false;
+        const fetchStartedAtMs = Date.now();
         let activeFootprints: FootprintCandleData[] = [];
         let activeTickStep = 0;
 
-        // Real-time incremental buffers (declared before async fetch to eliminate any TDZ risk)
-        let pendingCvdDelta = 0;
-        let pendingBuyVol = 0;
-        let pendingSellVol = 0;
-        let pendingCandleTime: number | null = null;
+        // Per-candle lossless delta buffer (prevents cross-candle bleed and zero-delta volume drops)
+        const pendingCvdByBar = new Map<number, { delta: number; buy: number; sell: number }>();
+        const preResolveBuffer: TradeTickEvent[] = [];
         let hasPendingFootprint = false;
         let orderFlowThrottleTimer: ReturnType<typeof setTimeout> | null = null;
+
+        const cloneFootprintsForState = (bars: FootprintCandleData[]): FootprintCandleData[] =>
+            bars.slice(-200).map((c) => ({
+                ...c,
+                ticks: c.ticks.map((t) => ({ ...t })),
+            }));
 
         const flushOrderFlow = () => {
             if (!isMounted) {
@@ -68,47 +79,45 @@ export const useOrderFlowData = (
                 orderFlowThrottleTimer = null;
                 return;
             }
-            if (pendingCvdDelta !== 0 && pendingCandleTime !== null && cvdHistoryResolved) {
-                const delta = pendingCvdDelta;
-                const addBuy = pendingBuyVol;
-                const addSell = pendingSellVol;
-                const cTime = pendingCandleTime;
-                pendingCvdDelta = 0;
-                pendingBuyVol = 0;
-                pendingSellVol = 0;
+            if (pendingCvdByBar.size > 0 && cvdHistoryResolved) {
+                const entries = Array.from(pendingCvdByBar.entries()).sort((a, b) => a[0] - b[0]);
+                pendingCvdByBar.clear();
 
                 setCvdData((prev) => {
-                    if (prev.length === 0) {
-                        return [{ time: cTime, value: delta, delta, buyVolume: addBuy, sellVolume: addSell }];
+                    const updated = [...prev];
+                    for (let i = 0; i < entries.length; i++) {
+                        const [cTime, { delta, buy, sell }] = entries[i];
+                        if (buy + sell <= 0 && delta === 0) continue;
+                        if (updated.length === 0) {
+                            updated.push({ time: cTime, value: delta, delta, buyVolume: buy, sellVolume: sell });
+                            continue;
+                        }
+                        const lastPoint = updated[updated.length - 1];
+                        if (cTime < lastPoint.time) continue;
+                        if (lastPoint.time === cTime) {
+                            updated[updated.length - 1] = {
+                                ...lastPoint,
+                                value: lastPoint.value + delta,
+                                delta: (lastPoint.delta ?? 0) + delta,
+                                buyVolume: (lastPoint.buyVolume ?? 0) + buy,
+                                sellVolume: (lastPoint.sellVolume ?? 0) + sell,
+                            };
+                        } else {
+                            updated.push({
+                                time: cTime,
+                                value: lastPoint.value + delta,
+                                delta,
+                                buyVolume: buy,
+                                sellVolume: sell,
+                            });
+                        }
                     }
-                    const lastPoint = prev[prev.length - 1];
-                    if (cTime < lastPoint.time) return prev;
-                    if (lastPoint.time === cTime) {
-                        const updated = [...prev];
-                        updated[updated.length - 1] = {
-                            ...lastPoint,
-                            value: lastPoint.value + delta,
-                            delta: (lastPoint.delta ?? 0) + delta,
-                            buyVolume: (lastPoint.buyVolume ?? 0) + addBuy,
-                            sellVolume: (lastPoint.sellVolume ?? 0) + addSell,
-                        };
-                        return updated;
-                    }
-                    return [
-                        ...prev.slice(-1000),
-                        {
-                            time: cTime,
-                            value: lastPoint.value + delta,
-                            delta,
-                            buyVolume: addBuy,
-                            sellVolume: addSell,
-                        },
-                    ];
+                    return updated.length > 1000 ? updated.slice(-1000) : updated;
                 });
             }
             if (hasPendingFootprint) {
                 hasPendingFootprint = false;
-                setFootprintData([...activeFootprints.slice(-200)]);
+                setFootprintData(cloneFootprintsForState(activeFootprints));
             }
             orderFlowThrottleTimer = null;
         };
@@ -118,6 +127,81 @@ export const useOrderFlowData = (
                 const flushDelayMs = isThermalGuardActive() ? 900 : 220;
                 orderFlowThrottleTimer = setTimeout(flushOrderFlow, flushDelayMs);
             }
+        };
+
+        const applyLiveTickToState = (tick: TradeTickEvent) => {
+            const price = Number(tick.price);
+            const amount = Number(tick.quantity ?? tick.volume ?? 0);
+            if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(amount) || amount <= 0) return;
+
+            const isBuy = tick.side ? tick.side === 'buy' : !tick.isBuyerMaker;
+            const rawTs = tick.timestamp || Date.now();
+            const tsSec = toUnixSec(rawTs);
+            const currentCandleTime = alignCandleBucketSec(tsSec, interval);
+
+            if (activeFootprints.length > 0 && currentCandleTime < Number(activeFootprints[activeFootprints.length - 1].time)) {
+                return;
+            }
+
+            if (!activeTickStep || activeTickStep <= 0) {
+                activeTickStep = computeAdaptivePriceStep(price, 0.0004);
+            }
+
+            const cvdDelta = isBuy ? amount : -amount;
+
+            if (
+                activeFootprints.length === 0 ||
+                activeFootprints[activeFootprints.length - 1].time !== currentCandleTime
+            ) {
+                activeFootprints.push({
+                    time: currentCandleTime,
+                    open: price,
+                    close: price,
+                    high: price,
+                    low: price,
+                    pocPrice: price,
+                    totalDelta: 0,
+                    totalVolume: 0,
+                    hasDeltaDivergence: false,
+                    isRealCluster: true,
+                    tickStep: activeTickStep,
+                    ticks: [],
+                });
+            } else if (!activeFootprints[activeFootprints.length - 1].isRealCluster) {
+                const existing = activeFootprints[activeFootprints.length - 1];
+                existing.isRealCluster = true;
+                existing.ticks = [];
+            }
+
+            const currentCandle = activeFootprints[activeFootprints.length - 1];
+            currentCandle.close = price;
+            if (price > currentCandle.high) currentCandle.high = price;
+            if (price < currentCandle.low) currentCandle.low = price;
+
+            const bucketPrice = snapPriceToStep(price, activeTickStep, 'floor');
+            let fpTick = currentCandle.ticks.find((t) => t.price === bucketPrice);
+            if (!fpTick) {
+                fpTick = { price: bucketPrice, bidVolume: 0, askVolume: 0 };
+                currentCandle.ticks.push(fpTick);
+            }
+            if (isBuy) fpTick.askVolume += amount;
+            else fpTick.bidVolume += amount;
+
+            enrichFootprintCandleClient(currentCandle);
+
+            const prevBarDelta = pendingCvdByBar.get(currentCandleTime);
+            if (prevBarDelta) {
+                prevBarDelta.delta += cvdDelta;
+                if (isBuy) prevBarDelta.buy += amount;
+                else prevBarDelta.sell += amount;
+            } else {
+                pendingCvdByBar.set(currentCandleTime, {
+                    delta: cvdDelta,
+                    buy: isBuy ? amount : 0,
+                    sell: isBuy ? 0 : amount,
+                });
+            }
+            hasPendingFootprint = true;
         };
 
         const fetchOrderFlowData = async () => {
@@ -159,18 +243,13 @@ export const useOrderFlowData = (
                         sellPct: Number(cvdRes.summary?.sell_pct ?? 50),
                         divergence: cvdRes.summary?.divergence || null,
                     });
-                    // Clear pre-history buffered ticks to avoid double-counting trades already in REST snapshot
-                    pendingCvdDelta = 0;
-                    pendingBuyVol = 0;
-                    pendingSellVol = 0;
+                    // Clear pre-history scalar deltas; genuine post-fetch ticks replay cleanly below
+                    pendingCvdByBar.clear();
                     cvdHistoryResolved = true;
                 } else {
                     setCvdData([]);
                     setCvdMeta(null);
                     cvdHistoryResolved = true;
-                    if (pendingCvdDelta !== 0 && pendingCandleTime !== null) {
-                        scheduleOrderFlowFlush();
-                    }
                 }
 
                 // ── 2. VPVR from real OHLCV (using true buy/sell ratio when available) ──
@@ -203,6 +282,7 @@ export const useOrderFlowData = (
                     const priceBuckets = new Map<number, { vol: number; buy: number; sell: number }>();
                     for (let i = 0; i < parsedKlines.length; i++) {
                         const c = parsedKlines[i];
+                        if (!Number.isFinite(c.low) || !Number.isFinite(c.high) || c.volume <= 0) continue;
                         const trueSplit = cvdByTime.get(c.time);
                         let buyVol: number;
                         let sellVol: number;
@@ -210,18 +290,37 @@ export const useOrderFlowData = (
                             buyVol = trueSplit.buy;
                             sellVol = trueSplit.sell;
                         } else {
-                            const range = c.high - c.low || 1;
-                            const buyRatio = Math.max(0, Math.min(1, (c.close - c.low) / range));
+                            const range = c.high - c.low;
+                            const buyRatio = range > 0 ? Math.max(0, Math.min(1, (c.close - c.low) / range)) : (c.close >= c.open ? 0.55 : 0.45);
                             buyVol = c.volume * buyRatio;
                             sellVol = c.volume - buyVol;
                         }
-                        const bucketPrice = Math.floor(c.close / step) * step;
-                        const existing = priceBuckets.get(bucketPrice) || { vol: 0, buy: 0, sell: 0 };
-                        priceBuckets.set(bucketPrice, {
-                            vol: existing.vol + c.volume,
-                            buy: existing.buy + buyVol,
-                            sell: existing.sell + sellVol,
-                        });
+                        // Distribute candle volume proportionally across [low, high] buckets (weighted toward body midpoint)
+                        const lowIdx = Math.floor(c.low / step);
+                        const highIdx = Math.max(lowIdx, Math.floor(c.high / step));
+                        const spanCount = Math.min(24, highIdx - lowIdx + 1);
+                        const bodyMid = (c.open + c.close) / 2;
+                        const rangeHalf = Math.max((c.high - c.low) * 0.5, step);
+                        let wSum = 0;
+                        const bucketWeights: Array<{ bp: number; w: number }> = [];
+                        for (let b = 0; b < spanCount; b++) {
+                            const idx = lowIdx + Math.round((b * (highIdx - lowIdx)) / Math.max(1, spanCount - 1));
+                            const bp = idx * step;
+                            const dist = Math.abs(bp + step * 0.5 - bodyMid) / rangeHalf;
+                            const w = Math.exp(-dist * dist * 0.9);
+                            bucketWeights.push({ bp, w });
+                            wSum += w;
+                        }
+                        for (let b = 0; b < bucketWeights.length; b++) {
+                            const { bp, w } = bucketWeights[b];
+                            const share = wSum > 0 ? w / wSum : 1 / bucketWeights.length;
+                            const existing = priceBuckets.get(bp) || { vol: 0, buy: 0, sell: 0 };
+                            priceBuckets.set(bp, {
+                                vol: existing.vol + c.volume * share,
+                                buy: existing.buy + buyVol * share,
+                                sell: existing.sell + sellVol * share,
+                            });
+                        }
                     }
 
                     const vpvr: VPVRData[] = Array.from(priceBuckets.entries()).map(([price, data]) => ({
@@ -346,11 +445,33 @@ export const useOrderFlowData = (
                     }
 
                     activeFootprints = mergedFootprints;
-                    setFootprintData(mergedFootprints);
+                    // Replay any live trades that arrived after fetchStartedAtMs while REST was in flight
+                    if (preResolveBuffer.length > 0) {
+                        for (let i = 0; i < preResolveBuffer.length; i++) {
+                            const buffered = preResolveBuffer[i];
+                            if ((buffered.timestamp || 0) >= fetchStartedAtMs) {
+                                applyLiveTickToState(buffered);
+                            }
+                        }
+                        preResolveBuffer.length = 0;
+                    }
+                    setFootprintData(cloneFootprintsForState(activeFootprints));
+                    if (pendingCvdByBar.size > 0) {
+                        scheduleOrderFlowFlush();
+                    }
                 } else {
                     setVpvrData([]);
                     activeFootprints = [];
-                    setFootprintData([]);
+                    if (preResolveBuffer.length > 0) {
+                        for (let i = 0; i < preResolveBuffer.length; i++) {
+                            applyLiveTickToState(preResolveBuffer[i]);
+                        }
+                        preResolveBuffer.length = 0;
+                    }
+                    setFootprintData(cloneFootprintsForState(activeFootprints));
+                    if (pendingCvdByBar.size > 0) {
+                        scheduleOrderFlowFlush();
+                    }
                 }
             } catch (err) {
                 console.error('Failed to fetch order flow data:', err);
@@ -368,7 +489,7 @@ export const useOrderFlowData = (
                 typeof document !== 'undefined' &&
                 !document.hidden &&
                 isMounted &&
-                ((pendingCvdDelta !== 0 && pendingCandleTime !== null) || hasPendingFootprint)
+                (pendingCvdByBar.size > 0 || hasPendingFootprint)
             ) {
                 flushOrderFlow();
             }
@@ -378,82 +499,24 @@ export const useOrderFlowData = (
             document.addEventListener('visibilitychange', handleVisibilityChange);
         }
 
-        let unsubscribeLiveTicks: (() => void) | null = null;
+        let unsubscribeLiveBatch: (() => void) | null = null;
         if (symbol && exchange) {
-            const intervalSec = parseOrderflowIntervalSec(interval);
-            unsubscribeLiveTicks = subscribeLiveTradeTicks(symbol, exchange, (tick) => {
+            unsubscribeLiveBatch = subscribeLiveTradeBatch(symbol, exchange, (ticks) => {
                 try {
-                    const price = Number(tick.price);
-                    const amount = Number(tick.quantity ?? tick.volume ?? 0);
-                    if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(amount) || amount <= 0) return;
-
-                    const isBuy = tick.side ? tick.side === 'buy' : !tick.isBuyerMaker;
-                    const rawTs = tick.timestamp || Date.now();
-                    const tsSec = Math.floor((rawTs < 10000000000 ? rawTs * 1000 : rawTs) / 1000);
-                    const currentCandleTime = Math.floor(tsSec / intervalSec) * intervalSec;
-
-                    if (activeFootprints.length > 0 && currentCandleTime < Number(activeFootprints[activeFootprints.length - 1].time)) {
+                    if (!cvdHistoryResolved) {
+                        for (let i = 0; i < ticks.length && preResolveBuffer.length < 1000; i++) {
+                            preResolveBuffer.push(ticks[i]);
+                        }
                         return;
                     }
-
-                    if (!activeTickStep || activeTickStep <= 0) {
-                        activeTickStep = computeAdaptivePriceStep(price, 0.0004);
+                    for (let i = 0; i < ticks.length; i++) {
+                        applyLiveTickToState(ticks[i]);
                     }
-
-                    const cvdDelta = isBuy ? amount : -amount;
-
-                    // Spawn or update active live footprint candle (with real price-adaptive ticks!)
-                    if (
-                        activeFootprints.length === 0 ||
-                        activeFootprints[activeFootprints.length - 1].time !== currentCandleTime
-                    ) {
-                        activeFootprints.push({
-                            time: currentCandleTime,
-                            open: price,
-                            close: price,
-                            high: price,
-                            low: price,
-                            pocPrice: price,
-                            totalDelta: 0,
-                            totalVolume: 0,
-                            hasDeltaDivergence: false,
-                            isRealCluster: true,
-                            tickStep: activeTickStep,
-                            ticks: [],
-                        });
-                    } else if (!activeFootprints[activeFootprints.length - 1].isRealCluster) {
-                        // Promote live candle cleanly to a real cluster when real trades arrive
-                        const existing = activeFootprints[activeFootprints.length - 1];
-                        existing.isRealCluster = true;
-                        existing.ticks = [];
-                    }
-
-                    const currentCandle = activeFootprints[activeFootprints.length - 1];
-                    currentCandle.close = price;
-                    if (price > currentCandle.high) currentCandle.high = price;
-                    if (price < currentCandle.low) currentCandle.low = price;
-
-                    const bucketPrice = snapPriceToStep(price, activeTickStep, 'floor');
-                    let fpTick = currentCandle.ticks.find((t) => t.price === bucketPrice);
-                    if (!fpTick) {
-                        fpTick = { price: bucketPrice, bidVolume: 0, askVolume: 0 };
-                        currentCandle.ticks.push(fpTick);
-                    }
-                    if (isBuy) fpTick.askVolume += amount;
-                    else fpTick.bidVolume += amount;
-
-                    enrichFootprintCandleClient(currentCandle);
-
-                    if (isMounted) {
-                        pendingCvdDelta += cvdDelta;
-                        if (isBuy) pendingBuyVol += amount;
-                        else pendingSellVol += amount;
-                        pendingCandleTime = currentCandleTime;
-                        hasPendingFootprint = true;
+                    if (isMounted && (pendingCvdByBar.size > 0 || hasPendingFootprint)) {
                         scheduleOrderFlowFlush();
                     }
                 } catch (e) {
-                    console.error('Order flow live tick error', e);
+                    console.error('Order flow live trade batch error', e);
                 }
             });
         }
@@ -467,9 +530,9 @@ export const useOrderFlowData = (
                 clearTimeout(orderFlowThrottleTimer);
                 orderFlowThrottleTimer = null;
             }
-            if (unsubscribeLiveTicks) {
-                unsubscribeLiveTicks();
-                unsubscribeLiveTicks = null;
+            if (unsubscribeLiveBatch) {
+                unsubscribeLiveBatch();
+                unsubscribeLiveBatch = null;
             }
         };
     }, [symbol, exchange, interval, enabled, includeFootprint]);

@@ -188,29 +188,35 @@ async def get_liquidity_sweep_absorption(
     and live L2 Iceberg/Absorption zones, ensuring live streaming is active.
     """
     try:
+        norm_symbol = str(symbol or "").strip().upper()
+        base_ex, _ = market_depth_service.normalize_exchange_id(exchange, norm_symbol)
+
         liquidity_absorption_service.configure_stream(
-            exchange_id=exchange,
-            symbol=symbol,
+            exchange_id=base_ex,
+            symbol=norm_symbol,
             min_absorbed_usd=min_absorbed_usd,
             window_sec=window_sec,
         )
 
-        if exchange.lower() != "oanda":
-            await market_data_streamer.start_streaming(exchange, symbol)
+        if base_ex != "oanda":
+            await market_data_streamer.start_streaming(base_ex, norm_symbol)
 
         historical_zones = []
         if include_historical:
-            candles = await market_depth_service.fetch_ohlcv(symbol, exchange, interval, limit)
-            historical_zones = liquidity_absorption_service.analyze_historical_candles(
+            candles = await market_depth_service.fetch_ohlcv(
+                norm_symbol, base_ex, interval, limit, include_patterns=False
+            )
+            historical_zones = await asyncio.to_thread(
+                liquidity_absorption_service.analyze_historical_candles,
                 candles=candles,
                 lookback=lookback,
                 min_absorbed_usd=min_absorbed_usd,
             )
 
-        live_zones = await liquidity_absorption_service.get_live_zones(exchange, symbol)
+        live_zones = await liquidity_absorption_service.get_live_zones(base_ex, norm_symbol)
         return {
-            "symbol": symbol,
-            "exchange": exchange,
+            "symbol": norm_symbol,
+            "exchange": base_ex,
             "interval": interval,
             "historical_zones": historical_zones,
             "live_zones": live_zones,
@@ -225,69 +231,79 @@ async def websocket_market_depth(websocket: WebSocket, exchange_id: str, symbol:
     norm_symbol = str(symbol or "").strip().upper()
     base_exchange_id, internal_exchange_id = market_depth_service.normalize_exchange_id(exchange_id, norm_symbol)
 
-    # Ensure background stream is running with refcount tracking so idle pairs auto-cleanup
     acquired_stream_key = None
+    oanda_acquired = False
     is_oanda = base_exchange_id == 'oanda'
-    if is_oanda:
-        oanda_streamer.add_symbol(norm_symbol)
-    else:
-        acquired_stream_key = await market_data_streamer.acquire_stream(base_exchange_id, norm_symbol)
-    
-    redis = redis_manager.get_redis()
-    if not redis:
-        if is_oanda:
-            oanda_streamer.remove_symbol(norm_symbol)
-        else:
-            market_data_streamer.release_stream(acquired_stream_key)
-        await websocket.close(code=1011, reason="Redis connection failed")
-        return
-        
+    pubsub = None
     channel_symbol = norm_symbol.replace("/", "_") if is_oanda else norm_symbol
     channel_name = f"market_depth_stream:{internal_exchange_id}:{channel_symbol}"
-    pubsub = redis.pubsub()
-    await pubsub.subscribe(channel_name)
-    
-    async def redis_listener():
-        try:
-            async for message in pubsub.listen():
-                if message["type"] == "message":
-                    data = message["data"]
-                    payload = json.loads(data)
-                    if "error" in payload:
-                        await websocket.close(code=1008, reason=payload["error"])
-                        return
-                    await websocket.send_text(data)
-        except Exception:
-            pass
 
-    async def client_listener():
-        try:
-            while True:
-                await websocket.receive_text()
-        except Exception:
-            pass
-
-    redis_task = asyncio.create_task(redis_listener())
-    client_task = asyncio.create_task(client_listener())
-    
     try:
+        redis = redis_manager.get_redis()
+        if not redis:
+            await websocket.close(code=1011, reason="Redis connection failed")
+            return
+
+        # Ensure background stream is running with refcount tracking inside try..finally so leaks cannot occur
+        if is_oanda:
+            oanda_streamer.add_symbol(norm_symbol)
+            oanda_acquired = True
+        else:
+            acquired_stream_key = await market_data_streamer.acquire_stream(base_exchange_id, norm_symbol)
+
+        pubsub = redis.pubsub()
+        await pubsub.subscribe(channel_name)
+
+        async def redis_listener():
+            try:
+                async for message in pubsub.listen():
+                    if message["type"] == "message":
+                        data = message["data"]
+                        if isinstance(data, (bytes, bytearray)):
+                            data = data.decode("utf-8", errors="ignore")
+                        # Avoid json.loads on every 40Hz tick unless an error frame is present
+                        if '"error"' in data:
+                            try:
+                                payload = json.loads(data)
+                                if isinstance(payload, dict) and "error" in payload:
+                                    await websocket.close(code=1008, reason=str(payload["error"]))
+                                    return
+                            except Exception:
+                                pass
+                        await websocket.send_text(data)
+            except Exception:
+                pass
+
+        async def client_listener():
+            try:
+                while True:
+                    await websocket.receive_text()
+            except Exception:
+                pass
+
+        redis_task = asyncio.create_task(redis_listener())
+        client_task = asyncio.create_task(client_listener())
+
         done, pending = await asyncio.wait(
             [redis_task, client_task],
             return_when=asyncio.FIRST_COMPLETED
         )
-        
+
         for task in pending:
             task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
     finally:
-        if is_oanda:
+        if oanda_acquired:
             oanda_streamer.remove_symbol(norm_symbol)
-        else:
+        if acquired_stream_key:
             market_data_streamer.release_stream(acquired_stream_key)
-        try:
-            await pubsub.unsubscribe(channel_name)
-            await pubsub.close()
-        except Exception:
-            pass
+        if pubsub is not None:
+            try:
+                await pubsub.unsubscribe(channel_name)
+                await pubsub.close()
+            except Exception:
+                pass
         try:
             await websocket.close()
         except Exception:
@@ -302,46 +318,58 @@ async def websocket_heatmap_events(websocket: WebSocket, symbol: str = None):
         await websocket.close(code=1011, reason="Redis connection failed")
         return
 
-    pubsub = redis.pubsub()
-    await pubsub.subscribe("heatmap_events")
+    target_symbol = str(symbol).strip().upper() if symbol else None
+    pubsub = None
+    try:
+        pubsub = redis.pubsub()
+        await pubsub.subscribe("heatmap_events")
 
-    async def redis_listener():
+        async def redis_listener():
+            try:
+                async for message in pubsub.listen():
+                    if message["type"] == "message":
+                        data = message["data"]
+                        if isinstance(data, (bytes, bytearray)):
+                            data = data.decode("utf-8", errors="ignore")
+                        if target_symbol:
+                            try:
+                                payload = json.loads(data)
+                                if str(payload.get("symbol", "")).strip().upper() != target_symbol:
+                                    continue
+                            except Exception:
+                                continue
+                        await websocket.send_text(data)
+            except Exception:
+                pass
+
+        async def client_listener():
+            try:
+                while True:
+                    await websocket.receive_text()
+            except Exception:
+                pass
+
+        redis_task = asyncio.create_task(redis_listener())
+        client_task = asyncio.create_task(client_listener())
+
+        done, pending = await asyncio.wait(
+            [redis_task, client_task],
+            return_when=asyncio.FIRST_COMPLETED
+        )
+
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+    finally:
+        if pubsub is not None:
+            try:
+                await pubsub.unsubscribe("heatmap_events")
+                await pubsub.close()
+            except Exception:
+                pass
         try:
-            async for message in pubsub.listen():
-                if message["type"] == "message":
-                    data = message["data"]
-                    payload = json.loads(data)
-                    if symbol and str(payload.get("symbol", "")).upper() != symbol.upper():
-                        continue
-                    await websocket.send_text(data)
+            await websocket.close()
         except Exception:
             pass
-
-    async def client_listener():
-        try:
-            while True:
-                await websocket.receive_text()
-        except Exception:
-            pass
-
-    redis_task = asyncio.create_task(redis_listener())
-    client_task = asyncio.create_task(client_listener())
-    
-    done, pending = await asyncio.wait(
-        [redis_task, client_task],
-        return_when=asyncio.FIRST_COMPLETED
-    )
-    
-    for task in pending:
-        task.cancel()
-        
-    try:
-        await pubsub.unsubscribe("heatmap_events")
-        await pubsub.close()
-    except Exception:
-        pass
-    try:
-        await websocket.close()
-    except Exception:
-        pass
 

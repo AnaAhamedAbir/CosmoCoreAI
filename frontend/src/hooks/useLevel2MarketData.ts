@@ -18,6 +18,7 @@ export type {
 
 export {
     subscribeLiveTradeTicks,
+    subscribeLiveTradeBatch,
     subscribeLiveBbo,
     subscribeLiveMarkPrice,
     subscribeFeedHealth,

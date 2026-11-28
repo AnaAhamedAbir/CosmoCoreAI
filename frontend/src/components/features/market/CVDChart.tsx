@@ -42,20 +42,23 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data, meta, loadi
     const [isSyncLocked, setIsSyncLocked] = useState<boolean>(true);
     const isSyncLockedRef = useRef<boolean>(true);
     isSyncLockedRef.current = isSyncLocked;
+    const [hoveredPoint, setHoveredPoint] = useState<CVDDataPoint | null>(null);
 
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<IChartApi | null>(null);
     const cvdSeriesRef = useRef<ISeriesApi<'Baseline'> | null>(null);
     const deltaSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+    const zeroLineRef = useRef<any>(null);
     const syncControllerRef = useRef<ChartPaneSyncController | null>(null);
 
     const isMutatingDataRef = useRef<boolean>(false);
+    const isSyncingCrosshairRef = useRef<boolean>(false);
     const mutateRafRef = useRef<number | null>(null);
     const lastRenderedCountRef = useRef<number>(0);
     const lastRenderedFirstTimeRef = useRef<number>(0);
     const lastRenderedLastTimeRef = useRef<number>(0);
     const anchorTimesRef = useRef<number[]>([]);
-    const valueByTimeRef = useRef<Map<number, number>>(new Map());
+    const pointByTimeRef = useRef<Map<number, CVDDataPoint>>(new Map());
 
     // Create chart once
     useEffect(() => {
@@ -125,10 +128,10 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data, meta, loadi
             priceFormat: { type: 'volume' },
         });
 
-        // Crisp zero reference line
-        cvdSeries.createPriceLine({
+        // Crisp zero reference line (tracked so Light/Dark theme toggles update it cleanly)
+        zeroLineRef.current = cvdSeries.createPriceLine({
             price: 0,
-            color: isDark ? 'rgba(148, 163, 184, 0.25)' : 'rgba(100, 116, 139, 0.3)',
+            color: isDark ? 'rgba(148, 163, 184, 0.25)' : 'rgba(100, 116, 139, 0.35)',
             lineWidth: 1,
             lineStyle: LineStyle.Dotted,
             axisLabelVisible: false,
@@ -166,13 +169,14 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data, meta, loadi
             chartRef.current = null;
             cvdSeriesRef.current = null;
             deltaSeriesRef.current = null;
+            zeroLineRef.current = null;
             try {
                 chart.remove();
             } catch {}
         };
     }, []);
 
-    // Dynamically sync Light/Dark Theme & Time Axis Visibility without recreating the chart
+    // Dynamically sync Light/Dark Theme, Crosshair, Zero Line & Time Axis Visibility without recreating the chart
     useEffect(() => {
         if (!chartRef.current) return;
         chartRef.current.applyOptions({
@@ -184,6 +188,16 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data, meta, loadi
                 vertLines: { color: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(15, 23, 42, 0.05)' },
                 horzLines: { color: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(15, 23, 42, 0.05)' },
             },
+            crosshair: {
+                horzLine: {
+                    style: LineStyle.Dashed,
+                    color: isDark ? 'rgba(148, 163, 184, 0.35)' : 'rgba(71, 85, 105, 0.35)',
+                },
+                vertLine: {
+                    style: LineStyle.Dashed,
+                    color: isDark ? 'rgba(148, 163, 184, 0.35)' : 'rgba(71, 85, 105, 0.35)',
+                },
+            },
             timeScale: {
                 borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.12)',
                 visible: !isSyncLocked,
@@ -194,7 +208,17 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data, meta, loadi
                 borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.12)',
             },
         });
+        try {
+            zeroLineRef.current?.applyOptions({
+                color: isDark ? 'rgba(148, 163, 184, 0.25)' : 'rgba(100, 116, 139, 0.35)',
+            });
+        } catch {}
     }, [isDark, isSyncLocked, interval]);
+
+    // Keep syncController locked state in sync cleanly outside React state updaters (StrictMode safe)
+    useEffect(() => {
+        syncControllerRef.current?.setLocked(isSyncLocked);
+    }, [isSyncLocked]);
 
     // Sync Data with Incremental `.update()` on Live Ticks (Zero Full-Chart Flicker & Zero Main-Chart Zoom Disturbance!)
     useEffect(() => {
@@ -222,11 +246,12 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data, meta, loadi
             try {
                 cvdSeries.setData([]);
                 deltaSeries.setData([]);
-                valueByTimeRef.current.clear();
+                pointByTimeRef.current.clear();
                 lastRenderedCountRef.current = 0;
                 lastRenderedFirstTimeRef.current = 0;
                 lastRenderedLastTimeRef.current = 0;
                 anchorTimesRef.current = [];
+                setHoveredPoint(null);
             } catch {}
             endDataMutationNextFrame();
             return;
@@ -252,16 +277,23 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data, meta, loadi
         const prevFirst = lastRenderedFirstTimeRef.current;
         const prevLast = lastRenderedLastTimeRef.current;
 
+        const isCappedRollover =
+            prevCount >= 995 &&
+            data.length === prevCount &&
+            lastPt.time > prevLast &&
+            data.length >= 2 &&
+            data[data.length - 2].time === prevLast;
+
         const canIncrementalUpdate =
             prevCount > 0 &&
-            firstTime === prevFirst &&
-            (data.length === prevCount || data.length === prevCount + 1) &&
-            lastPt.time >= prevLast;
+            lastPt.time >= prevLast &&
+            ((firstTime === prevFirst && (data.length === prevCount || data.length === prevCount + 1)) ||
+                isCappedRollover);
 
         if (canIncrementalUpdate) {
             try {
                 cvdSeries.update({ time: lastPt.time as any, value: lastPt.value });
-                valueByTimeRef.current.set(lastPt.time, lastPt.value);
+                pointByTimeRef.current.set(lastPt.time, lastPt);
                 const barDelta =
                     lastPt.delta !== undefined
                         ? lastPt.delta
@@ -274,6 +306,7 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data, meta, loadi
                     color: barDelta >= 0 ? 'rgba(16, 185, 129, 0.42)' : 'rgba(244, 63, 94, 0.42)',
                 });
                 lastRenderedCountRef.current = data.length;
+                lastRenderedFirstTimeRef.current = firstTime;
                 lastRenderedLastTimeRef.current = lastPt.time;
                 anchorTimesRef.current = buildAnchorTimes(data);
                 return;
@@ -293,12 +326,12 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data, meta, loadi
         const sorted = Array.from(uniqueMap.values()).sort((a, b) => a.time - b.time);
         if (sorted.length === 0) return;
 
-        const valMap = new Map<number, number>();
+        const ptMap = new Map<number, CVDDataPoint>();
         const cvdPoints = sorted.map((p) => {
-            valMap.set(p.time, p.value);
+            ptMap.set(p.time, p);
             return { time: p.time as any, value: p.value };
         });
-        valueByTimeRef.current = valMap;
+        pointByTimeRef.current = ptMap;
 
         const deltaPoints = sorted.map((p, idx) => {
             const d = p.delta !== undefined ? p.delta : idx > 0 ? p.value - sorted[idx - 1].value : p.value;
@@ -345,43 +378,65 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data, meta, loadi
         syncControllerRef.current = controller;
 
         const syncCrosshairMainToCVD = (param: any) => {
+            if (isSyncingCrosshairRef.current) return;
             if (!isSyncLockedRef.current || !param.point || !param.time || !cvdSeriesRef.current) {
+                isSyncingCrosshairRef.current = true;
                 try {
                     cvdChart.clearCrosshairPosition();
                 } catch {}
+                isSyncingCrosshairRef.current = false;
+                setHoveredPoint(null);
                 return;
             }
             try {
                 const tNum = Number(param.time);
-                const val = valueByTimeRef.current.get(tNum);
-                if (val !== undefined) {
-                    cvdChart.setCrosshairPosition(val, param.time, cvdSeriesRef.current);
-                } else if (typeof param.logical === 'number') {
-                    const seriesData = cvdSeriesRef.current.dataByIndex(param.logical);
-                    if (seriesData && 'value' in seriesData) {
-                        cvdChart.setCrosshairPosition((seriesData as any).value as number, param.time, cvdSeriesRef.current);
-                    }
+                const pt = pointByTimeRef.current.get(tNum);
+                if (pt !== undefined) {
+                    isSyncingCrosshairRef.current = true;
+                    cvdChart.setCrosshairPosition(pt.value, param.time, cvdSeriesRef.current);
+                    isSyncingCrosshairRef.current = false;
+                    setHoveredPoint(pt);
+                } else {
+                    setHoveredPoint(null);
                 }
-            } catch {}
+            } catch {
+                isSyncingCrosshairRef.current = false;
+            }
+        };
+
+        const syncCrosshairCVDToMain = (param: any) => {
+            if (isSyncingCrosshairRef.current) return;
+            if (!param.point || !param.time) {
+                setHoveredPoint(null);
+                if (isSyncLockedRef.current) {
+                    isSyncingCrosshairRef.current = true;
+                    try {
+                        mainChart.clearCrosshairPosition();
+                    } catch {}
+                    isSyncingCrosshairRef.current = false;
+                }
+                return;
+            }
+            const tNum = Number(param.time);
+            const pt = pointByTimeRef.current.get(tNum);
+            setHoveredPoint(pt ?? null);
         };
 
         mainChart.subscribeCrosshairMove(syncCrosshairMainToCVD);
+        cvdChart.subscribeCrosshairMove(syncCrosshairCVDToMain);
 
         return () => {
             syncControllerRef.current = null;
             controller.destroy();
             try {
                 mainChart.unsubscribeCrosshairMove(syncCrosshairMainToCVD);
+                cvdChart.unsubscribeCrosshairMove(syncCrosshairCVDToMain);
             } catch {}
         };
     }, [mainChart]);
 
     const handleToggleSyncLock = useCallback(() => {
-        setIsSyncLocked((prev) => {
-            const next = !prev;
-            syncControllerRef.current?.setLocked(next);
-            return next;
-        });
+        setIsSyncLocked((prev) => !prev);
     }, []);
 
     const handleFitCvd = useCallback(() => {
@@ -390,32 +445,42 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data, meta, loadi
         } catch {}
     }, []);
 
-    // Live HUD Stats (recomputes buyPct/sellPct dynamically as live ticks arrive!)
+    // Live + Hover-Reactive HUD Stats (shows hovered bar breakdown when crosshair is over a candle)
     const hudStats = useMemo(() => {
         if (!data || data.length === 0) {
-            return { sessionCvd: 0, barDelta: 0, buyPct: 50, sellPct: 50 };
+            return { sessionCvd: 0, barDelta: 0, buyPct: 50, sellPct: 50, isHovered: false };
         }
-        const last = data[data.length - 1];
-        const prev = data.length >= 2 ? data[data.length - 2] : null;
-        const barDelta = last.delta !== undefined ? last.delta : prev ? last.value - prev.value : last.value;
+        const active = hoveredPoint || data[data.length - 1];
+        const prev = !hoveredPoint && data.length >= 2 ? data[data.length - 2] : null;
+        const barDelta = active.delta !== undefined ? active.delta : prev ? active.value - prev.value : active.value;
 
-        let sumBuy = 0;
-        let sumSell = 0;
-        for (let i = 0; i < data.length; i++) {
-            sumBuy += data[i].buyVolume || 0;
-            sumSell += data[i].sellVolume || 0;
+        let buyPct: number;
+        let sellPct: number;
+        if (hoveredPoint && ((hoveredPoint.buyVolume || 0) + (hoveredPoint.sellVolume || 0)) > 0) {
+            const b = hoveredPoint.buyVolume || 0;
+            const s = hoveredPoint.sellVolume || 0;
+            buyPct = (b / (b + s)) * 100;
+            sellPct = 100 - buyPct;
+        } else {
+            let sumBuy = 0;
+            let sumSell = 0;
+            for (let i = 0; i < data.length; i++) {
+                sumBuy += data[i].buyVolume || 0;
+                sumSell += data[i].sellVolume || 0;
+            }
+            const sumTotal = sumBuy + sumSell;
+            buyPct = sumTotal > 0 ? (sumBuy / sumTotal) * 100 : (meta?.buyPct ?? 50);
+            sellPct = sumTotal > 0 ? 100 - buyPct : (meta?.sellPct ?? 50);
         }
-        const sumTotal = sumBuy + sumSell;
-        const buyPct = sumTotal > 0 ? (sumBuy / sumTotal) * 100 : (meta?.buyPct ?? 50);
-        const sellPct = sumTotal > 0 ? 100 - buyPct : (meta?.sellPct ?? 50);
 
         return {
-            sessionCvd: last.value,
+            sessionCvd: active.value,
             barDelta,
             buyPct,
             sellPct,
+            isHovered: Boolean(hoveredPoint),
         };
-    }, [data, meta]);
+    }, [data, meta, hoveredPoint]);
 
     const isPositive = hudStats.sessionCvd >= 0;
     const isDeltaPos = hudStats.barDelta >= 0;

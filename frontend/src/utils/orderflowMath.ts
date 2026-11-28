@@ -1,23 +1,13 @@
 import type { FootprintCandleData, FootprintDataTick } from '../components/features/market/FootprintRenderer';
+import { intervalToSec } from './candleTime';
 
 export function parseOrderflowIntervalSec(interval: string): number {
-    const tf = (interval || '1m').trim();
-    const val = parseInt(tf, 10) || 1;
-    const unit = tf.replace(/[0-9]/g, '') || 'm';
-    switch (unit) {
-        case 's': return Math.max(1, val);
-        case 'm': return val * 60;
-        case 'h': return val * 3600;
-        case 'd': return val * 86400;
-        case 'w': return val * 604800;
-        case 'M': return val * 2592000;
-        default: return val * 60;
-    }
+    return intervalToSec(interval);
 }
 
 /**
  * Computes a clean price-adaptive bucket/cluster step (~pct of price snapped to 1/2/2.5/5 * 10^n).
- * Works across BTC ($95k), ETH ($3k), SOL ($150), DOGE ($0.15), PEPE ($0.00001), and Forex EUR/USD.
+ * Works across BTC ($95k), ETH ($3k), SOL ($150), DOGE ($0.15), PEPE ($0.000008), and Forex EUR/USD.
  */
 export function computeAdaptivePriceStep(price: number, pct: number = 0.0004): number {
     if (!Number.isFinite(price) || price <= 0) return 0.5;
@@ -31,19 +21,74 @@ export function computeAdaptivePriceStep(price: number, pct: number = 0.0004): n
     else if (ratio < 3.5) step = 2.5 * base;
     else if (ratio < 7.0) step = 5.0 * base;
     else step = 10.0 * base;
-    const decimals = Math.max(0, Math.min(10, -exp + 2));
+    const decimals = Math.max(0, Math.min(12, -exp + 2));
     return Number(step.toFixed(decimals));
 }
 
 export function snapPriceToStep(price: number, step: number, mode: 'floor' | 'ceil' = 'floor'): number {
     if (!Number.isFinite(price) || !Number.isFinite(step) || step <= 0) return price;
     const exp = Math.floor(Math.log10(step));
-    const decimals = Math.max(2, Math.min(10, -exp + 2));
+    const decimals = Math.max(2, Math.min(12, -exp + 2));
     const raw =
         mode === 'ceil'
             ? Math.ceil(price / step - 1e-9) * step
             : Math.floor(price / step + 1e-9) * step;
     return Number(raw.toFixed(decimals));
+}
+
+/**
+ * Computes institutional Market Profile Value Area (POC, 70% VAH, 70% VAL) from sorted or unsorted volume rows.
+ */
+export function computeVpvrValueArea(
+    rows: Array<{ price: number; volume: number }>,
+    valueAreaPct: number = 0.7
+): { pocPrice: number; vahPrice: number; valPrice: number; totalVolume: number } {
+    if (!rows || rows.length === 0) {
+        return { pocPrice: 0, vahPrice: 0, valPrice: 0, totalVolume: 0 };
+    }
+    const sorted = [...rows]
+        .filter((r) => Number.isFinite(r.price) && Number.isFinite(r.volume) && r.volume > 0)
+        .sort((a, b) => a.price - b.price);
+    if (sorted.length === 0) {
+        return { pocPrice: 0, vahPrice: 0, valPrice: 0, totalVolume: 0 };
+    }
+
+    let pocIdx = 0;
+    let maxVol = -1;
+    let totalVolume = 0;
+    for (let i = 0; i < sorted.length; i++) {
+        totalVolume += sorted[i].volume;
+        if (sorted[i].volume > maxVol) {
+            maxVol = sorted[i].volume;
+            pocIdx = i;
+        }
+    }
+
+    const targetVol = totalVolume * Math.max(0.1, Math.min(0.95, valueAreaPct));
+    let accVol = sorted[pocIdx].volume;
+    let lowIdx = pocIdx;
+    let highIdx = pocIdx;
+
+    while (accVol < targetVol && (lowIdx > 0 || highIdx < sorted.length - 1)) {
+        const upVol = highIdx + 1 < sorted.length ? sorted[highIdx + 1].volume : -1;
+        const downVol = lowIdx - 1 >= 0 ? sorted[lowIdx - 1].volume : -1;
+        if (upVol >= downVol && highIdx + 1 < sorted.length) {
+            highIdx++;
+            accVol += sorted[highIdx].volume;
+        } else if (lowIdx - 1 >= 0) {
+            lowIdx--;
+            accVol += sorted[lowIdx].volume;
+        } else {
+            break;
+        }
+    }
+
+    return {
+        pocPrice: sorted[pocIdx].price,
+        vahPrice: sorted[highIdx].price,
+        valPrice: sorted[lowIdx].price,
+        totalVolume,
+    };
 }
 
 export function formatCompactOrderflowNumber(val: number, signed: boolean = false): string {
@@ -90,6 +135,8 @@ export function enrichFootprintCandleClient(candle: FootprintCandleData): Footpr
         }
         t.isImbalance = false;
         t.imbalanceType = undefined;
+        t.isAskImbalance = false;
+        t.isBidImbalance = false;
         t.isStackedImbalance = false;
         t.isUnfinishedAuction = false;
         t.isAbsorption = false;
@@ -97,38 +144,51 @@ export function enrichFootprintCandleClient(candle: FootprintCandleData): Footpr
 
     const avgRowVol = totalVol / n;
     const minMeaningfulVol = Math.max(avgRowVol * 0.25, 1e-9);
+    const tickStep = candle.tickStep && candle.tickStep > 0 ? candle.tickStep : 0;
+    const stepTol = tickStep > 0 ? Math.max(tickStep * 0.15, 1e-9) : 0;
+    const isAdjacent = (higherP: number, lowerP: number): boolean => {
+        if (tickStep <= 0) return true;
+        return Math.abs((higherP - lowerP) - tickStep) <= stepTol;
+    };
 
     for (let i = 0; i < n; i++) {
         const t = ticks[i];
         const rv = t.bidVolume + t.askVolume;
+        let askRatio = 0;
+        let bidRatio = 0;
 
-        // Ask (buy) diagonal imbalance vs 1 tick lower bid
-        if (i + 1 < n) {
+        // Ask (buy) diagonal imbalance vs 1 contiguous tick lower bid
+        if (i + 1 < n && isAdjacent(t.price, ticks[i + 1].price)) {
             const lowerBid = ticks[i + 1].bidVolume;
             if (
                 t.askVolume >= minMeaningfulVol &&
                 ((lowerBid > 0 && t.askVolume >= lowerBid * 3.0) ||
                     (lowerBid === 0 && t.askVolume >= avgRowVol * 1.25))
             ) {
-                t.isImbalance = true;
-                t.imbalanceType = 'ask';
+                t.isAskImbalance = true;
+                askRatio = lowerBid > 0 ? t.askVolume / lowerBid : 99;
             }
         }
 
-        // Bid (sell) diagonal imbalance vs 1 tick higher ask
-        if (i - 1 >= 0 && !t.isImbalance) {
+        // Bid (sell) diagonal imbalance vs 1 contiguous tick higher ask (independent of ask imbalance)
+        if (i - 1 >= 0 && isAdjacent(ticks[i - 1].price, t.price)) {
             const higherAsk = ticks[i - 1].askVolume;
             if (
                 t.bidVolume >= minMeaningfulVol &&
                 ((higherAsk > 0 && t.bidVolume >= higherAsk * 3.0) ||
                     (higherAsk === 0 && t.bidVolume >= avgRowVol * 1.25))
             ) {
-                t.isImbalance = true;
-                t.imbalanceType = 'bid';
+                t.isBidImbalance = true;
+                bidRatio = higherAsk > 0 ? t.bidVolume / higherAsk : 99;
             }
         }
 
-        if ((i === 0 || i === n - 1) && t.bidVolume > 0 && t.askVolume > 0) {
+        if (t.isAskImbalance || t.isBidImbalance) {
+            t.isImbalance = true;
+            t.imbalanceType = askRatio >= bidRatio ? 'ask' : 'bid';
+        }
+
+        if (n >= 2 && (i === 0 || i === n - 1) && t.bidVolume > 0 && t.askVolume > 0) {
             t.isUnfinishedAuction = true;
         }
 
@@ -137,18 +197,15 @@ export function enrichFootprintCandleClient(candle: FootprintCandleData): Footpr
         }
     }
 
-    // Stacked Imbalance (3+ consecutive same-side diagonal imbalances)
+    // Stacked Imbalance (3+ contiguous same-side diagonal imbalances)
     for (let i = 0; i < n - 2; i++) {
         const t0 = ticks[i];
         const t1 = ticks[i + 1];
         const t2 = ticks[i + 2];
+        if (!isAdjacent(t0.price, t1.price) || !isAdjacent(t1.price, t2.price)) continue;
         if (
-            t0.isImbalance &&
-            t1.isImbalance &&
-            t2.isImbalance &&
-            t0.imbalanceType &&
-            t0.imbalanceType === t1.imbalanceType &&
-            t1.imbalanceType === t2.imbalanceType
+            (t0.isAskImbalance && t1.isAskImbalance && t2.isAskImbalance) ||
+            (t0.isBidImbalance && t1.isBidImbalance && t2.isBidImbalance)
         ) {
             t0.isStackedImbalance = true;
             t1.isStackedImbalance = true;

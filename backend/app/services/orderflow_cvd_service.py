@@ -153,7 +153,9 @@ class OrderflowCVDService:
 
         # 2. Fallback to standard OHLCV (which supports all exchanges + 1s-30s resampled/recorded bars)
         if not candles:
-            ohlcv = await market_depth_service.fetch_ohlcv(norm_sym, base_ex, timeframe, req_limit)
+            ohlcv = await market_depth_service.fetch_ohlcv(
+                norm_sym, base_ex, timeframe, req_limit, include_patterns=False
+            )
             candles = []
             for c in ohlcv or []:
                 o = _safe_float(c.get("open"))

@@ -86,6 +86,10 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
   const rafRef = useRef<number | null>(null);
 
   useEffect(() => {
+    livePriceRef.current = currentPrice > 0 ? currentPrice : 0;
+  }, [symbol, exchange]);
+
+  useEffect(() => {
     if (currentPrice > 0) {
       livePriceRef.current = currentPrice;
     }
@@ -349,7 +353,12 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
         y: number;
       }[] = [];
 
-      // 1. Entry Live P/L Pill
+      // 1. Entry Live P/L Pill (with off-screen directional indicator when panned/zoomed away)
+      const paneHeight = containerElRef.current?.clientHeight || 600;
+      const minY = 12;
+      const maxY = Math.max(minY + 24, paneHeight - 14);
+      const minGapPx = 24;
+
       const entryEl = entryBadgeElRef.current;
       const entryTxtEl = entryBadgeTextRef.current;
       if (entryEl && entryTxtEl) {
@@ -365,12 +374,14 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
         });
         const yCoord = series.priceToCoordinate(entryContext.entryPrice as any);
         if (livePnl && yCoord !== null && yCoord !== undefined && Number.isFinite(Number(yCoord))) {
+          const rawY = Number(yCoord);
+          const offPrefix = rawY < minY ? '▲ ' : rawY > maxY ? '▼ ' : '';
           const isProfit = livePnl.pnlUsd >= 0;
           const sideText = entryContext.source === 'spot_bracket'
             ? 'SPOT ENTRY'
             : (entryContext.side === 'long' ? 'LONG' : 'SHORT');
           const levText = entryContext.leverage ? ` ${entryContext.leverage}x` : '';
-          entryTxtEl.textContent = `${sideText}${levText} · ${formatCompactPnl(livePnl.pnlUsd, livePnl.pnlPct)}`;
+          entryTxtEl.textContent = `${offPrefix}${sideText}${levText} · ${formatCompactPnl(livePnl.pnlUsd, livePnl.pnlPct)}`;
           entryEl.dataset.profit = isProfit ? 'true' : 'false';
           applyPillVisualStyle(entryEl, {
             kind: 'entry',
@@ -378,15 +389,37 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
             isDarkMode: isDark,
             rightPx: rightLaneOffsetPx,
           });
-          entryEl.style.opacity = '1';
-          rows.push({ key: '__entry__', el: entryEl, y: Number(yCoord) });
+          entryEl.style.opacity = offPrefix ? '0.86' : '1';
+          rows.push({ key: '__entry__', el: entryEl, y: Math.max(minY, Math.min(maxY, rawY)) });
         } else {
           entryEl.style.opacity = '0';
         }
       }
 
-      // 2. SL / TP Projected P/L Pills (with 60fps Drag Preview override)
+      // 2. SL / TP Projected P/L Pills (with live 60fps Drag Preview + live R:R recalculation during BOTH SL & TP drag)
       const activeDrag = dragPreviewRef.current;
+      const primarySlSpec = bracketSpecs.find((s) => s.kind === 'sl');
+      let liveSlRiskAbs = 0;
+      if (primarySlSpec) {
+        const slEffPx =
+          activeDrag && activeDrag.orderId === primarySlSpec.order.id
+            ? activeDrag.price
+            : primarySlSpec.price;
+        const slLivePnl = computeTradePnl({
+          entryPrice: primarySlSpec.orderCtx.entryPrice,
+          targetPrice: slEffPx,
+          amount: primarySlSpec.orderCtx.amount,
+          side: primarySlSpec.orderCtx.side,
+          isInverse: primarySlSpec.orderCtx.isInverse,
+          contracts: primarySlSpec.orderCtx.contracts,
+          contractSize: primarySlSpec.orderCtx.contractSize,
+        });
+        if (slLivePnl && slLivePnl.pnlUsd < 0) {
+          liveSlRiskAbs = Math.abs(slLivePnl.pnlUsd);
+        }
+      }
+      const isSlBeingDragged = Boolean(primarySlSpec && activeDrag && activeDrag.orderId === primarySlSpec.order.id);
+
       for (const spec of bracketSpecs) {
         const el = badgeElementsRef.current.get(spec.id);
         if (!el) continue;
@@ -400,10 +433,13 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
           continue;
         }
 
+        const rawY = Number(yCoord);
+        const offPrefix = !isBeingDragged ? (rawY < minY ? '▲ ' : rawY > maxY ? '▼ ' : '') : '';
+
         let displayText = spec.text;
         let isProfit = spec.isProfit;
 
-        if (isBeingDragged) {
+        if (isBeingDragged || (spec.kind === 'tp' && isSlBeingDragged)) {
           const dragPnl = computeTradePnl({
             entryPrice: spec.orderCtx.entryPrice,
             targetPrice: effPrice,
@@ -415,13 +451,18 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
           });
           if (dragPnl) {
             isProfit = dragPnl.pnlUsd >= 0;
-            displayText = formatBracketLabel(spec.order, dragPnl.pnlUsd, dragPnl.pnlPct);
+            const liveRrText =
+              spec.kind === 'tp' && liveSlRiskAbs > 0 && dragPnl.pnlUsd > 0
+                ? ` · ${(dragPnl.pnlUsd / liveSlRiskAbs).toFixed(1)}R`
+                : '';
+            displayText = formatBracketLabel(spec.order, dragPnl.pnlUsd, dragPnl.pnlPct, liveRrText);
           }
         }
 
+        const finalDisplayText = offPrefix ? `${offPrefix}${displayText}` : displayText;
         const span = el.firstElementChild as HTMLSpanElement | null;
-        if (span && span.textContent !== displayText) {
-          span.textContent = displayText;
+        if (span && span.textContent !== finalDisplayText) {
+          span.textContent = finalDisplayText;
         }
 
         applyPillVisualStyle(el, {
@@ -432,16 +473,11 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
           isPending: spec.isPending,
           rightPx: rightLaneOffsetPx,
         });
-        el.style.opacity = '1';
-        rows.push({ key: spec.id, el, y: Number(yCoord) });
+        el.style.opacity = offPrefix ? '0.86' : '1';
+        rows.push({ key: spec.id, el, y: Math.max(minY, Math.min(maxY, rawY)) });
       }
 
       // 3. Anti-collision vertical nudging (cards stay apart AND clear any Liquidation label & viewport edges)
-      const paneHeight = containerElRef.current?.clientHeight || 600;
-      const minY = 12;
-      const maxY = Math.max(minY + 24, paneHeight - 14);
-      const minGapPx = 24;
-
       const liqPrice = Number(activePosition?.liquidation_price || 0);
       let liqY: number | null = null;
       if (Number.isFinite(liqPrice) && liqPrice > 0) {
@@ -452,14 +488,17 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
       }
 
       rows.sort((a, b) => a.y - b.y);
-      if (liqY !== null) {
+      const dodgeLiquidation = () => {
+        if (liqY === null) return;
         for (const row of rows) {
           if (Math.abs(row.y - liqY) < minGapPx) {
             row.y = row.y >= liqY ? liqY + minGapPx : liqY - minGapPx;
           }
         }
         rows.sort((a, b) => a.y - b.y);
-      }
+      };
+
+      dodgeLiquidation();
 
       for (let i = 1; i < rows.length; i++) {
         if (rows[i].y - rows[i - 1].y < minGapPx) {
@@ -475,6 +514,7 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
             rows[i].y = rows[i + 1].y - minGapPx;
           }
         }
+        dodgeLiquidation();
       }
 
       for (const row of rows) {
@@ -484,6 +524,7 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
     };
   }, [chart, series, entryContext, activePosition, bracketSpecs, isDark, dragPreviewRef]);
 
+  const scheduleSyncRef = useRef<() => void>(() => {});
   // Schedule rAF coordinate & P/L sync
   const scheduleSync = useMemo(() => {
     return () => {
@@ -494,63 +535,65 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
       });
     };
   }, [syncPositionsAndLivePnl]);
+  scheduleSyncRef.current = scheduleSync;
 
   // Register imperative drag sync callback for 60fps drag-P/L updates
   useEffect(() => {
-    registerDragSyncRef.current = scheduleSync;
+    registerDragSyncRef.current = () => scheduleSyncRef.current();
     return () => {
-      if (registerDragSyncRef.current === scheduleSync) {
-        registerDragSyncRef.current = null;
-      }
+      registerDragSyncRef.current = null;
     };
-  }, [registerDragSyncRef, scheduleSync]);
+  }, [registerDragSyncRef]);
 
-  // Subscribe to live trade ticks, pan/zoom range changes, Y-axis wheel/drag, and resizes
+  // Subscribe once per chart/series/symbol/exchange (no listener teardown on order updates or idle hover thrashing!)
   useEffect(() => {
     if (!entryContext || !series || !chart) return;
 
-    scheduleSync();
+    const triggerSync = () => scheduleSyncRef.current();
+    triggerSync();
 
     const unsubTicks = subscribeLiveTradeTicks(symbol, exchange, (tick) => {
       if (tick?.price && tick.price > 0) {
         livePriceRef.current = tick.price;
-        scheduleSync();
+        triggerSync();
       }
     });
 
     const timeScale = chart.timeScale();
-    const handleRangeChange = () => scheduleSync();
-    timeScale.subscribeVisibleLogicalRangeChange(handleRangeChange);
-    chart.subscribeCrosshairMove(handleRangeChange);
+    timeScale.subscribeVisibleLogicalRangeChange(triggerSync);
+    timeScale.subscribeSizeChange(triggerSync);
 
     const overlayHost = containerElRef.current?.parentElement;
     const interactionHost = overlayHost?.parentElement || overlayHost;
-    const handleWheel = () => scheduleSync();
     const handlePointerMove = (e: PointerEvent) => {
-      if (e.buttons !== 0) scheduleSync();
+      if (e.buttons !== 0) triggerSync();
     };
     if (interactionHost) {
-      interactionHost.addEventListener('wheel', handleWheel, { passive: true });
+      interactionHost.addEventListener('wheel', triggerSync, { passive: true });
       interactionHost.addEventListener('pointermove', handlePointerMove, { passive: true });
+      interactionHost.addEventListener('pointerup', triggerSync, { passive: true });
+      interactionHost.addEventListener('dblclick', triggerSync, { passive: true });
     }
 
     let ro: ResizeObserver | null = null;
     if (overlayHost && typeof ResizeObserver !== 'undefined') {
-      ro = new ResizeObserver(() => scheduleSync());
+      ro = new ResizeObserver(triggerSync);
       ro.observe(overlayHost);
     }
 
     return () => {
       unsubTicks();
       try {
-        timeScale.unsubscribeVisibleLogicalRangeChange(handleRangeChange);
-        chart.unsubscribeCrosshairMove(handleRangeChange);
+        timeScale.unsubscribeVisibleLogicalRangeChange(triggerSync);
+        timeScale.unsubscribeSizeChange(triggerSync);
       } catch {
         // chart may already be disposed
       }
       if (interactionHost) {
-        interactionHost.removeEventListener('wheel', handleWheel);
+        interactionHost.removeEventListener('wheel', triggerSync);
         interactionHost.removeEventListener('pointermove', handlePointerMove);
+        interactionHost.removeEventListener('pointerup', triggerSync);
+        interactionHost.removeEventListener('dblclick', triggerSync);
       }
       ro?.disconnect();
       if (rafRef.current !== null) {
@@ -558,7 +601,7 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
         rafRef.current = null;
       }
     };
-  }, [chart, series, symbol, exchange, entryContext, bracketSpecs, candlesReadyTick, scheduleSync]);
+  }, [chart, series, symbol, exchange, Boolean(entryContext), candlesReadyTick]);
 
   // Also sync whenever currentPrice, entryContext, or theme changes
   useEffect(() => {

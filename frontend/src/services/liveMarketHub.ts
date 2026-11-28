@@ -67,6 +67,7 @@ export const EMPTY_MARKET_DEPTH_DATA: MarketDepthData = {
 
 interface LiveMarketChannelState {
     tickListeners: Set<(tick: TradeTickEvent) => void>;
+    tradeBatchListeners: Set<(ticks: TradeTickEvent[]) => void>;
     bboListeners: Set<(bbo: BboTickEvent) => void>;
     markListeners: Set<(mark: MarkPriceEvent) => void>;
     healthListeners: Set<(health: FeedHealthSnapshot) => void>;
@@ -74,6 +75,7 @@ interface LiveMarketChannelState {
     timer: ReturnType<typeof setTimeout> | null;
     rafId: number | null;
     pendingTick: TradeTickEvent | null;
+    pendingTradeBatch: TradeTickEvent[];
     pendingBbo: BboTickEvent | null;
     latestTick: TradeTickEvent | null;
     latestBbo: BboTickEvent | null;
@@ -103,7 +105,8 @@ interface SharedMarketConnection {
     directBinanceSockets: WebSocket[];
     worker: Worker | null;
     reconnectTimer: ReturnType<typeof setTimeout> | null;
-    directReconnectTimer: ReturnType<typeof setTimeout> | null;
+    directReconnectTimers: Map<number, ReturnType<typeof setTimeout>>;
+    directBackoffMs: Map<number, number>;
     healthTimer: ReturnType<typeof setInterval> | null;
     unsubscribeDragEnd: (() => void) | null;
     visibilityHandler: (() => void) | null;
@@ -126,7 +129,7 @@ const liveMarketChannels = new Map<string, LiveMarketChannelState>();
 const sharedConnections = new Map<string, SharedMarketConnection>();
 
 export function getMarketChannelKey(symbol: string, exchange: string): string {
-    return `${exchange}:${symbol}`;
+    return `${String(exchange || '').trim().toLowerCase()}:${String(symbol || '').trim().toUpperCase()}`;
 }
 
 function normalizeTsMs(rawTs?: number): number {
@@ -140,6 +143,7 @@ function getOrCreateChannel(symbol: string, exchange: string): LiveMarketChannel
     if (!channel) {
         channel = {
             tickListeners: new Set(),
+            tradeBatchListeners: new Set(),
             bboListeners: new Set(),
             markListeners: new Set(),
             healthListeners: new Set(),
@@ -147,6 +151,7 @@ function getOrCreateChannel(symbol: string, exchange: string): LiveMarketChannel
             timer: null,
             rafId: null,
             pendingTick: null,
+            pendingTradeBatch: [],
             pendingBbo: null,
             latestTick: null,
             latestBbo: null,
@@ -188,26 +193,42 @@ function cleanupChannelIfUnused(key: string) {
     if (sharedConnections.has(key)) return;
     if (
         existing.tickListeners.size === 0 &&
+        existing.tradeBatchListeners.size === 0 &&
         existing.bboListeners.size === 0 &&
         existing.markListeners.size === 0 &&
         existing.healthListeners.size === 0
     ) {
         cancelChannelSchedulers(existing);
         existing.pendingTick = null;
+        existing.pendingTradeBatch = [];
         existing.pendingBbo = null;
         liveMarketChannels.delete(key);
     }
 }
 
-function dispatchChannelFrame(channel: LiveMarketChannelState, tick: TradeTickEvent | null, bbo: BboTickEvent | null) {
-    // Dispatch both trade tick and BBO in the exact same synchronous frame so
-    // last-trade line and bid/ask lines never drift or move in opposite directions.
+function dispatchChannelFrame(
+    channel: LiveMarketChannelState,
+    tick: TradeTickEvent | null,
+    tradeBatch: TradeTickEvent[],
+    bbo: BboTickEvent | null
+) {
+    // Dispatch trade tick, lossless trade batch, and BBO in the exact same synchronous frame so
+    // last-trade line, bid/ask lines, CVD, and Footprint never drift out of sync.
     if (tick && channel.tickListeners.size > 0) {
         channel.tickListeners.forEach((cb) => {
             try {
                 cb(tick);
             } catch (err) {
                 console.error('Live trade tick subscriber error:', err);
+            }
+        });
+    }
+    if (tradeBatch.length > 0 && channel.tradeBatchListeners.size > 0) {
+        channel.tradeBatchListeners.forEach((cb) => {
+            try {
+                cb(tradeBatch);
+            } catch (err) {
+                console.error('Live trade batch subscriber error:', err);
             }
         });
     }
@@ -226,19 +247,26 @@ function dispatchChannelFrame(channel: LiveMarketChannelState, tick: TradeTickEv
 
 function flushPendingChannel(channel: LiveMarketChannelState) {
     const tick = channel.pendingTick;
+    const tradeBatch = channel.pendingTradeBatch;
     const bbo = channel.pendingBbo;
     channel.pendingTick = null;
+    channel.pendingTradeBatch = [];
     channel.pendingBbo = null;
-    if ((!tick && !bbo) || (channel.tickListeners.size === 0 && channel.bboListeners.size === 0)) {
+    if (
+        (!tick && tradeBatch.length === 0 && !bbo) ||
+        (channel.tickListeners.size === 0 && channel.tradeBatchListeners.size === 0 && channel.bboListeners.size === 0)
+    ) {
         return;
     }
     if (typeof document !== 'undefined' && document.hidden) {
         channel.pendingTick = tick;
         channel.pendingBbo = bbo;
+        // Drop unbounded raw batch backlog while hidden; visibilitychange triggers clean REST resync
+        channel.pendingTradeBatch = [];
         return;
     }
     channel.lastEmitAt = Date.now();
-    dispatchChannelFrame(channel, tick, bbo);
+    dispatchChannelFrame(channel, tick, tradeBatch, bbo);
 }
 
 function scheduleRafFlush(channel: LiveMarketChannelState) {
@@ -254,8 +282,13 @@ function scheduleRafFlush(channel: LiveMarketChannelState) {
 }
 
 function scheduleOrDispatchChannel(channel: LiveMarketChannelState) {
-    if (channel.tickListeners.size === 0 && channel.bboListeners.size === 0) {
+    if (
+        channel.tickListeners.size === 0 &&
+        channel.tradeBatchListeners.size === 0 &&
+        channel.bboListeners.size === 0
+    ) {
         channel.pendingTick = null;
+        channel.pendingTradeBatch = [];
         channel.pendingBbo = null;
         return;
     }
@@ -306,7 +339,7 @@ function scheduleOrDispatchChannel(channel: LiveMarketChannelState) {
 function flushChannelOnVisible(symbol: string, exchange: string) {
     const channel = liveMarketChannels.get(getMarketChannelKey(symbol, exchange));
     if (!channel) return;
-    if (!channel.pendingTick && !channel.pendingBbo) return;
+    if (!channel.pendingTick && channel.pendingTradeBatch.length === 0 && !channel.pendingBbo) return;
     cancelChannelSchedulers(channel);
     flushPendingChannel(channel);
 }
@@ -319,8 +352,10 @@ function emitLiveBboTick(symbol: string, exchange: string, bbo: BboTickEvent) {
     const now = Date.now();
     const ts = normalizeTsMs(bbo.timestamp);
 
+    // Guard against minor clock skew when switching between direct exchange and backend relay clocks
     const sourceTimedOut = channel.lastBboWallAt > 0 && (now - channel.lastBboWallAt) > 2500;
-    if (!sourceTimedOut && ts < channel.lastBboTs) {
+    const clockSkewJump = channel.lastBboTs > 0 && (channel.lastBboTs - ts) > 300 && (channel.lastBboTs - ts) < 60000;
+    if (!sourceTimedOut && !clockSkewJump && ts < channel.lastBboTs) {
         return;
     }
 
@@ -359,7 +394,8 @@ function emitLiveTradeTick(symbol: string, exchange: string, tick: TradeTickEven
     const now = Date.now();
     const ts = normalizeTsMs(tick.timestamp);
     const sourceTimedOut = channel.lastTickWallAt > 0 && (now - channel.lastTickWallAt) > 2500;
-    if (!sourceTimedOut && ts < channel.lastTickTs) {
+    const clockSkewJump = channel.lastTickTs > 0 && (channel.lastTickTs - ts) > 300 && (channel.lastTickTs - ts) < 60000;
+    if (!sourceTimedOut && !clockSkewJump && ts < channel.lastTickTs) {
         return;
     }
 
@@ -372,18 +408,27 @@ function emitLiveTradeTick(symbol: string, exchange: string, tick: TradeTickEven
     channel.lastTickWallAt = now;
     channel.latestTick = normalizedTick;
 
-    if (channel.tickListeners.size === 0) return;
+    if (channel.tickListeners.size === 0 && channel.tradeBatchListeners.size === 0) return;
 
-    const prev = channel.pendingTick;
-    channel.pendingTick = prev
-        ? {
-              ...normalizedTick,
-              high: Math.max(prev.high ?? prev.price, normalizedTick.high ?? normalizedTick.price, normalizedTick.price),
-              low: Math.min(prev.low ?? prev.price, normalizedTick.low ?? normalizedTick.price, normalizedTick.price),
-              volume: (prev.volume || 0) + (normalizedTick.volume || 0),
-              quantity: (prev.quantity ?? prev.volume ?? 0) + (normalizedTick.quantity ?? normalizedTick.volume ?? 0),
-          }
-        : normalizedTick;
+    if (channel.tickListeners.size > 0) {
+        const prev = channel.pendingTick;
+        channel.pendingTick = prev
+            ? {
+                  ...normalizedTick,
+                  high: Math.max(prev.high ?? prev.price, normalizedTick.high ?? normalizedTick.price, normalizedTick.price),
+                  low: Math.min(prev.low ?? prev.price, normalizedTick.low ?? normalizedTick.price, normalizedTick.price),
+                  volume: (prev.volume || 0) + (normalizedTick.volume || 0),
+                  quantity: (prev.quantity ?? prev.volume ?? 0) + (normalizedTick.quantity ?? normalizedTick.volume ?? 0),
+              }
+            : normalizedTick;
+    }
+
+    // Lossless per-trade batch queue for institutional CVD & Footprint consumers (preserves exact price, side, volume, ts)
+    if (channel.tradeBatchListeners.size > 0 && (typeof document === 'undefined' || !document.hidden)) {
+        if (channel.pendingTradeBatch.length < 500) {
+            channel.pendingTradeBatch.push(normalizedTick);
+        }
+    }
 
     scheduleOrDispatchChannel(channel);
 }
@@ -519,6 +564,28 @@ export function subscribeLiveTradeTicks(
         const existing = liveMarketChannels.get(key);
         if (!existing) return;
         existing.tickListeners.delete(cb);
+        cleanupChannelIfUnused(key);
+    };
+}
+
+/**
+ * Lossless batched trade stream for institutional order-flow consumers (CVD, Footprint).
+ * Preserves every individual trade's exact price, volume, side, and timestamp within a frame.
+ */
+export function subscribeLiveTradeBatch(
+    symbol: string,
+    exchange: string,
+    cb: (ticks: TradeTickEvent[]) => void
+): () => void {
+    if (!symbol || !exchange) return () => {};
+    const key = getMarketChannelKey(symbol, exchange);
+    const channel = getOrCreateChannel(symbol, exchange);
+    channel.tradeBatchListeners.add(cb);
+
+    return () => {
+        const existing = liveMarketChannels.get(key);
+        if (!existing) return;
+        existing.tradeBatchListeners.delete(cb);
         cleanupChannelIfUnused(key);
     };
 }
@@ -671,7 +738,8 @@ function createSharedConnection(symbol: string, exchange: string): SharedMarketC
         directBinanceSockets: [],
         worker: null,
         reconnectTimer: null,
-        directReconnectTimer: null,
+        directReconnectTimers: new Map(),
+        directBackoffMs: new Map(),
         healthTimer: null,
         unsubscribeDragEnd: null,
         visibilityHandler: null,
@@ -866,18 +934,47 @@ function createSharedConnection(symbol: string, exchange: string): SharedMarketC
                         return;
                     }
                     conn.lastBackendTradeAt = now;
-                    const tick: TradeTickEvent = {
+                    // If backend included lossless compact trade tuples [px, amt, isBuy, ts], emit each cleanly
+                    const compactTrades = Array.isArray(rawTick.trades) ? rawTick.trades : null;
+                    if (compactTrades && compactTrades.length > 0) {
+                        for (let i = 0; i < compactTrades.length; i++) {
+                            const tuple = compactTrades[i];
+                            if (!Array.isArray(tuple) || tuple.length < 4) continue;
+                            const tp = Number(tuple[0]);
+                            const ta = Number(tuple[1]);
+                            const isBuy = Boolean(tuple[2]);
+                            const tts = normalizeTsMs(Number(tuple[3] || tickTs));
+                            if (!Number.isFinite(tp) || tp <= 0 || !Number.isFinite(ta) || ta <= 0) continue;
+                            emitLiveTradeTick(symbol, exchange, {
+                                price: tp,
+                                volume: ta,
+                                quantity: ta,
+                                timestamp: tts,
+                                side: isBuy ? 'buy' : 'sell',
+                                isBuyerMaker: !isBuy,
+                            });
+                        }
+                    } else {
+                        const tick: TradeTickEvent = {
+                            ...rawTick,
+                            price,
+                            timestamp: tickTs,
+                            quantity: rawTick.quantity ?? rawTick.volume ?? 0,
+                            isBuyerMaker: rawTick.isBuyerMaker ?? (rawTick.side === 'sell'),
+                        };
+                        emitLiveTradeTick(symbol, exchange, tick);
+                    }
+                    const summaryTick: TradeTickEvent = {
                         ...rawTick,
                         price,
                         timestamp: tickTs,
                         quantity: rawTick.quantity ?? rawTick.volume ?? 0,
                         isBuyerMaker: rawTick.isBuyerMaker ?? (rawTick.side === 'sell'),
                     };
-                    emitLiveTradeTick(symbol, exchange, tick);
                     conn.pendingData = {
                         ...(conn.pendingData || {}),
-                        currentPrice: tick.price,
-                        tradeEvent: tick,
+                        currentPrice: summaryTick.price,
+                        tradeEvent: summaryTick,
                     };
                     scheduleFlush();
                     publishHealth(now);
@@ -919,10 +1016,9 @@ function createSharedConnection(symbol: string, exchange: string): SharedMarketC
 
     conn.connectDirectBinance = () => {
         if (conn.disposed || exchange.toLowerCase() !== 'binance') return;
-        if (conn.directReconnectTimer) {
-            clearTimeout(conn.directReconnectTimer);
-            conn.directReconnectTimer = null;
-        }
+        conn.directReconnectTimers.forEach((t) => clearTimeout(t));
+        conn.directReconnectTimers.clear();
+        conn.directBackoffMs.clear();
         conn.directBinanceSockets.forEach((s) => closeSocketSafely(s));
         conn.directBinanceSockets = [];
 
@@ -1034,9 +1130,17 @@ function createSharedConnection(symbol: string, exchange: string): SharedMarketC
 
         const openRoutedSocket = (url: string, slotIndex: number) => {
             if (conn.disposed) return;
+            const prevTimer = conn.directReconnectTimers.get(slotIndex);
+            if (prevTimer) {
+                clearTimeout(prevTimer);
+                conn.directReconnectTimers.delete(slotIndex);
+            }
             try {
                 const directWs = new WebSocket(url);
                 conn.directBinanceSockets[slotIndex] = directWs;
+                directWs.onopen = () => {
+                    conn.directBackoffMs.set(slotIndex, 2000);
+                };
                 directWs.onmessage = handleDirectMessage;
                 directWs.onerror = () => {
                     try {
@@ -1045,12 +1149,15 @@ function createSharedConnection(symbol: string, exchange: string): SharedMarketC
                 };
                 directWs.onclose = () => {
                     if (conn.disposed) return;
-                    // Reconnect only this individual routed socket cleanly after 4s
-                    setTimeout(() => {
+                    const delay = conn.directBackoffMs.get(slotIndex) ?? 2000;
+                    conn.directBackoffMs.set(slotIndex, Math.min(delay * 2, 30000));
+                    const timer = setTimeout(() => {
+                        conn.directReconnectTimers.delete(slotIndex);
                         if (!conn.disposed && conn.directBinanceSockets[slotIndex] === directWs) {
                             openRoutedSocket(url, slotIndex);
                         }
-                    }, 4000);
+                    }, delay);
+                    conn.directReconnectTimers.set(slotIndex, timer);
                 };
             } catch {
                 // Backend stream serves as automatic seamless fallback
@@ -1121,10 +1228,9 @@ function disposeSharedConnection(conn: SharedMarketConnection) {
         clearTimeout(conn.reconnectTimer);
         conn.reconnectTimer = null;
     }
-    if (conn.directReconnectTimer) {
-        clearTimeout(conn.directReconnectTimer);
-        conn.directReconnectTimer = null;
-    }
+    conn.directReconnectTimers.forEach((t) => clearTimeout(t));
+    conn.directReconnectTimers.clear();
+    conn.directBackoffMs.clear();
     if (conn.healthTimer) {
         clearInterval(conn.healthTimer);
         conn.healthTimer = null;

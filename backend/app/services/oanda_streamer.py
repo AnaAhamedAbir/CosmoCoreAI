@@ -236,17 +236,16 @@ class OandaStreamer:
 
                 # Publish to market depth stream for live candle rendering
                 channel = f"market_depth_stream:oanda:{symbol}"
+                ts_ms = int(dt.timestamp() * 1000)
                 ob_payload = {
                     "type": "orderbook",
                     "bids": [{"price": bid_price, "size": float(bids[0].get("liquidity", 1000000)), "total": float(bids[0].get("liquidity", 1000000))}],
                     "asks": [{"price": ask_price, "size": float(asks[0].get("liquidity", 1000000)), "total": float(asks[0].get("liquidity", 1000000))}],
                     "walls": [],
                     "currentPrice": round(mid_price, 5),
-                    "midPrice": round(mid_price, 5)
+                    "midPrice": round(mid_price, 5),
+                    "ts": ts_ms / 1000.0
                 }
-                prev_price = self._last_prices.get(symbol, mid_price)
-                side = "buy" if mid_price >= prev_price else "sell"
-                self._last_prices[symbol] = mid_price
 
                 trade_payload = {
                     "type": "trade",
@@ -254,7 +253,7 @@ class OandaStreamer:
                     "highPrice": round(ask_price, 5),
                     "lowPrice": round(bid_price, 5),
                     "recentVolume": 1.0,
-                    "timestamp": int(dt.timestamp() * 1000),
+                    "timestamp": ts_ms,
                     "side": side
                 }
                 await redis.publish(channel, json.dumps(ob_payload))

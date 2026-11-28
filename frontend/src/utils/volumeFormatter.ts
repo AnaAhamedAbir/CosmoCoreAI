@@ -1,21 +1,23 @@
 export function formatFootprintVolume(volume: number | undefined | null): string {
-    if (volume === 0 || !volume) return "0";
+    if (volume === 0 || !volume || !Number.isFinite(volume)) return '0';
+    const sign = volume < 0 ? '-' : '';
+    const abs = Math.abs(volume);
 
-    // If it's a whole number, return as is
-    if (Number.isInteger(volume)) {
-        return volume.toString();
+    // Always abbreviate large numbers (including integers) so footprint cells never overflow
+    if (abs >= 1_000_000_000) {
+        return `${sign}${(abs / 1_000_000_000).toFixed(abs >= 10_000_000_000 ? 1 : 2)}B`;
     }
-
-    // For large numbers, format with k or M suffix
-    if (volume >= 1000000) {
-        return (volume / 1000000).toFixed(volume >= 10000000 ? 1 : 2) + 'M';
+    if (abs >= 1_000_000) {
+        return `${sign}${(abs / 1_000_000).toFixed(abs >= 10_000_000 ? 1 : 2)}M`;
     }
-    if (volume >= 1000) {
-        return (volume / 1000).toFixed(volume >= 10000 ? 0 : 1) + 'k';
+    if (abs >= 1_000) {
+        return `${sign}${(abs / 1_000).toFixed(abs >= 10_000 ? 0 : 1)}k`;
     }
-
-    if (volume < 1) {
-        return parseFloat(volume.toFixed(4)).toString();
+    if (Number.isInteger(abs)) {
+        return `${sign}${abs}`;
     }
-    return Math.floor(volume).toString();
+    if (abs < 1) {
+        return `${sign}${parseFloat(abs.toFixed(4))}`;
+    }
+    return `${sign}${Math.floor(abs)}`;
 }

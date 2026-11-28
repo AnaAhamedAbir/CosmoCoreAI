@@ -26,8 +26,8 @@ export const ChartWatermark: React.FC<ChartWatermarkProps> = React.memo(({
                 bottom: 26,
             }}
         >
-            <div className="flex items-center gap-2.5 sm:gap-3.5 text-slate-900/[0.065] dark:text-white/[0.055]">
-                {/* Minimalist CosmoQuant Geometric Mark (Binance-inspired crisp vector) */}
+            <div className="flex items-center gap-2.5 sm:gap-3.5 text-slate-900/[0.13] dark:text-white/[0.12]">
+                {/* Minimalist CosmoQuantAI Geometric Mark (Binance-inspired crisp vector) */}
                 <svg
                     viewBox="0 0 40 40"
                     fill="none"
@@ -51,13 +51,13 @@ export const ChartWatermark: React.FC<ChartWatermarkProps> = React.memo(({
 
                 <div className="flex flex-col leading-none">
                     <span
-                        className={`font-sans font-extrabold tracking-[0.14em] uppercase ${
+                        className={`font-sans font-extrabold tracking-[0.06em] ${
                             compact
                                 ? 'text-[22px]'
                                 : 'text-[28px] sm:text-[38px] md:text-[46px]'
                         }`}
                     >
-                        CosmoQuant
+                        CosmoQuantAI
                     </span>
                 </div>
             </div>

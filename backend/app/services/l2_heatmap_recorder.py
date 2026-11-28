@@ -231,7 +231,6 @@ class L2HeatmapRecorder:
         norm_sym = str(symbol or "").strip().upper()
         base_ex, internal_ex = market_depth_service.normalize_exchange_id(exchange_id, norm_sym)
         key = self._make_key(internal_ex, norm_sym)
-        interval_sec = max(1, market_depth_service._timeframe_to_seconds(interval))
 
         self._last_access_ts[key] = time.time()
 
@@ -321,44 +320,71 @@ class L2HeatmapRecorder:
                 })
                 continue
 
-            # Aggregate across all 5s samples in this candle bar: preserve average resting liquidity, peak wall size, and latest size
+            # Aggregate across all 5s samples in this candle bar:
+            # 1) Re-bucket all snapshots cleanly onto `bar_b_sz` so mid-candle adaptive bucket shifts never overlap.
+            # 2) Compute true pulled_delta even when a wall is 100% pulled (absent from final snapshot).
+            # 3) Slice around `bar_mid` so sharp intra-candle moves keep active resting levels near price.
             n_samples = float(len(snaps_in_bar))
-            # (price, side) -> [sum_vol, peak_vol, last_vol]
+            decimals = max(2, min(12, -math.floor(math.log10(bar_b_sz)) + 2)) if bar_b_sz > 0 and bar_b_sz < 1 else 4
+
+            def _snap_px(raw_p: float, side_s: str) -> float:
+                if bar_b_sz <= 0:
+                    return raw_p
+                if side_s == "bid":
+                    return round(math.floor((raw_p / bar_b_sz) + 1e-9) * bar_b_sz, decimals)
+                return round(math.ceil((raw_p / bar_b_sz) - 1e-9) * bar_b_sz, decimals)
+
+            # (price, side) -> [sum_vol, peak_vol]
             acc: Dict[tuple[float, str], List[float]] = {}
-            for s in snaps_in_bar:
+            last_snap_vols: Dict[tuple[float, str], float] = {}
+            last_idx = len(snaps_in_bar) - 1
+
+            for s_idx, s in enumerate(snaps_in_bar):
+                # Merge within this single snapshot first if re-bucketing combined two finer levels
+                snap_merged: Dict[tuple[float, str], float] = {}
                 for lv in s.get("levels") or []:
                     try:
-                        p = float(lv.get("price") or 0.0)
+                        raw_p = float(lv.get("price") or 0.0)
                         v = float(lv.get("volume") or 0.0)
-                        side = str(lv.get("type") or "bid")
+                        side = "bid" if str(lv.get("type") or "bid") == "bid" else "ask"
                     except (TypeError, ValueError):
                         continue
-                    if p <= 0 or v <= 0:
+                    if raw_p <= 0 or v <= 0:
                         continue
+                    p = _snap_px(raw_p, side)
                     lk = (p, side)
+                    snap_merged[lk] = snap_merged.get(lk, 0.0) + v
+
+                for lk, v in snap_merged.items():
                     entry = acc.get(lk)
                     if entry is None:
-                        acc[lk] = [v, v, v]
+                        acc[lk] = [v, v]
                     else:
                         entry[0] += v
                         if v > entry[1]:
                             entry[1] = v
-                        entry[2] = v
+                    if s_idx == last_idx:
+                        last_snap_vols[lk] = v
 
             agg_levels: List[Dict[str, Any]] = []
-            bid_items = sorted(
-                ((p, vals) for (p, side), vals in acc.items() if side == "bid"),
-                key=lambda x: x[0],
-                reverse=True,
-            )[: self.MAX_LEVELS_PER_SIDE]
-            ask_items = sorted(
-                ((p, vals) for (p, side), vals in acc.items() if side == "ask"),
-                key=lambda x: x[0],
-            )[: self.MAX_LEVELS_PER_SIDE]
+            bid_raw = [(p, vals) for (p, side), vals in acc.items() if side == "bid"]
+            ask_raw = [(p, vals) for (p, side), vals in acc.items() if side == "ask"]
+
+            if bar_mid > 0:
+                near_bids = sorted((it for it in bid_raw if it[0] <= bar_mid + bar_b_sz), key=lambda x: x[0], reverse=True)
+                near_asks = sorted((it for it in ask_raw if it[0] >= bar_mid - bar_b_sz), key=lambda x: x[0])
+                bid_items = (near_bids if len(near_bids) >= 5 else sorted(bid_raw, key=lambda x: abs(x[0] - bar_mid)))[: self.MAX_LEVELS_PER_SIDE]
+                ask_items = (near_asks if len(near_asks) >= 5 else sorted(ask_raw, key=lambda x: abs(x[0] - bar_mid)))[: self.MAX_LEVELS_PER_SIDE]
+                bid_items.sort(key=lambda x: x[0], reverse=True)
+                ask_items.sort(key=lambda x: x[0])
+            else:
+                bid_items = sorted(bid_raw, key=lambda x: x[0], reverse=True)[: self.MAX_LEVELS_PER_SIDE]
+                ask_items = sorted(ask_raw, key=lambda x: x[0])[: self.MAX_LEVELS_PER_SIDE]
 
             for side_name, items in (("bid", bid_items), ("ask", ask_items)):
-                for p, (sum_v, peak_v, last_v) in items:
+                for p, (sum_v, peak_v) in items:
                     avg_v = sum_v / n_samples
+                    last_v = last_snap_vols.get((p, side_name), 0.0)
                     agg_levels.append({
                         "price": p,
                         "volume": round(avg_v, 6),

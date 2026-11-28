@@ -20,6 +20,7 @@ interface CandlestickTooltipProps {
     position: { x: number; y: number } | null;
     chartContainerRef: React.RefObject<HTMLDivElement | null>;
     leftAxisOffset?: number;
+    rightAxisOffset?: number;
 }
 
 export const CandlestickTooltip: React.FC<CandlestickTooltipProps> = ({
@@ -27,6 +28,7 @@ export const CandlestickTooltip: React.FC<CandlestickTooltipProps> = ({
     position,
     chartContainerRef,
     leftAxisOffset = 0,
+    rightAxisOffset = 64,
 }) => {
     const { theme } = useTheme();
     const isDark = theme === 'dark';
@@ -35,7 +37,11 @@ export const CandlestickTooltip: React.FC<CandlestickTooltipProps> = ({
     const [adjustedPos, setAdjustedPos] = useState<{ x: number; y: number } | null>(null);
 
     useEffect(() => {
-        if (!position || !tooltipRef.current || !chartContainerRef.current) {
+        if (!position || !candle) {
+            setAdjustedPos(null);
+            return;
+        }
+        if (!tooltipRef.current || !chartContainerRef.current) {
             return;
         }
 
@@ -45,11 +51,12 @@ export const CandlestickTooltip: React.FC<CandlestickTooltipProps> = ({
         const offsetX = 16;
         const offsetY = 16;
         const originX = position.x + leftAxisOffset;
+        const maxRightX = Math.max(leftAxisOffset + 120, containerRect.width - rightAxisOffset - 8);
 
         let finalX = originX + offsetX;
         let finalY = position.y + offsetY;
 
-        if (finalX + tooltipRect.width > containerRect.width - 8) {
+        if (finalX + tooltipRect.width > maxRightX) {
             finalX = originX - tooltipRect.width - offsetX;
         }
         if (finalY + tooltipRect.height > containerRect.height - 8) {
@@ -60,7 +67,7 @@ export const CandlestickTooltip: React.FC<CandlestickTooltipProps> = ({
         finalY = Math.max(10, finalY);
 
         setAdjustedPos({ x: finalX, y: finalY });
-    }, [position, candle, chartContainerRef, leftAxisOffset]);
+    }, [position, candle, chartContainerRef, leftAxisOffset, rightAxisOffset]);
 
     const formatPrice = (p: number) => {
         if (!Number.isFinite(p)) return '0.00';

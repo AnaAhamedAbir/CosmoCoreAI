@@ -32,12 +32,15 @@ class OrderflowCVDService:
 
     @staticmethod
     def _binance_rest_symbol(symbol: str) -> str:
-        """Converts CCXT symbol (BTC/USDT or BTC/USDT:USDT or BTC/USD:BTC) to raw Binance market id."""
+        """Converts CCXT symbol (BTC/USDT, BTC/USDT:USDT, BTC/USD:BTC, BTC/USDT:USDT-250328) to raw Binance market id."""
         clean = str(symbol or "").strip().upper()
         if ":" in clean:
-            pair, settle = clean.split(":", 1)
+            pair, settle_part = clean.split(":", 1)
             base, quote = pair.split("/", 1) if "/" in pair else (pair, "")
-            if settle == base:
+            if "-" in settle_part:
+                settle, expiry = settle_part.split("-", 1)
+                return f"{base}{quote}_{expiry}"
+            if settle_part == base:
                 return f"{base}{quote}_PERP"
             return f"{base}{quote}"
         return clean.replace("/", "")

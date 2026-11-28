@@ -426,7 +426,11 @@ export const FootprintRenderer: React.FC<FootprintRendererProps> = ({
                         ctx.fillText('★', boxX - 2, row.y);
                     }
 
-                    // 6. Monospace Cluster Digits
+                    // 6. Monospace Cluster Digits (strictly clipped inside boxWidth so digits never spill into neighboring candles)
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.rect(boxX + 1, boxY, Math.max(4, boxWidth - 2), boxHeight);
+                    ctx.clip();
                     ctx.textBaseline = 'middle';
                     if (activeMode === 'delta') {
                         const dLabel = formatCompactOrderflowNumber(rowDelta, true);
@@ -436,8 +440,9 @@ export const FootprintRenderer: React.FC<FootprintRendererProps> = ({
                             rowDelta >= 0
                                 ? (dark ? '#6ee7b7' : '#047857')
                                 : (dark ? '#fda4af' : '#be123c');
-                        ctx.fillText(dLabel, x, row.y);
+                        ctx.fillText(dLabel, x, row.y, Math.max(10, boxWidth - 4));
                     } else {
+                        const halfW = Math.max(8, boxWidth / 2 - 5);
                         // Divider '×' centered
                         ctx.font = FONT_CELL;
                         ctx.textAlign = 'center';
@@ -450,7 +455,7 @@ export const FootprintRenderer: React.FC<FootprintRendererProps> = ({
                         ctx.fillStyle = row.isBidImbalance
                             ? (dark ? '#fda4af' : '#9f1239')
                             : (dark ? '#f87171' : '#e11d48');
-                        ctx.fillText(bidStr, x - 4, row.y);
+                        ctx.fillText(bidStr, x - 4, row.y, halfW);
 
                         // Ask Volume (right of divider) — independent isAskImbalance highlight
                         ctx.font = row.isAskImbalance ? FONT_CELL_BOLD : FONT_CELL;
@@ -458,8 +463,9 @@ export const FootprintRenderer: React.FC<FootprintRendererProps> = ({
                         ctx.fillStyle = row.isAskImbalance
                             ? (dark ? '#6ee7b7' : '#065f46')
                             : (dark ? '#4ade80' : '#059669');
-                        ctx.fillText(askStr, x + 4, row.y);
+                        ctx.fillText(askStr, x + 4, row.y, halfW);
                     }
+                    ctx.restore();
 
                     ctx.restore();
                 }
@@ -489,28 +495,28 @@ export const FootprintRenderer: React.FC<FootprintRendererProps> = ({
                         ctx.fillStyle = dVal >= 0
                             ? (dark ? '#6ee7b7' : '#065f46')
                             : (dark ? '#fda4af' : '#9f1239');
-                        ctx.fillText(deltaLabel, x, cursorY);
+                        ctx.fillText(deltaLabel, x, cursorY, Math.max(12, pillW - 4));
                         cursorY += 14;
 
                         // Total Volume micro-row when zoomed in cleanly
                         if (candleSpacing >= 46 && candle.totalVolume && candle.totalVolume > 0 && cursorY < cssH - 10) {
                             ctx.font = FONT_MICRO;
                             ctx.fillStyle = dark ? 'rgba(148, 163, 184, 0.85)' : 'rgba(71, 85, 105, 0.85)';
-                            ctx.fillText(`V ${formatCompactOrderflowNumber(candle.totalVolume)}`, x, cursorY);
+                            ctx.fillText(`V ${formatCompactOrderflowNumber(candle.totalVolume)}`, x, cursorY, maxAllowedW);
                             cursorY += 12;
                         }
                     }
 
                     if (candle.hasDeltaDivergence && candleSpacing > 18 && cursorY < cssH - 6) {
                         const isBullDiv = candle.divergenceType === 'bullish';
-                        const divText = isBullDiv ? '▲ BULL DIV' : '▼ BEAR DIV';
+                        const divText = candleSpacing >= 44 ? (isBullDiv ? '▲ BULL DIV' : '▼ BEAR DIV') : (isBullDiv ? '▲ DIV' : '▼ DIV');
                         ctx.font = FONT_BADGE;
                         ctx.textAlign = 'center';
                         ctx.textBaseline = 'middle';
                         ctx.fillStyle = isBullDiv
                             ? (dark ? '#34d399' : '#059669')
                             : (dark ? '#fb7185' : '#e11d48');
-                        ctx.fillText(divText, x, cursorY);
+                        ctx.fillText(divText, x, cursorY, maxAllowedW);
                     }
                 }
             }

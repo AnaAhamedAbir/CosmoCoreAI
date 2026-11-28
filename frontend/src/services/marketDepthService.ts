@@ -1,15 +1,23 @@
 import apiClient from './client';
 
 export const marketDepthService = {
-    getOHLCV: async (symbol: string, exchange: string, timeframe: string, limit: number = 200) => {
-        const response = await apiClient.get('/market-depth/ohlcv', {
-            params: {
-                symbol,
-                exchange,
-                timeframe,
-                limit
-            }
-        });
+    getOHLCV: async (
+        symbol: string,
+        exchange: string,
+        timeframe: string,
+        limit: number = 200,
+        before?: number
+    ) => {
+        const params: Record<string, any> = {
+            symbol,
+            exchange,
+            timeframe,
+            limit,
+        };
+        if (before !== undefined && Number.isFinite(before) && before > 0) {
+            params.before = Math.floor(before);
+        }
+        const response = await apiClient.get('/market-depth/ohlcv', { params });
         return response.data;
     },
     getRawOrderBook: async (symbol: string, exchange: string, limit: number = 100) => {

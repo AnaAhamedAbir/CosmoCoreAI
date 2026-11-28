@@ -1,6 +1,7 @@
 """Calendar-aware candle bucket alignment and precision-safe timestamp utilities."""
 
 from datetime import datetime, timezone
+import math
 import re
 from typing import Any
 
@@ -22,7 +23,7 @@ def parse_timestamp_ms(raw_ts: Any) -> int:
         val = float(raw_ts)
     except (TypeError, ValueError):
         return 0
-    if val <= 0:
+    if not math.isfinite(val) or val <= 0:
         return 0
     if val < 10_000_000_000:
         return int(round(val * 1000.0))
@@ -59,7 +60,7 @@ def align_candle_bucket_sec(ts_sec: float, interval: str) -> int:
     - '1M': 1st of calendar month 00:00 UTC
     - other intervals: exact epoch modulo
     """
-    if ts_sec <= 0:
+    if not math.isfinite(ts_sec) or ts_sec <= 0:
         return 0
     sec = int(ts_sec // 1000) if ts_sec > 10_000_000_000 else int(ts_sec)
 

@@ -951,7 +951,7 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
                         isMobileOpen={isMobileSidebarOpen}
                         onCloseMobile={handleCloseMobileSidebar}
                     />
-                    <div className="flex-1 min-w-0 min-h-0 h-full flex flex-col overflow-hidden relative z-0">
+                    <div className="flex-1 min-w-0 min-h-0 h-full flex flex-col overflow-hidden relative">
                         <header className="relative z-50 flex-shrink-0 bg-white/95 dark:bg-[#070B14]/95 border-b border-slate-200 dark:border-slate-800/80">
                             <div className="h-[1px] w-full bg-gradient-to-r from-cyan-500/50 via-indigo-500/40 to-emerald-500/40" />
                             <GlobalAnnouncementBar />
@@ -1126,7 +1126,7 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
                                 </div>
                             )}
                         </header>
-                        <main className={`flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden touch-pan-y overscroll-y-contain relative z-0 ${isPhoneMobileUI ? 'p-3' : 'p-8 laptop:p-3 laptop-h:p-2.5'}`}>
+                        <main className={`flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden touch-pan-y overscroll-y-contain relative ${isPhoneMobileUI ? 'p-3' : 'p-8 laptop:p-3 laptop-h:p-2.5'}`}>
                             <Suspense fallback={<div className="flex items-center justify-center h-full min-h-[240px] text-slate-400 text-xs">Loading module...</div>}>
                                 <DashboardContentRouter
                                     viewToRender={viewToRender}

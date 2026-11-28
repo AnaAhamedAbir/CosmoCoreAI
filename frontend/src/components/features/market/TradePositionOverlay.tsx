@@ -42,17 +42,7 @@ interface TradePositionOverlayProps {
   pendingModification: PendingModSnapshot | null;
   dragPreviewRef: React.MutableRefObject<DragPnlPreview | null>;
   registerDragSyncRef: React.MutableRefObject<(() => void) | null>;
-  formatPrice: (price: number | undefined | null) => string;
-}
-
-interface BadgeRowSpec {
-  id: string;
-  kind: 'entry' | 'tp' | 'sl';
-  price: number;
-  isDragging?: boolean;
-  isPending?: boolean;
-  isProfit: boolean;
-  text: string;
+  formatPrice?: (price: number | undefined | null) => string;
 }
 
 /**
@@ -74,7 +64,6 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
   pendingModification,
   dragPreviewRef,
   registerDragSyncRef,
-  formatPrice,
 }) => {
   const entryLineRef = useRef<any>(null);
   const entryLineSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -86,7 +75,7 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
   const rafRef = useRef<number | null>(null);
 
   useEffect(() => {
-    livePriceRef.current = currentPrice > 0 ? currentPrice : 0;
+    livePriceRef.current = 0;
   }, [symbol, exchange]);
 
   useEffect(() => {
@@ -545,9 +534,11 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
     };
   }, [registerDragSyncRef]);
 
+  const hasEntryContext = Boolean(entryContext);
+
   // Subscribe once per chart/series/symbol/exchange (no listener teardown on order updates or idle hover thrashing!)
   useEffect(() => {
-    if (!entryContext || !series || !chart) return;
+    if (!hasEntryContext || !series || !chart) return;
 
     const triggerSync = () => scheduleSyncRef.current();
     triggerSync();
@@ -601,7 +592,7 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
         rafRef.current = null;
       }
     };
-  }, [chart, series, symbol, exchange, Boolean(entryContext), candlesReadyTick]);
+  }, [chart, series, symbol, exchange, hasEntryContext, candlesReadyTick]);
 
   // Also sync whenever currentPrice, entryContext, or theme changes
   useEffect(() => {

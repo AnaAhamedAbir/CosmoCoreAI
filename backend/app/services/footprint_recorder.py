@@ -226,7 +226,7 @@ class FootprintRecorder:
                 continue
             try:
                 ts_ms = parse_timestamp_ms(raw_ts)
-                if ts_ms is None:
+                if ts_ms <= 0:
                     continue
                 px = float(raw_px)
                 amt = float(raw_amt)
@@ -241,6 +241,7 @@ class FootprintRecorder:
             bar_sec = (ts_ms // 60000) * 60
             bar = series.get(bar_sec)
             if bar is None:
+                prev_last_k = next(reversed(series)) if series else None
                 step = compute_adaptive_footprint_step(px)
                 bar = {
                     "time": bar_sec,
@@ -252,6 +253,10 @@ class FootprintRecorder:
                     "levels": {},  # str(bucket_price) -> [bidVol, askVol]
                 }
                 series[bar_sec] = bar
+                if prev_last_k is not None and bar_sec < prev_last_k:
+                    ordered = OrderedDict(sorted(series.items(), key=lambda kv: kv[0]))
+                    self._bars[key] = ordered
+                    series = ordered
             else:
                 if px > bar["high"]:
                     bar["high"] = px
@@ -287,6 +292,7 @@ class FootprintRecorder:
         dirty = self._dirty.get(key)
         if not dirty:
             return
+        self._last_flush[key] = time.monotonic()
         redis = redis_manager.get_redis()
         if not redis:
             return
@@ -295,16 +301,17 @@ class FootprintRecorder:
             dirty.clear()
             return
 
-        flushed_bars = list(dirty)
+        # Swap dirty snapshot BEFORE await so concurrent trades during await are never lost
+        flushed_bars = [b for b in dirty if b in series]
+        dirty.clear()
+
         mapping: Dict[str, str] = {}
         for b_sec in flushed_bars:
             bar = series.get(b_sec)
             if bar is not None:
                 mapping[str(b_sec)] = json.dumps(bar, separators=(",", ":"))
-        self._last_flush[key] = time.monotonic()
 
         if not mapping:
-            dirty.difference_update(flushed_bars)
             return
 
         rkey = self._redis_key(key)
@@ -313,9 +320,6 @@ class FootprintRecorder:
                 pipe.hset(rkey, mapping=mapping)
                 pipe.expire(rkey, self.REDIS_TTL_SECONDS)
                 await pipe.execute()
-
-            # Only clear flushed bars AFTER Redis write succeeds so transient failures retry cleanly
-            dirty.difference_update(flushed_bars)
 
             now = time.time()
             if (now - self._last_prune.get(key, 0.0)) >= self.PRUNE_INTERVAL_SEC:
@@ -333,6 +337,9 @@ class FootprintRecorder:
                 if stale:
                     await redis.hdel(rkey, *stale)
         except Exception as e:
+            cur_series = self._bars.get(key)
+            if cur_series:
+                dirty.update(b for b in flushed_bars if b in cur_series)
             logger.debug(f"[FootprintRecorder] Redis flush err for {key}: {e}")
 
     async def get_footprint_candles(
@@ -363,7 +370,6 @@ class FootprintRecorder:
                 "tick_step": 0.0,
                 "candles": [],
             }
-        interval_sec = raw_interval_sec
 
         self._last_access[key] = time.time()
 
@@ -408,12 +414,13 @@ class FootprintRecorder:
                 "candles": [],
             }
 
-        # Aggregate 1m recorded footprint clusters into target chart interval
+        # Aggregate 1m recorded footprint clusters into target chart interval (sort first so latest_step is newest bar's)
+        sorted_base_bars = sorted(base_bars, key=lambda x: int(x["time"]))
         agg: Dict[int, Dict[str, Any]] = {}
-        latest_step = float(base_bars[-1].get("step") or 0.5)
+        latest_step = float(sorted_base_bars[-1].get("step") or 0.5)
         decimals = max(2, min(10, -math.floor(math.log10(latest_step)) + 2)) if latest_step < 1 else 4
 
-        for b in sorted(base_bars, key=lambda x: int(x["time"])):
+        for b in sorted_base_bars:
             t_sec = int(b["time"])
             bucket_t = align_candle_bucket_sec(t_sec, interval)
             cur = agg.get(bucket_t)

@@ -114,14 +114,13 @@ class SubminuteCandleRecorder:
 
         existing = series.get(bucket_sec)
         if existing is None:
+            prev_last_k = next(reversed(series)) if series else None
             series[bucket_sec] = [bucket_ms, price, price, price, price, vol]
-            # Keep ordered if an out-of-order older trade arrived
-            if len(series) > 1:
-                last_k = next(reversed(series))
-                if bucket_sec < last_k:
-                    ordered = OrderedDict(sorted(series.items(), key=lambda kv: kv[0]))
-                    self._bars[key] = ordered
-                    series = ordered
+            # Keep strictly chronological order if an out-of-order older trade arrived
+            if prev_last_k is not None and bucket_sec < prev_last_k:
+                ordered = OrderedDict(sorted(series.items(), key=lambda kv: kv[0]))
+                self._bars[key] = ordered
+                series = ordered
         else:
             if price > existing[2]:
                 existing[2] = price
@@ -158,7 +157,7 @@ class SubminuteCandleRecorder:
                 continue
             try:
                 ts_val = parse_timestamp_ms(raw_ts)
-                if ts_val is None:
+                if ts_val <= 0:
                     continue
                 px = float(raw_px)
                 amt = float(t.get("amount") or t.get("qty") or 0.0)
@@ -187,9 +186,9 @@ class SubminuteCandleRecorder:
         for row in candles:
             if not row or len(row) < 6:
                 continue
-            ts_ms = int(row[0])
-            if ts_ms < 10_000_000_000:
-                ts_ms *= 1000
+            ts_ms = parse_timestamp_ms(row[0])
+            if ts_ms <= 0:
+                continue
             bucket_sec = ts_ms // 1000
             if bucket_sec < cutoff_sec:
                 continue
@@ -216,6 +215,7 @@ class SubminuteCandleRecorder:
         dirty_buckets = self._dirty.get(key)
         if not dirty_buckets:
             return
+        self._last_flush[key] = time.monotonic()
         redis = redis_manager.get_redis()
         if not redis:
             return
@@ -225,16 +225,17 @@ class SubminuteCandleRecorder:
             dirty_buckets.clear()
             return
 
-        flushed_buckets = list(dirty_buckets)
+        # Swap dirty snapshot BEFORE await so concurrent trades during await are never lost
+        flushed_buckets = [b for b in dirty_buckets if b in series]
+        dirty_buckets.clear()
+
         mapping: Dict[str, str] = {}
         for b_sec in flushed_buckets:
             bar = series.get(b_sec)
             if bar is not None:
                 mapping[str(b_sec)] = json.dumps(bar, separators=(",", ":"))
-        self._last_flush[key] = time.monotonic()
 
         if not mapping:
-            dirty_buckets.difference_update(flushed_buckets)
             return
 
         rkey = self._redis_key(key)
@@ -243,9 +244,6 @@ class SubminuteCandleRecorder:
                 pipe.hset(rkey, mapping=mapping)
                 pipe.expire(rkey, self.REDIS_TTL_SECONDS)
                 await pipe.execute()
-
-            # Clear flushed buckets only after Redis commit succeeds
-            dirty_buckets.difference_update(flushed_buckets)
 
             # Periodically prune expired fields (> MAX_RETENTION_SECONDS old) from Redis Hash
             now_mono = time.monotonic()
@@ -264,6 +262,10 @@ class SubminuteCandleRecorder:
                 if stale_fields:
                     await redis.hdel(rkey, *stale_fields)
         except Exception as e:
+            # Restore still-resident bars on Redis error so they retry on next flush
+            cur_series = self._bars.get(key)
+            if cur_series:
+                dirty_buckets.update(b for b in flushed_buckets if b in cur_series)
             logger.debug(f"[SubminuteRecorder] Redis flush error for {key}: {e}")
 
     async def get_1s_candles(self, exchange_id: str, symbol: str, max_candles: int = 7200) -> List[List[float]]:

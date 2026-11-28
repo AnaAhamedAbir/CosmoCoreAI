@@ -11,6 +11,7 @@ from app.services.liquidity_absorption_service import liquidity_absorption_servi
 from app.services.subminute_candle_recorder import subminute_candle_recorder
 from app.services.l2_heatmap_recorder import l2_heatmap_recorder
 from app.services.footprint_recorder import footprint_recorder
+from app.utils.candle_time import parse_timestamp_ms
 
 logger = logging.getLogger(__name__)
 
@@ -272,9 +273,16 @@ class MarketDataStreamer:
             else: return 1000
         if 'htx' in exchange_id:
             if limit <= 5: return 5
-            elif limit <= 10: return 10
             elif limit <= 20: return 20
             else: return 150
+
+        if 'gate' in exchange_id:
+            # Gate.io Futures v4 WS caps order_book_update levels at 100
+            return min(limit, 100)
+
+        if 'bybit' in exchange_id:
+            # Keep 200 for spot/perp (100 for options handled by caller)
+            return min(limit, 200)
 
         if 'bitfinex' in exchange_id:
             return 25 if limit <= 25 else 100
@@ -338,8 +346,9 @@ class MarketDataStreamer:
         last_publish_mono = 0.0
         last_bbo_write_mono = 0.0
         last_bbo_pair: Tuple[float, float] = (0.0, 0.0)
-        # Request deep institutional L2 depth (up to 200-500 levels per side) so BTC/ETH heatmaps span 20+ bands
-        depth_limit = self._normalize_order_book_limit(exchange_id, 200)
+        # Request deep institutional L2 depth (respecting exchange-specific WS caps such as Gate/Bybit Options <= 100)
+        requested_depth = 100 if ('bybit' in exchange_id.lower() and symbol.count('-') >= 2) else 200
+        depth_limit = self._normalize_order_book_limit(exchange_id, requested_depth)
         sym_upper = symbol.upper()
 
         while stream_key in self._active_streams:
@@ -508,17 +517,19 @@ class MarketDataStreamer:
             high_price = max(prices) if prices else last_p
             low_price = min(prices) if prices else last_p
             raw_ts = batch_raw[-1].get("timestamp")
-            trade_ts = int(raw_ts) if raw_ts else int(time.time() * 1000)
+            parsed_ts = parse_timestamp_ms(raw_ts)
+            trade_ts = parsed_ts if parsed_ts > 0 else int(time.time() * 1000)
 
-            # Include lossless compact trade tuples [price, amount, isBuy(1/0), ts_ms] for CVD & Footprint accuracy
+            # Include ALL lossless compact trade tuples [price, amount, isBuy(1/0), ts_ms] in this flush (no silent truncation)
             compact_ticks = []
-            for tr in batch_raw[-64:]:
+            for tr in batch_raw:
                 try:
                     tp = float(tr.get("price") or 0.0)
                     ta = float(tr.get("amount") or 0.0)
                     if tp > 0 and ta > 0:
                         tside = 1 if str(tr.get("side") or "").lower() == "buy" else 0
-                        tts = int(tr.get("timestamp") or trade_ts)
+                        tr_ts = parse_timestamp_ms(tr.get("timestamp"))
+                        tts = tr_ts if tr_ts > 0 else trade_ts
                         compact_ticks.append([tp, ta, tside, tts])
                 except (TypeError, ValueError):
                     continue

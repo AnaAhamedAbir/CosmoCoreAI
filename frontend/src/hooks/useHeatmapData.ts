@@ -121,7 +121,30 @@ export const useHeatmapData = (
                     setHeatmapData((prev) => {
                         const merged = new Map<number, HeatmapDataPoint>();
                         prev.forEach((p) => merged.set(p.time, p));
-                        parsed.forEach((p) => merged.set(p.time, p));
+                        const activeLiveBar = prev.length > 0 ? prev[prev.length - 1] : null;
+                        parsed.forEach((p) => {
+                            // Preserve live client-tracked peakVolume / pulledDelta on the active forming bar
+                            if (activeLiveBar && p.time === activeLiveBar.time) {
+                                const livePeaks = new Map<string, number>();
+                                activeLiveBar.levels.forEach((lv) => {
+                                    livePeaks.set(`${lv.type}:${lv.price}`, lv.peakVolume ?? lv.volume);
+                                });
+                                merged.set(p.time, {
+                                    ...p,
+                                    levels: p.levels.map((lv) => {
+                                        const lp = livePeaks.get(`${lv.type}:${lv.price}`);
+                                        const peakVolume = Math.max(lv.peakVolume ?? lv.volume, lp ?? 0);
+                                        return {
+                                            ...lv,
+                                            peakVolume,
+                                            pulledDelta: Math.min(lv.pulledDelta ?? 0, lv.volume - peakVolume),
+                                        };
+                                    }),
+                                });
+                            } else {
+                                merged.set(p.time, p);
+                            }
+                        });
                         return Array.from(merged.values())
                             .sort((a, b) => a.time - b.time)
                             .slice(-240);

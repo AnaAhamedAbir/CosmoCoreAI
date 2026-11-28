@@ -83,8 +83,10 @@ interface LiveMarketChannelState {
     latestHealth: FeedHealthSnapshot;
     lastTickTs: number;
     lastTickWallAt: number;
+    lastTickSource: 'direct' | 'relay' | null;
     lastBboTs: number;
     lastBboWallAt: number;
+    lastBboSource: 'direct' | 'relay' | null;
     lastMarkTs: number;
     lastMarkWallAt: number;
     lastEmittedBid: number;
@@ -164,8 +166,10 @@ function getOrCreateChannel(symbol: string, exchange: string): LiveMarketChannel
             },
             lastTickTs: 0,
             lastTickWallAt: 0,
+            lastTickSource: null,
             lastBboTs: 0,
             lastBboWallAt: 0,
+            lastBboSource: null,
             lastMarkTs: 0,
             lastMarkWallAt: 0,
             lastEmittedBid: 0,
@@ -344,7 +348,12 @@ function flushChannelOnVisible(symbol: string, exchange: string) {
     flushPendingChannel(channel);
 }
 
-function emitLiveBboTick(symbol: string, exchange: string, bbo: BboTickEvent) {
+function emitLiveBboTick(
+    symbol: string,
+    exchange: string,
+    bbo: BboTickEvent,
+    source: 'direct' | 'relay' = 'relay'
+) {
     if (!bbo || !Number.isFinite(bbo.bestBid) || !Number.isFinite(bbo.bestAsk)) return;
     if (bbo.bestBid <= 0 || bbo.bestAsk <= 0 || bbo.bestAsk < bbo.bestBid) return;
 
@@ -352,10 +361,10 @@ function emitLiveBboTick(symbol: string, exchange: string, bbo: BboTickEvent) {
     const now = Date.now();
     const ts = normalizeTsMs(bbo.timestamp);
 
-    // Guard against minor clock skew when switching between direct exchange and backend relay clocks
+    // Strictly monotonic per source; only allow timestamp reset on genuine source failover or >2.5s timeout
     const sourceTimedOut = channel.lastBboWallAt > 0 && (now - channel.lastBboWallAt) > 2500;
-    const clockSkewJump = channel.lastBboTs > 0 && (channel.lastBboTs - ts) > 300 && (channel.lastBboTs - ts) < 60000;
-    if (!sourceTimedOut && !clockSkewJump && ts < channel.lastBboTs) {
+    const sourceSwitched = channel.lastBboSource !== null && channel.lastBboSource !== source;
+    if (!sourceTimedOut && !sourceSwitched && ts < channel.lastBboTs) {
         return;
     }
 
@@ -369,6 +378,7 @@ function emitLiveBboTick(symbol: string, exchange: string, bbo: BboTickEvent) {
 
     channel.lastBboTs = ts;
     channel.lastBboWallAt = now;
+    channel.lastBboSource = source;
     channel.latestBbo = normalizedBbo;
 
     if (channel.bboListeners.size === 0) return;
@@ -376,7 +386,6 @@ function emitLiveBboTick(symbol: string, exchange: string, bbo: BboTickEvent) {
     const refBid = channel.pendingBbo ? channel.pendingBbo.bestBid : channel.lastEmittedBid;
     const refAsk = channel.pendingBbo ? channel.pendingBbo.bestAsk : channel.lastEmittedAsk;
     if (normalizedBbo.bestBid === refBid && normalizedBbo.bestAsk === refAsk) {
-        // Keep latest bidQty/askQty attached if already queued, without forcing a price redraw
         if (channel.pendingBbo) {
             channel.pendingBbo = normalizedBbo;
         }
@@ -387,15 +396,21 @@ function emitLiveBboTick(symbol: string, exchange: string, bbo: BboTickEvent) {
     scheduleOrDispatchChannel(channel);
 }
 
-function emitLiveTradeTick(symbol: string, exchange: string, tick: TradeTickEvent) {
+function emitLiveTradeTick(
+    symbol: string,
+    exchange: string,
+    tick: TradeTickEvent,
+    source: 'direct' | 'relay' = 'relay'
+) {
     if (!tick || !Number.isFinite(tick.price) || tick.price <= 0) return;
 
     const channel = getOrCreateChannel(symbol, exchange);
     const now = Date.now();
     const ts = normalizeTsMs(tick.timestamp);
+    // Strictly monotonic per source; never rewind on out-of-order stale ticks
     const sourceTimedOut = channel.lastTickWallAt > 0 && (now - channel.lastTickWallAt) > 2500;
-    const clockSkewJump = channel.lastTickTs > 0 && (channel.lastTickTs - ts) > 300 && (channel.lastTickTs - ts) < 60000;
-    if (!sourceTimedOut && !clockSkewJump && ts < channel.lastTickTs) {
+    const sourceSwitched = channel.lastTickSource !== null && channel.lastTickSource !== source;
+    if (!sourceTimedOut && !sourceSwitched && ts < channel.lastTickTs) {
         return;
     }
 
@@ -406,6 +421,7 @@ function emitLiveTradeTick(symbol: string, exchange: string, tick: TradeTickEven
 
     channel.lastTickTs = ts;
     channel.lastTickWallAt = now;
+    channel.lastTickSource = source;
     channel.latestTick = normalizedTick;
 
     if (channel.tickListeners.size === 0 && channel.tradeBatchListeners.size === 0) return;
@@ -926,15 +942,13 @@ function createSharedConnection(symbol: string, exchange: string): SharedMarketC
                         publishHealth(now);
                     }
                 } else if (e.data.type === 'TRADE_READY') {
+                    // Drop backend relay trades completely while direct Binance WS is live (prevents 2x CVD/Footprint double-counting!)
+                    if (directTradeLive) return;
                     const rawTick = e.data.data;
                     const price = Number(rawTick?.price || 0);
                     if (!Number.isFinite(price) || price <= 0) return;
                     const tickTs = normalizeTsMs(Number(rawTick.timestamp || now));
-                    if (directTradeLive && tickTs <= conn.lastDirectTradeTs) {
-                        return;
-                    }
                     conn.lastBackendTradeAt = now;
-                    // If backend included lossless compact trade tuples [px, amt, isBuy, ts], emit each cleanly
                     const compactTrades = Array.isArray(rawTick.trades) ? rawTick.trades : null;
                     if (compactTrades && compactTrades.length > 0) {
                         for (let i = 0; i < compactTrades.length; i++) {
@@ -952,7 +966,7 @@ function createSharedConnection(symbol: string, exchange: string): SharedMarketC
                                 timestamp: tts,
                                 side: isBuy ? 'buy' : 'sell',
                                 isBuyerMaker: !isBuy,
-                            });
+                            }, 'relay');
                         }
                     } else {
                         const tick: TradeTickEvent = {
@@ -962,7 +976,7 @@ function createSharedConnection(symbol: string, exchange: string): SharedMarketC
                             quantity: rawTick.quantity ?? rawTick.volume ?? 0,
                             isBuyerMaker: rawTick.isBuyerMaker ?? (rawTick.side === 'sell'),
                         };
-                        emitLiveTradeTick(symbol, exchange, tick);
+                        emitLiveTradeTick(symbol, exchange, tick, 'relay');
                     }
                     const summaryTick: TradeTickEvent = {
                         ...rawTick,
@@ -1049,7 +1063,7 @@ function createSharedConnection(symbol: string, exchange: string): SharedMarketC
                             side: isBuyerMaker ? 'sell' : 'buy',
                             isBuyerMaker,
                         };
-                        emitLiveTradeTick(symbol, exchange, tick);
+                        emitLiveTradeTick(symbol, exchange, tick, 'direct');
                         conn.pendingData = {
                             ...(conn.pendingData || {}),
                             currentPrice: price,
@@ -1113,7 +1127,7 @@ function createSharedConnection(symbol: string, exchange: string): SharedMarketC
                             bidQty: bidQty > 0 ? bidQty : undefined,
                             askQty: askQty > 0 ? askQty : undefined,
                             timestamp: ts,
-                        });
+                        }, 'direct');
                         conn.pendingData = {
                             ...(conn.pendingData || {}),
                             bestBid,

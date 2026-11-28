@@ -89,9 +89,21 @@ export function alignCandleBucketMs(tsMsInput: number, interval: string): number
  * Handles variable month lengths on '1M' and rolls forward cleanly past `nowMs`
  * so the countdown timer never freezes at 00:00 during quiet periods.
  */
-export function getNextCandleCloseMs(candleStartMs: number, interval: string, nowMs: number = Date.now()): number {
-    const startMs = candleStartMs > 10_000_000_000 ? candleStartMs : candleStartMs * 1000;
+export function getNextCandleCloseMs(
+    candleStartMs: number | null | undefined,
+    interval: string,
+    nowMs: number = Date.now()
+): number {
     const raw = String(interval || '1m').trim();
+    const validStart =
+        candleStartMs !== null &&
+        candleStartMs !== undefined &&
+        Number.isFinite(candleStartMs) &&
+        candleStartMs > 0;
+    const startMs = validStart
+        ? (candleStartMs! > 10_000_000_000 ? candleStartMs! : candleStartMs! * 1000)
+        : alignCandleBucketMs(nowMs, raw);
+
     const match = raw.match(/^(\d+)([a-zA-Z]+)$/);
     const value = match ? Math.max(1, parseInt(match[1], 10) || 1) : 1;
     const unit = match ? match[2] : 'm';

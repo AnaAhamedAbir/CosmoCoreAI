@@ -6,6 +6,7 @@ import asyncio
 from typing import Dict, List, Any, Optional
 from app.core.config import settings
 from app.core.redis import redis_manager
+from app.utils.candle_time import align_candle_bucket_sec, parse_timestamp_ms, timeframe_to_seconds
 
 logger = logging.getLogger(__name__)
 
@@ -36,41 +37,24 @@ class MarketDepthService:
 
     @staticmethod
     def _timeframe_to_seconds(timeframe: str) -> int:
-        tf = str(timeframe or "").strip()
-        if not tf:
-            return 60
-        unit = tf[-1]
-        try:
-            value = int(tf[:-1])
-        except ValueError:
-            return 60
-        if value <= 0:
-            return 60
-        if unit == "s":
-            return value
-        if unit == "m":
-            return value * 60
-        if unit == "h":
-            return value * 3600
-        if unit == "d":
-            return value * 86400
-        if unit == "w":
-            return value * 604800
-        if unit == "M":
-            return value * 2592000
-        return value * 60
+        return timeframe_to_seconds(timeframe)
 
     @staticmethod
-    def _resample_ohlcv(candles: List[List[float]], target_ms: int) -> List[List[float]]:
-        """Aggregates chronologically sorted [ts_ms, o, h, l, c, v] rows into target_ms buckets."""
+    def _resample_ohlcv(candles: List[List[float]], target_ms: int, target_tf: Optional[str] = None) -> List[List[float]]:
+        """Aggregates chronologically sorted [ts_ms, o, h, l, c, v] rows into calendar-aware target buckets."""
         if not candles or target_ms <= 0:
             return []
         buckets: Dict[int, List[float]] = {}
         for row in sorted(candles, key=lambda x: x[0]):
             if not row or len(row) < 6:
                 continue
-            ts = int(row[0])
-            bucket_ts = (ts // target_ms) * target_ms
+            ts = parse_timestamp_ms(row[0])
+            if ts <= 0:
+                continue
+            if target_tf:
+                bucket_ts = align_candle_bucket_sec(ts / 1000.0, target_tf) * 1000
+            else:
+                bucket_ts = (ts // target_ms) * target_ms
             o, h, l, c, v = float(row[1]), float(row[2]), float(row[3]), float(row[4]), float(row[5] or 0.0)
             existing = buckets.get(bucket_ts)
             if existing is None:
@@ -99,9 +83,9 @@ class MarketDepthService:
             if raw_ts is None or price is None:
                 continue
             try:
-                ts_val = int(float(raw_ts))
-                if ts_val < 10_000_000_000:
-                    ts_val *= 1000
+                ts_val = parse_timestamp_ms(raw_ts)
+                if ts_val <= 0:
+                    continue
                 px = float(price)
                 amt = float(t.get("amount") or t.get("qty") or 0.0)
             except (TypeError, ValueError):
@@ -265,11 +249,13 @@ class MarketDepthService:
             else: return 1000
         
         if 'htx' in exchange_id:
-            # HTX supports: 5, 10, 20, 150
+            # HTX supports: 5, 20, 150
             if limit <= 5: return 5
-            elif limit <= 10: return 10
             elif limit <= 20: return 20
             else: return 150
+
+        if 'gate' in exchange_id:
+            return min(limit, 100)
 
         if 'bitfinex' in exchange_id:
             return 25 if limit <= 25 else 100
@@ -534,11 +520,13 @@ class MarketDepthService:
         symbol: str,
         timeframe: str,
         fetch_limit: int,
+        end_ms: Optional[int] = None,
     ) -> List[List[float]]:
         """
         Fetches native OHLCV candles from CCXT.
-        For >1000 candles (e.g. 5,000 Binance Spot 1s candles for 5s/15s/30s resampling),
-        uses bounded parallel batching via asyncio.gather (~300ms instead of sequential multi-second stalls).
+        Supports left-edge historical pagination via `end_ms` (exclusive upper bound).
+        Respects exchange per-request caps and always anchors the window to `end_ms` (or `now_ms`)
+        so recent candles are never dropped when `fetch_limit` exceeds `BATCH_SIZE * max_chunks`.
         """
         import time as _time
 
@@ -553,18 +541,20 @@ class MarketDepthService:
             BATCH_SIZE = 1000
         all_ohlcv: List[List[float]] = []
 
-        if fetch_limit <= BATCH_SIZE:
+        tf_ms: int = self._timeframe_to_seconds(timeframe) * 1000
+        anchor_end_ms: int = int(end_ms) if (end_ms and end_ms > 0) else int(_time.time() * 1000)
+
+        if fetch_limit <= BATCH_SIZE and not end_ms:
             all_ohlcv = await exchange.fetch_ohlcv(symbol, timeframe, limit=fetch_limit)
         else:
-            tf_ms: int = self._timeframe_to_seconds(timeframe) * 1000
-            now_ms: int = int(_time.time() * 1000)
-            since_ms: int = now_ms - (fetch_limit * tf_ms)
+            max_chunks = 6 if BATCH_SIZE >= 500 else 8
+            # Cap effective_limit BEFORE computing since_ms so the most recent bars up to anchor_end_ms are ALWAYS included
+            effective_limit = min(fetch_limit, BATCH_SIZE * max_chunks)
+            since_ms: int = max(0, anchor_end_ms - (effective_limit * tf_ms))
 
-            # Build non-overlapping time windows (up to 6 parallel batches) scaled to exchange per-page cap
             batch_specs: List[tuple[int, int]] = []
             cursor = since_ms
-            remaining = fetch_limit
-            max_chunks = 6 if BATCH_SIZE >= 500 else 8
+            remaining = effective_limit
             while remaining > 0 and len(batch_specs) < max_chunks:
                 batch = min(remaining, BATCH_SIZE)
                 batch_specs.append((cursor, batch))
@@ -586,7 +576,10 @@ class MarketDepthService:
         seen: Dict[int, List[float]] = {}
         for candle in all_ohlcv:
             if candle and len(candle) >= 6:
-                seen[int(candle[0])] = candle
+                c_ts = int(candle[0])
+                if end_ms and end_ms > 0 and c_ts >= end_ms:
+                    continue
+                seen[c_ts] = candle
         return sorted(seen.values(), key=lambda x: x[0])
 
     async def _fetch_subminute_from_trades(
@@ -636,9 +629,11 @@ class MarketDepthService:
 
         desired_span_ms = min(max(target_sec * 45, 90), 900) * 1000
         cached_timestamps = [
-            int(float(t["timestamp"])) * (1000 if int(float(t["timestamp"])) < 10_000_000_000 else 1)
+            ts_m
             for t in trades
             if t.get("timestamp") is not None
+            for ts_m in (parse_timestamp_ms(t.get("timestamp")),)
+            if ts_m > 0
         ]
         cached_span_ms = (max(cached_timestamps) - min(cached_timestamps)) if len(cached_timestamps) >= 2 else 0
 
@@ -662,9 +657,11 @@ class MarketDepthService:
                             max_pages = 5 if len(recorded_1s) < 120 else 2
                             for _ in range(max_pages):
                                 ts_list = [
-                                    int(float(t["timestamp"])) * (1000 if int(float(t["timestamp"])) < 10_000_000_000 else 1)
+                                    ts_m
                                     for t in trades
                                     if t.get("timestamp") is not None
+                                    for ts_m in (parse_timestamp_ms(t.get("timestamp")),)
+                                    if ts_m > 0
                                 ]
                                 if len(ts_list) >= 2 and (max(ts_list) - min(ts_list)) >= desired_span_ms:
                                     break
@@ -721,16 +718,16 @@ class MarketDepthService:
         timeframe: str = '1h',
         limit: int = 100,
         include_patterns: bool = True,
+        before: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """
         Fetches OHLCV data for a symbol with:
         - Exchange alias & futures normalization (gateio -> gate, kucoin/kraken futures)
-        - Native klines when supported
-        - Automatic resampling from smaller native timeframes (e.g. 1s -> 5s/15s/30s on Binance Spot,
-          15m -> 45m, 1m -> 3m, 1h -> 2h/4h/6h/12h on exchanges lacking those intervals)
+        - Native klines when supported (+ left-edge historical pagination via `before`)
+        - Calendar-aware resampling from smaller native timeframes (1w Monday / 1M 1st-of-month)
         - Trade-tick OHLCV synthesis for 1s-30s on Binance Futures and non-Binance crypto exchanges
         - OANDA native S5/S15/S30 & resampled 3m/45m support
-        - Exhaustion-aware Redis caching (fixes repeated cache misses when exchange returns < limit)
+        - Pattern-isolated Redis caching with live-forming-candle-safe short TTL
         """
         symbol = str(symbol or "").strip().upper()
         timeframe = str(timeframe or "1h").strip()
@@ -741,12 +738,17 @@ class MarketDepthService:
         fetch_limit = limit
         target_sec = self._timeframe_to_seconds(timeframe)
         target_ms = target_sec * 1000
+        before_ms = parse_timestamp_ms(before) if before is not None else 0
+        pat_tag = "pat" if include_patterns else "raw"
 
-        # Unified normalized cache key
-        cache_key = f"ohlcv:{internal_ex}:{symbol}:{timeframe}"
+        # Separate live-head cache from historical scrollback pages & isolate raw vs pattern-decorated payloads
+        if before_ms > 0:
+            cache_key = f"ohlcv_hist:{internal_ex}:{symbol}:{timeframe}:{before_ms // 1000}:{limit}:{pat_tag}"
+        else:
+            cache_key = f"ohlcv:{internal_ex}:{symbol}:{timeframe}:{pat_tag}"
         redis = redis_manager.get_redis()
 
-        lock = self._get_ohlcv_lock(internal_ex, symbol, timeframe)
+        lock = self._get_ohlcv_lock(internal_ex, symbol, f"{timeframe}_{before_ms // 1000 if before_ms > 0 else 'head'}")
         async with lock:
             if redis:
                 cached = await redis.get(cache_key)
@@ -758,7 +760,6 @@ class MarketDepthService:
                     else:
                         cached_data = parsed_cache if isinstance(parsed_cache, list) else []
                         exhausted = False
-                    # Serve from cache if we have enough candles OR the source already returned all available candles
                     if len(cached_data) >= limit or exhausted:
                         return cached_data[-limit:]
 
@@ -782,7 +783,10 @@ class MarketDepthService:
                 # OANDA does not offer 1s REST candles; serve recorded 1s live bars from SubminuteCandleRecorder
                 if timeframe == '1s':
                     from app.services.subminute_candle_recorder import subminute_candle_recorder
-                    rec_oanda_1s = await subminute_candle_recorder.get_1s_candles("oanda", symbol, max_candles=limit)
+                    oanda_ui_sym = symbol.replace("_", "/")
+                    rec_oanda_1s = await subminute_candle_recorder.get_1s_candles("oanda", oanda_ui_sym, max_candles=limit)
+                    if before_ms > 0:
+                        rec_oanda_1s = [r for r in rec_oanda_1s if int(r[0]) < before_ms]
                     return [
                         {
                             "time": int(r[0] / 1000),
@@ -792,7 +796,7 @@ class MarketDepthService:
                             "close": float(r[4]),
                             "volume": float(r[5]),
                         }
-                        for r in rec_oanda_1s
+                        for r in rec_oanda_1s[-limit:]
                     ]
 
                 resample_factor = 1
@@ -813,7 +817,8 @@ class MarketDepthService:
                 fetch_success = False
 
                 if account_id and api_key:
-                    url = f"https://api-fxpractice.oanda.com/v3/instruments/{oanda_symbol}/candles?count={oanda_count}&granularity={oanda_tf}&price=M"
+                    to_param = f"&to={before_ms // 1000}" if before_ms > 0 else ""
+                    url = f"https://api-fxpractice.oanda.com/v3/instruments/{oanda_symbol}/candles?count={oanda_count}&granularity={oanda_tf}&price=M{to_param}"
                     headers = {"Authorization": f"Bearer {api_key}"}
                     try:
                         response = await asyncio.to_thread(requests.get, url, headers=headers, timeout=5)
@@ -823,8 +828,11 @@ class MarketDepthService:
                         raw_oanda: List[List[float]] = []
                         for c in candles:
                             dt = datetime.fromisoformat(c["time"].replace('Z', '+00:00'))
+                            c_ms = int(dt.timestamp() * 1000)
+                            if before_ms > 0 and c_ms >= before_ms:
+                                continue
                             raw_oanda.append([
-                                int(dt.timestamp() * 1000),
+                                c_ms,
                                 float(c["mid"]["o"]),
                                 float(c["mid"]["h"]),
                                 float(c["mid"]["l"]),
@@ -832,7 +840,7 @@ class MarketDepthService:
                                 float(c["volume"]),
                             ])
                         if resample_factor > 1 and raw_oanda:
-                            raw_oanda = self._resample_ohlcv(raw_oanda, target_ms)
+                            raw_oanda = self._resample_ohlcv(raw_oanda, target_ms, target_tf=timeframe)
                         formatted_data = [
                             {
                                 "time": int(r[0] / 1000),
@@ -888,7 +896,9 @@ class MarketDepthService:
                                 for index, row in df.iterrows()
                             ]
                             if yf_factor > 1:
-                                raw_yf = self._resample_ohlcv(raw_yf, target_ms)
+                                raw_yf = self._resample_ohlcv(raw_yf, target_ms, target_tf=timeframe)
+                            if before_ms > 0:
+                                raw_yf = [r for r in raw_yf if int(r[0]) < before_ms]
                             formatted_data = [
                                 {
                                     "time": int(r[0] / 1000),
@@ -908,9 +918,12 @@ class MarketDepthService:
                     from app.helpers.candlestick_patterns import attach_candlestick_patterns
                     formatted_data = await asyncio.to_thread(attach_candlestick_patterns, formatted_data)
 
-                if redis and formatted_data and include_patterns:
-                    oanda_ttl = 2 if target_sec <= 5 else (5 if target_sec < 60 else 10)
-                    cache_payload = {"candles": formatted_data, "exhausted": len(formatted_data) < limit}
+                if redis and formatted_data:
+                    oanda_ttl = 300 if before_ms > 0 else (2 if target_sec <= 5 else (5 if target_sec < 60 else 10))
+                    cache_payload = {
+                        "candles": formatted_data,
+                        "exhausted": len(formatted_data) < max(1, int(limit * 0.9)),
+                    }
                     await redis.setex(cache_key, oanda_ttl, json.dumps(cache_payload))
 
                 return formatted_data
@@ -927,11 +940,11 @@ class MarketDepthService:
 
                 if timeframe in supported_tfs:
                     # ── Tier 1: Native exchange klines ─────────────────────────────
-                    all_ohlcv = await self._fetch_native_ohlcv(exchange, symbol, timeframe, fetch_limit)
+                    all_ohlcv = await self._fetch_native_ohlcv(
+                        exchange, symbol, timeframe, fetch_limit, end_ms=before_ms if before_ms > 0 else None
+                    )
                 else:
                     # ── Tier 2: Resample from a smaller native timeframe ───────────
-                    # e.g., Binance Spot 1s -> 5s/15s/30s (up to 5,000 parallel 1s bars = 1000 5s / 333 15s / 166 30s);
-                    # Any exchange 15m -> 45m, 1m -> 3m, 1h -> 2h/4h/6h/12h
                     source_tf = self._find_resample_source_tf(supported_tfs, timeframe)
                     if source_tf:
                         src_sec = self._timeframe_to_seconds(source_tf)
@@ -941,9 +954,11 @@ class MarketDepthService:
                         logger.info(
                             f"[OHLCV] Resampling {base_ex}:{symbol} {timeframe} from native {source_tf} (src_limit={src_limit})"
                         )
-                        raw_src = await self._fetch_native_ohlcv(exchange, symbol, source_tf, src_limit)
+                        raw_src = await self._fetch_native_ohlcv(
+                            exchange, symbol, source_tf, src_limit, end_ms=before_ms if before_ms > 0 else None
+                        )
                         # Also merge any live 1s bars recorded in memory/Redis for sub-minute accuracy
-                        if src_sec == 1:
+                        if src_sec == 1 and before_ms == 0:
                             from app.services.subminute_candle_recorder import subminute_candle_recorder
                             rec_spot_1s = await subminute_candle_recorder.get_1s_candles(internal_ex, symbol)
                             if rec_spot_1s:
@@ -951,10 +966,12 @@ class MarketDepthService:
                                 for r in rec_spot_1s:
                                     merged_map[int(r[0])] = r
                                 raw_src = [merged_map[k] for k in sorted(merged_map.keys())]
-                        all_ohlcv = self._resample_ohlcv(raw_src, target_ms)[-fetch_limit:]
+                        all_ohlcv = self._resample_ohlcv(raw_src, target_ms, target_tf=timeframe)
+                        if before_ms > 0:
+                            all_ohlcv = [r for r in all_ohlcv if int(r[0]) < before_ms]
+                        all_ohlcv = all_ohlcv[-fetch_limit:]
                     elif target_sec < 60:
                         # ── Tier 3: Sub-minute trade-tick OHLCV synthesis ──────────
-                        # Works for 1s, 5s, 15s, 30s on Binance Futures & all non-Binance crypto exchanges
                         logger.info(
                             f"[OHLCV] Synthesizing sub-minute {timeframe} candles from trades for {internal_ex}:{symbol}"
                         )
@@ -967,6 +984,8 @@ class MarketDepthService:
                             limit=fetch_limit,
                             redis=redis,
                         )
+                        if before_ms > 0:
+                            all_ohlcv = [r for r in all_ohlcv if int(r[0]) < before_ms][-fetch_limit:]
                     else:
                         raise ValueError(
                             f"Timeframe '{timeframe}' is not supported by {base_ex} and no smaller native timeframe is available."
@@ -998,12 +1017,12 @@ class MarketDepthService:
                     '2h': 10, '4h': 10, '6h': 10, '12h': 10,
                     '1d': 10, '1w': 15, '1M': 15,
                 }
-                cache_ttl = tf_ttl_map.get(timeframe, 10)
+                cache_ttl = 300 if before_ms > 0 else tf_ttl_map.get(timeframe, 10)
 
-                if redis and formatted_data and include_patterns:
+                if redis and formatted_data:
                     cache_payload = {
                         "candles": formatted_data,
-                        "exhausted": len(formatted_data) < fetch_limit,
+                        "exhausted": len(formatted_data) < max(1, int(fetch_limit * 0.9)),
                     }
                     await redis.setex(cache_key, cache_ttl, json.dumps(cache_payload))
 

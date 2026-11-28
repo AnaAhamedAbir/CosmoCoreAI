@@ -122,7 +122,7 @@ export const FootprintImbalanceRenderer: React.FC<FootprintImbalanceRendererProp
         };
     }, [chart, series, visible, scheduleUpdate]);
 
-    if (!visible || !chart || !series || renderData.length === 0) return null;
+    if (!visible || !chart || !series) return null;
 
     return (
         <div ref={containerRef} className="absolute inset-0 pointer-events-none z-20 overflow-hidden">
@@ -131,7 +131,7 @@ export const FootprintImbalanceRenderer: React.FC<FootprintImbalanceRendererProp
                 return (
                     <div
                         key={`${d.type}-${d.price}`}
-                        className="absolute right-20 flex items-center justify-center font-mono font-bold text-[9.5px] rounded px-1.5 whitespace-nowrap"
+                        className="absolute right-2 flex items-center justify-center font-mono font-bold text-[9.5px] rounded px-1.5 whitespace-nowrap"
                         style={{
                             top: `${Math.round(d.y - 8)}px`,
                             height: '16px',

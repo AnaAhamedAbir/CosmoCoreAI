@@ -1,11 +1,9 @@
-from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
-from typing import Any
+from fastapi import APIRouter, HTTPException, Query, WebSocket
+from typing import Any, Optional
 import json
 import asyncio
-import websockets
 from app.services.market_depth_service import market_depth_service
 from app.services.orderbook_snapshot_service import orderbook_snapshot_service
-from app.helpers.orderbook_math import calculate_dynamic_wall_threshold
 from datetime import datetime
 
 router = APIRouter()
@@ -78,11 +76,12 @@ async def get_ohlcv(
     symbol: str = Query(..., description="Trading Pair"),
     exchange: str = Query(..., description="Exchange ID"),
     timeframe: str = Query("1h", description="Timeframe (1m, 1h, 1d)"),
-    limit: int = Query(100, description="Number of candles")
+    limit: int = Query(100, description="Number of candles"),
+    before: Optional[int] = Query(None, description="Fetch historical candles strictly before this Unix timestamp (sec or ms)"),
 ) -> Any:
-    """Get OHLCV data for chart."""
+    """Get OHLCV data for chart (supports left-edge historical pagination via `before`)."""
     try:
-        return await market_depth_service.fetch_ohlcv(symbol, exchange, timeframe, limit)
+        return await market_depth_service.fetch_ohlcv(symbol, exchange, timeframe, limit, before=before)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -101,7 +100,6 @@ async def get_raw_order_book(
 from app.core.redis import redis_manager
 from app.services.market_data_streamer import market_data_streamer
 from app.services.liquidity_absorption_service import liquidity_absorption_service
-import asyncio
 
 from app.services.oanda_streamer import oanda_streamer
 from app.services.orderflow_cvd_service import orderflow_cvd_service

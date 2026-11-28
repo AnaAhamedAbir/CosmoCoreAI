@@ -444,6 +444,21 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         return 'bid-ask';
     });
     const [axisOffsets, setAxisOffsets] = useState<{ left: number; right: number }>({ left: 0, right: 64 });
+    const measureAxisOffsetsRef = useRef<() => void>(() => {});
+    const showHeatmapOverlayRef = useRef<boolean>(showHeatmapOverlay);
+    showHeatmapOverlayRef.current = showHeatmapOverlay;
+
+    // Keep global quick-trade drag handlers bound to whichever split chart is currently active
+    useEffect(() => {
+        if (!isActiveChart) return;
+        const quickDragKey = chartId || 'main';
+        const handlerSet = (window as any)._quickTradeDragHandlers?.[quickDragKey];
+        if (handlerSet) {
+            (window as any)._handleQuickTradeDragStart = handlerSet.start;
+            (window as any)._handleQuickTradeDragMove = handlerSet.move;
+            (window as any)._handleQuickTradeDragEnd = handlerSet.end;
+        }
+    }, [isActiveChart, chartId]);
 
     // Handle window resize to keep HUD in view if needed
     useEffect(() => {
@@ -506,7 +521,10 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
 
         const chart = createChart(chartContainerRef.current, {
             layout: {
-                background: { type: 'solid', color: isDark ? '#000000' : '#ffffff' } as any,
+                background: {
+                    type: 'solid',
+                    color: showHeatmapOverlayRef.current ? 'transparent' : (isDark ? '#000000' : '#ffffff'),
+                } as any,
                 textColor: isDark ? '#94a3b8' : '#334155',
                 fontSize: 14, // larger price-scale tags (live price tag etc.)
             },
@@ -875,6 +893,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             } finally {
                 if (isMounted) {
                     historyLoadedRef.current = true;
+                    requestAnimationFrame(measureAxisOffsets);
                 }
             }
         };
@@ -1218,6 +1237,79 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                 );
             } catch {}
         };
+        measureAxisOffsetsRef.current = measureAxisOffsets;
+
+        // Re-measure axis widths whenever Lightweight Charts resizes timeScale (e.g. price digit width or left scale toggle)
+        chart.timeScale().subscribeSizeChange(measureAxisOffsets);
+
+        // Left-Edge Historical Scrollback Pagination: smoothly load older candles when user scrolls near the left edge
+        let isLoadingOlderHistory = false;
+        let olderHistoryExhausted = false;
+        const handleHistoricalScrollback = (logicalRange: any) => {
+            if (
+                !isMounted ||
+                !historyLoadedRef.current ||
+                isLoadingOlderHistory ||
+                olderHistoryExhausted ||
+                !logicalRange ||
+                typeof logicalRange.from !== 'number' ||
+                logicalRange.from > 12 ||
+                allCandlesRef.current.length === 0 ||
+                allCandlesRef.current.length >= 3500
+            ) {
+                return;
+            }
+            const oldestSec = Number(allCandlesRef.current[0]?.time || 0);
+            if (!Number.isFinite(oldestSec) || oldestSec <= 0) return;
+
+            isLoadingOlderHistory = true;
+            marketDepthService
+                .getOHLCV(symbol.toUpperCase(), exchange, interval, 500, oldestSec)
+                .then((olderRaw) => {
+                    if (!isMounted || !candlestickSeriesRef.current) return;
+                    const olderSanitized = sanitizeAndSortCandles(Array.isArray(olderRaw) ? olderRaw : []).filter(
+                        (c) => Number(c.time) < oldestSec
+                    );
+                    if (olderSanitized.length === 0) {
+                        olderHistoryExhausted = true;
+                        return;
+                    }
+                    const currentRange = chart.timeScale().getVisibleLogicalRange();
+                    const prevCount = allCandlesRef.current.length;
+                    const merged = sanitizeAndSortCandles([...olderSanitized, ...allCandlesRef.current]).slice(-3500);
+                    const addedCount = merged.length - prevCount;
+                    if (addedCount <= 0) {
+                        olderHistoryExhausted = true;
+                        return;
+                    }
+                    allCandlesRef.current = merged;
+                    candlesVersionRef.current += 1;
+                    candlestickSeriesRef.current.setData(merged as any);
+                    if (volumeSeriesRef.current) {
+                        volumeSeriesRef.current.setData(
+                            merged.map((k: any) => ({
+                                time: k.time,
+                                value: k.volume,
+                                color: k.close >= k.open ? 'rgba(34, 197, 94, 0.5)' : 'rgba(239, 68, 68, 0.5)',
+                            })) as any
+                        );
+                    }
+                    // Preserve user's exact viewport position cleanly across prepended bars
+                    if (currentRange && typeof currentRange.from === 'number' && typeof currentRange.to === 'number') {
+                        chart.timeScale().setVisibleLogicalRange({
+                            from: currentRange.from + addedCount,
+                            to: currentRange.to + addedCount,
+                        });
+                    }
+                    setCandlesReadyTick((t) => t + 1);
+                    requestAnimationFrame(measureAxisOffsets);
+                })
+                .catch(() => {})
+                .finally(() => {
+                    isLoadingOlderHistory = false;
+                });
+        };
+        chart.timeScale().subscribeVisibleLogicalRangeChange(handleHistoricalScrollback);
 
         const resizeObserver = new ResizeObserver(entries => {
             if (entries.length === 0 || entries[0].target !== chartContainerRef.current) { return; }
@@ -1308,8 +1400,11 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             containerEl?.removeEventListener('pointerup', handlePriceAxisGesture);
             try {
                 chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleScaleCollisionCheck);
+                chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleHistoricalScrollback);
                 chart.timeScale().unsubscribeSizeChange(handleScaleCollisionCheck);
+                chart.timeScale().unsubscribeSizeChange(measureAxisOffsets);
             } catch {}
+            measureAxisOffsetsRef.current = () => {};
             if (sweepDecayTimerRef.current) {
                 clearTimeout(sweepDecayTimerRef.current);
                 sweepDecayTimerRef.current = null;
@@ -1321,6 +1416,10 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             if (spreadCorridorPrimitiveRef.current && candlestickSeriesRef.current) {
                 try { candlestickSeriesRef.current.detachPrimitive(spreadCorridorPrimitiveRef.current); } catch {}
             }
+            emaSeriesMapRef.current.forEach((s) => {
+                try { chart.removeSeries(s); } catch {}
+            });
+            emaSeriesMapRef.current.clear();
             chart.remove();
 
             // Cleanup refs so they respawn cleanly on the newly created chart instance
@@ -1348,12 +1447,6 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             lastCandleRef.current = null;
             historyLoadedRef.current = false;
             allCandlesRef.current = [];
-            if (chartRef.current) {
-                emaSeriesMapRef.current.forEach((series) => {
-                    try { chartRef.current.removeSeries(series); } catch {}
-                });
-            }
-            emaSeriesMapRef.current.clear();
             emaSeriesRef.current = null;
             htfCandlesCacheRef.current = {};
             bbUpperSeriesRef.current = null;
@@ -1371,12 +1464,15 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         };
     }, [symbol, interval, exchange, chartId]);
 
-    // Dynamically apply theme changes to chart layout & indicator colors (deep black #000000 in dark, clean #ffffff in light)
+    // Dynamically apply theme & Bookmap transparent-background changes (lets Heatmap glow strictly BEHIND candles)
     useEffect(() => {
         if (!chartRef.current) return;
         chartRef.current.applyOptions({
             layout: {
-                background: { type: 'solid', color: isDark ? '#000000' : '#ffffff' } as any,
+                background: {
+                    type: 'solid',
+                    color: showHeatmapOverlay ? 'transparent' : (isDark ? '#000000' : '#ffffff'),
+                } as any,
                 textColor: isDark ? '#94a3b8' : '#334155',
             },
             grid: {
@@ -1396,7 +1492,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         if (bbUpperSeriesRef.current) bbUpperSeriesRef.current.applyOptions({ color: isDark ? '#22c55e' : '#16a34a' });
         if (bbMiddleSeriesRef.current) bbMiddleSeriesRef.current.applyOptions({ color: isDark ? '#3b82f6' : '#2563eb' });
         if (bbLowerSeriesRef.current) bbLowerSeriesRef.current.applyOptions({ color: isDark ? '#ef4444' : '#dc2626' });
-    }, [isDark]);
+    }, [isDark, showHeatmapOverlay]);
 
     // Keep showCrosshairAIPredictRef in sync and cleanup crosshair button / line when toggled off
     useEffect(() => {
@@ -1556,7 +1652,8 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         indicatorSettings.emaTimeframes,
         indicatorSettings.emaRenderMode,
         indicatorSettings.emaShowPriceLabels,
-        indicatorSettings.emaCustomColors
+        indicatorSettings.emaCustomColors,
+        candlesReadyTick
     ]);
 
     // Update Indicators
@@ -1575,6 +1672,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
 
         if (chartRef.current) {
             chartRef.current.priceScale('left').applyOptions({ visible: indicatorSettings.showRSI || indicatorSettings.showMACD });
+            requestAnimationFrame(() => measureAxisOffsetsRef.current());
         }
 
         if (volumeSeriesRef.current) {
@@ -1641,7 +1739,8 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         indicatorSettings.emaTimeframes,
         indicatorSettings.emaRenderMode,
         indicatorSettings.emaShowPriceLabels,
-        indicatorSettings.emaCustomColors
+        indicatorSettings.emaCustomColors,
+        candlesReadyTick
     ]);
 
     // ML Prediction Lines handled by MLPredictionRenderer component in JSX
@@ -4500,18 +4599,43 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
     return (
         <div ref={chartSplitContainerRef} className="w-full h-full flex flex-col absolute inset-0 bg-white dark:bg-[#000000]">
             <div className="flex-1 min-h-0 relative bg-white dark:bg-[#000000]">
-                <div ref={chartContainerRef} className="w-full h-full absolute inset-0 z-0 touch-none select-none bg-white dark:bg-[#000000]" />
+                {/* Bookmap-style L2 Heatmap Layer rendered strictly BEHIND transparent-background Candlesticks */}
+                {showHeatmapOverlay && (
+                    <div
+                        className="absolute inset-0 z-[1] pointer-events-none overflow-hidden"
+                        style={{ right: axisOffsets.right, bottom: 26 }}
+                    >
+                        <LiquidityHeatmapRenderer
+                            chart={chartRef.current}
+                            series={candlestickSeriesRef.current}
+                            data={realHeatmapData}
+                            bucketSize={heatmapBucketSize}
+                            palette={heatmapPalette}
+                            leftAxisOffset={axisOffsets.left}
+                        />
+                    </div>
+                )}
+                <div
+                    ref={chartContainerRef}
+                    className={`w-full h-full absolute inset-0 z-[5] touch-none select-none ${
+                        showHeatmapOverlay ? 'bg-transparent' : 'bg-white dark:bg-[#000000]'
+                    }`}
+                />
                 <CandlestickTooltip
                     candle={tooltipData}
                     position={tooltipPos}
                     chartContainerRef={chartContainerRef}
                     leftAxisOffset={axisOffsets.left}
+                    rightAxisOffset={axisOffsets.right}
                 />
-                {/* Compact Pro Order Flow Controls (only shown when Heatmap or Footprint is active) */}
+                {/* Compact Pro Order Flow Controls (only shown when Heatmap or Footprint is active; avoids BB HUD overlap) */}
                 {(showHeatmapOverlay || showFootprint) && (
                     <div
-                        className="absolute top-2 z-30 flex flex-wrap items-center gap-1.5 pointer-events-auto"
-                        style={{ left: Math.max(8, axisOffsets.left + 8) }}
+                        className="absolute z-30 flex flex-wrap items-center gap-1.5 pointer-events-auto"
+                        style={{
+                            left: Math.max(8, axisOffsets.left + 8),
+                            top: indicatorSettings.showBB && bbData.length > 0 ? 78 : 8,
+                        }}
                     >
                         {showHeatmapOverlay && (
                             <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-lg bg-white/90 dark:bg-[#070b14]/88 border border-slate-200 dark:border-white/10 shadow-sm text-[9.5px] font-mono">
@@ -4644,16 +4768,6 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                     {advancedMetrics.showDeltaDivergence && <DeltaDivergenceRenderer chart={chartRef.current} series={candlestickSeriesRef.current} visible={advancedMetrics.showDeltaDivergence} data={advancedMetricsData?.divergenceData} />}
                     {indicatorSettings.showAetherFlow && <AetherFlowRenderer chart={chartRef.current} series={candlestickSeriesRef.current!} data={aetherFlowData} settings={indicatorSettings} />}
 
-                    {showHeatmapOverlay && (
-                        <LiquidityHeatmapRenderer
-                            chart={chartRef.current}
-                            series={candlestickSeriesRef.current}
-                            data={realHeatmapData}
-                            bucketSize={heatmapBucketSize}
-                            palette={heatmapPalette}
-                            leftAxisOffset={axisOffsets.left}
-                        />
-                    )}
                     {indicatorSettings.showAutoFibo && <FibonacciCloudRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={fiboData} />}
                     {indicatorSettings.showBB && <BollingerBandsRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={bbData} visible={indicatorSettings.showBB} />}
                     {indicatorSettings.showMACD && (
@@ -5147,6 +5261,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                     >
                         <CVDChart
                             mainChart={chartRef.current}
+                            mainSeries={candlestickSeriesRef.current}
                             data={cvdData}
                             meta={cvdMeta}
                             loading={orderFlowLoading}

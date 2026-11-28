@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { marketDepthService } from '../services/marketDepthService';
 import { VPVRData } from '../components/features/market/VolumeProfileWidget';
 import { CVDDataPoint, CVDMeta } from '../components/features/market/CVDChart';
@@ -34,6 +34,8 @@ export const useOrderFlowData = (
     const [footprintData, setFootprintData] = useState<FootprintCandleData[]>([]);
     const [loading, setLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
+    const includeFootprintRef = useRef<boolean>(includeFootprint);
+    includeFootprintRef.current = includeFootprint;
 
     useEffect(() => {
         if (!enabled || !symbol || !exchange || !interval) {
@@ -187,8 +189,6 @@ export const useOrderFlowData = (
             if (isBuy) fpTick.askVolume += amount;
             else fpTick.bidVolume += amount;
 
-            enrichFootprintCandleClient(currentCandle);
-
             const prevBarDelta = pendingCvdByBar.get(currentCandleTime);
             if (prevBarDelta) {
                 prevBarDelta.delta += cvdDelta;
@@ -202,6 +202,7 @@ export const useOrderFlowData = (
                 });
             }
             hasPendingFootprint = true;
+            return currentCandle;
         };
 
         const fetchOrderFlowData = async () => {
@@ -219,7 +220,7 @@ export const useOrderFlowData = (
                 // 3) OHLCV (for VPVR + baseline context)
                 const [cvdRes, fpRes, klinesRes] = await Promise.all([
                     marketDepthService.getOrderflowCVD(upperSym, exchange, interval, 1000).catch(() => null),
-                    includeFootprint
+                    includeFootprintRef.current
                         ? marketDepthService.getOrderflowFootprint(upperSym, exchange, interval, 120).catch(() => null)
                         : Promise.resolve(null),
                     marketDepthService.getOHLCV(upperSym, exchange, interval, 1000).catch(() => []),
@@ -235,6 +236,7 @@ export const useOrderFlowData = (
                         delta: Number(p.delta || 0),
                         buyVolume: Number(p.buyVolume || 0),
                         sellVolume: Number(p.sellVolume || 0),
+                        close: Number.isFinite(Number(p.close)) ? Number(p.close) : undefined,
                     }));
                     setCvdData(parsedCvd);
                     setCvdMeta({
@@ -359,6 +361,8 @@ export const useOrderFlowData = (
                                         askVolume: Number(t.askVolume || 0),
                                         isImbalance: Boolean(t.isImbalance),
                                         imbalanceType: t.imbalanceType || undefined,
+                                        isAskImbalance: Boolean(t.isAskImbalance || (t.isImbalance && t.imbalanceType === 'ask')),
+                                        isBidImbalance: Boolean(t.isBidImbalance || (t.isImbalance && t.imbalanceType === 'bid')),
                                         isStackedImbalance: Boolean(t.isStackedImbalance),
                                         isUnfinishedAuction: Boolean(t.isUnfinishedAuction),
                                         isAbsorption: Boolean(t.isAbsorption),
@@ -447,12 +451,15 @@ export const useOrderFlowData = (
                     activeFootprints = mergedFootprints;
                     // Replay any live trades that arrived after fetchStartedAtMs while REST was in flight
                     if (preResolveBuffer.length > 0) {
+                        const dirtyBars = new Set<FootprintCandleData>();
                         for (let i = 0; i < preResolveBuffer.length; i++) {
                             const buffered = preResolveBuffer[i];
                             if ((buffered.timestamp || 0) >= fetchStartedAtMs) {
-                                applyLiveTickToState(buffered);
+                                const touched = applyLiveTickToState(buffered);
+                                if (touched) dirtyBars.add(touched);
                             }
                         }
+                        dirtyBars.forEach((bar) => enrichFootprintCandleClient(bar));
                         preResolveBuffer.length = 0;
                     }
                     setFootprintData(cloneFootprintsForState(activeFootprints));
@@ -463,9 +470,12 @@ export const useOrderFlowData = (
                     setVpvrData([]);
                     activeFootprints = [];
                     if (preResolveBuffer.length > 0) {
+                        const dirtyBars = new Set<FootprintCandleData>();
                         for (let i = 0; i < preResolveBuffer.length; i++) {
-                            applyLiveTickToState(preResolveBuffer[i]);
+                            const touched = applyLiveTickToState(preResolveBuffer[i]);
+                            if (touched) dirtyBars.add(touched);
                         }
+                        dirtyBars.forEach((bar) => enrichFootprintCandleClient(bar));
                         preResolveBuffer.length = 0;
                     }
                     setFootprintData(cloneFootprintsForState(activeFootprints));
@@ -509,9 +519,13 @@ export const useOrderFlowData = (
                         }
                         return;
                     }
+                    const dirtyBars = new Set<FootprintCandleData>();
                     for (let i = 0; i < ticks.length; i++) {
-                        applyLiveTickToState(ticks[i]);
+                        const touched = applyLiveTickToState(ticks[i]);
+                        if (touched) dirtyBars.add(touched);
                     }
+                    // Enrich once per dirty candle per batch instead of per individual trade
+                    dirtyBars.forEach((bar) => enrichFootprintCandleClient(bar));
                     if (isMounted && (pendingCvdByBar.size > 0 || hasPendingFootprint)) {
                         scheduleOrderFlowFlush();
                     }
@@ -535,7 +549,65 @@ export const useOrderFlowData = (
                 unsubscribeLiveBatch = null;
             }
         };
-    }, [symbol, exchange, interval, enabled, includeFootprint]);
+    }, [symbol, exchange, interval, enabled]);
+
+    // When Footprint is toggled ON later, hydrate server real clusters cleanly WITHOUT wiping CVD or VPVR
+    useEffect(() => {
+        if (!enabled || !includeFootprint || !symbol || !exchange || !interval) return;
+        let active = true;
+        marketDepthService
+            .getOrderflowFootprint(symbol.toUpperCase(), exchange, interval, 120)
+            .then((fpRes) => {
+                if (!active || !fpRes || !Array.isArray(fpRes.candles) || fpRes.candles.length === 0) return;
+                const realMap = new Map<number, FootprintCandleData>();
+                const step = Number(fpRes.tick_step || 0);
+                for (let i = 0; i < fpRes.candles.length; i++) {
+                    const rc = fpRes.candles[i];
+                    if (!rc || !Number.isFinite(Number(rc.time)) || !Array.isArray(rc.ticks) || rc.ticks.length === 0) continue;
+                    realMap.set(Number(rc.time), {
+                        time: Number(rc.time),
+                        open: Number(rc.open),
+                        high: Number(rc.high),
+                        low: Number(rc.low),
+                        close: Number(rc.close),
+                        pocPrice: Number(rc.pocPrice),
+                        totalDelta: Number(rc.totalDelta),
+                        totalVolume: Number(rc.totalVolume),
+                        hasDeltaDivergence: Boolean(rc.hasDeltaDivergence),
+                        divergenceType: rc.divergenceType || undefined,
+                        isRealCluster: true,
+                        tickStep: Number(rc.tickStep || step || 0),
+                        ticks: rc.ticks.map((t: any) => ({
+                            price: Number(t.price),
+                            bidVolume: Number(t.bidVolume || 0),
+                            askVolume: Number(t.askVolume || 0),
+                            isImbalance: Boolean(t.isImbalance),
+                            imbalanceType: t.imbalanceType || undefined,
+                            isAskImbalance: Boolean(t.isAskImbalance || (t.isImbalance && t.imbalanceType === 'ask')),
+                            isBidImbalance: Boolean(t.isBidImbalance || (t.isImbalance && t.imbalanceType === 'bid')),
+                            isStackedImbalance: Boolean(t.isStackedImbalance),
+                            isUnfinishedAuction: Boolean(t.isUnfinishedAuction),
+                            isAbsorption: Boolean(t.isAbsorption),
+                        })),
+                    });
+                }
+                if (realMap.size === 0) return;
+                setFootprintData((prev) => {
+                    if (prev.length === 0) {
+                        return Array.from(realMap.values()).sort((a, b) => a.time - b.time);
+                    }
+                    const latestTime = prev[prev.length - 1].time;
+                    return prev.map((bar) => {
+                        if (bar.time === latestTime && bar.isRealCluster) return bar;
+                        return realMap.get(bar.time) || bar;
+                    });
+                });
+            })
+            .catch(() => {});
+        return () => {
+            active = false;
+        };
+    }, [enabled, includeFootprint, symbol, exchange, interval]);
 
     return { vpvrData, cvdData, cvdMeta, footprintData, loading, error };
 };

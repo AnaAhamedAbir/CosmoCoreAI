@@ -18,6 +18,7 @@ export interface CVDDataPoint {
     delta?: number;
     buyVolume?: number;
     sellVolume?: number;
+    close?: number;
 }
 
 export interface CVDMeta {
@@ -29,13 +30,21 @@ export interface CVDMeta {
 
 interface CVDChartProps {
     mainChart: IChartApi | null;
+    mainSeries?: ISeriesApi<'Candlestick'> | null;
     data: CVDDataPoint[];
     meta?: CVDMeta | null;
     loading?: boolean;
     interval?: string;
 }
 
-export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data, meta, loading = false, interval = '1m' }) => {
+export const CVDChart: React.FC<CVDChartProps> = ({
+    mainChart,
+    mainSeries = null,
+    data,
+    meta,
+    loading = false,
+    interval = '1m',
+}) => {
     const { theme } = useTheme();
     const isDark = theme === 'dark';
 
@@ -57,6 +66,7 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data, meta, loadi
     const lastRenderedCountRef = useRef<number>(0);
     const lastRenderedFirstTimeRef = useRef<number>(0);
     const lastRenderedLastTimeRef = useRef<number>(0);
+    const rolloverCountRef = useRef<number>(0);
     const anchorTimesRef = useRef<number[]>([]);
     const pointByTimeRef = useRef<Map<number, CVDDataPoint>>(new Map());
 
@@ -284,14 +294,18 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data, meta, loadi
             data.length >= 2 &&
             data[data.length - 2].time === prevLast;
 
+        // Compact internal Lightweight Charts buffer periodically on ring-buffer rollover to prevent unbounded growth
+        const allowRolloverIncremental = isCappedRollover && rolloverCountRef.current < 25;
+
         const canIncrementalUpdate =
             prevCount > 0 &&
             lastPt.time >= prevLast &&
             ((firstTime === prevFirst && (data.length === prevCount || data.length === prevCount + 1)) ||
-                isCappedRollover);
+                allowRolloverIncremental);
 
         if (canIncrementalUpdate) {
             try {
+                if (isCappedRollover) rolloverCountRef.current += 1;
                 cvdSeries.update({ time: lastPt.time as any, value: lastPt.value });
                 pointByTimeRef.current.set(lastPt.time, lastPt);
                 const barDelta =
@@ -344,6 +358,7 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data, meta, loadi
 
         beginDataMutation();
         try {
+            rolloverCountRef.current = 0;
             cvdSeries.setData(cvdPoints);
             deltaSeries.setData(deltaPoints);
             lastRenderedCountRef.current = sorted.length;
@@ -397,6 +412,11 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data, meta, loadi
                     isSyncingCrosshairRef.current = false;
                     setHoveredPoint(pt);
                 } else {
+                    isSyncingCrosshairRef.current = true;
+                    try {
+                        cvdChart.clearCrosshairPosition();
+                    } catch {}
+                    isSyncingCrosshairRef.current = false;
                     setHoveredPoint(null);
                 }
             } catch {
@@ -420,6 +440,28 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data, meta, loadi
             const tNum = Number(param.time);
             const pt = pointByTimeRef.current.get(tNum);
             setHoveredPoint(pt ?? null);
+            // True two-way crosshair sync: mirror CVD hover onto Main Chart candlestick series
+            if (isSyncLockedRef.current && mainSeries) {
+                const targetPrice = pt?.close;
+                if (targetPrice && Number.isFinite(targetPrice) && targetPrice > 0) {
+                    isSyncingCrosshairRef.current = true;
+                    try {
+                        mainChart.setCrosshairPosition(targetPrice, param.time, mainSeries);
+                    } catch {}
+                    isSyncingCrosshairRef.current = false;
+                } else if (typeof param.logical === 'number') {
+                    try {
+                        const mainBar = mainSeries.dataByIndex(param.logical) as any;
+                        if (mainBar && Number.isFinite(mainBar.close)) {
+                            isSyncingCrosshairRef.current = true;
+                            mainChart.setCrosshairPosition(mainBar.close, param.time, mainSeries);
+                            isSyncingCrosshairRef.current = false;
+                        }
+                    } catch {
+                        isSyncingCrosshairRef.current = false;
+                    }
+                }
+            }
         };
 
         mainChart.subscribeCrosshairMove(syncCrosshairMainToCVD);
@@ -433,7 +475,7 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data, meta, loadi
                 cvdChart.unsubscribeCrosshairMove(syncCrosshairCVDToMain);
             } catch {}
         };
-    }, [mainChart]);
+    }, [mainChart, mainSeries]);
 
     const handleToggleSyncLock = useCallback(() => {
         setIsSyncLocked((prev) => !prev);
@@ -495,6 +537,11 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data, meta, loadi
                     <span className="flex items-center gap-1 font-black tracking-wider text-slate-700 dark:text-slate-200">
                         <span className={`w-1.5 h-1.5 rounded-full ${meta?.isTrueDelta ? 'bg-emerald-400' : 'bg-cyan-400'}`} />
                         {meta?.isTrueDelta ? 'TRUE CVD' : 'CVD'}
+                        {hudStats.isHovered && (
+                            <span className="ml-0.5 px-1 py-px rounded bg-cyan-500/20 text-cyan-600 dark:text-cyan-300 text-[8.5px] font-bold">
+                                BAR
+                            </span>
+                        )}
                     </span>
 
                     {loading && data.length === 0 ? (

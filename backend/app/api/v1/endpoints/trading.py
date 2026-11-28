@@ -1456,6 +1456,43 @@ async def get_api_key_balance(
         logger.error(f"Balance fetch failed: {e}")
         raise HTTPException(status_code=500, detail=f"Balance Error: {str(e)}")
 
+
+@router.get("/api-key-fees/{api_key_id}")
+async def get_api_key_trading_fees(
+    api_key_id: int,
+    symbol: str,
+    force_refresh: bool = False,
+    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_user),
+):
+    """Fetch live cached maker/taker commission rates for an API key & symbol (Spot / USD-M / COIN-M)."""
+    try:
+        from app.services.trading_fee_service import trading_fee_service
+        return await trading_fee_service.get_symbol_trading_fees(
+            db=db,
+            user_id=current_user.id,
+            api_key_id=api_key_id,
+            symbol=symbol,
+            force_refresh=force_refresh,
+        )
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.warning(f"⚠️ Fee lookup error for api_key_id={api_key_id}, symbol={symbol}: {e}")
+        from app.services.trading_fee_service import trading_fee_service
+        return trading_fee_service.get_default_symbol_fees(symbol=symbol)
+
+
+@router.get("/estimated-fees")
+async def get_estimated_trading_fees(
+    symbol: str,
+    exchange_id: str = "binance",
+    current_user: models.User = Depends(deps.get_current_user),
+):
+    """Return deterministic default maker/taker fee schedule when no API key is selected."""
+    from app.services.trading_fee_service import trading_fee_service
+    return trading_fee_service.get_default_symbol_fees(symbol=symbol, exchange_id=exchange_id)
+
 @router.get("/api-key-position/{api_key_id}")
 async def get_api_key_position(
     api_key_id: int,

@@ -1,6 +1,11 @@
 import React from 'react';
 import { Scale, ShieldAlert, TrendingUp, Flame, Clock } from 'lucide-react';
 import { RiskSizingResult, TradePnlPreview } from '../../../utils/riskAndPnlCalculator';
+import {
+  formatFeeRatePct,
+  formatFeeUsd,
+  TradeFeeBreakdown,
+} from '../../../utils/tradeFeeCalculator';
 
 interface RiskSizingSubBarProps {
   sizeMode: 'risk_usd' | 'risk_pct';
@@ -87,16 +92,46 @@ interface LivePnlAndRRBarProps {
   preview: TradePnlPreview;
   orderType: 'Limit' | 'Market' | 'SmartPeg';
   isFutures: boolean;
+  feeBreakdown?: TradeFeeBreakdown;
 }
 
 export const LivePnlAndRRBar: React.FC<LivePnlAndRRBarProps> = ({
   preview,
   orderType,
   isFutures,
+  feeBreakdown,
 }) => {
   const hasAnyMetric =
-    preview.estProfitUsd !== null || preview.maxLossUsd !== null || preview.makerFeeSavingsUsd > 0.01;
+    preview.estProfitUsd !== null ||
+    preview.maxLossUsd !== null ||
+    preview.makerFeeSavingsUsd > 0.01 ||
+    Boolean(feeBreakdown && feeBreakdown.hasPositionSize && feeBreakdown.roundTripSlFeeUsd > 0);
   if (!hasAnyMetric || preview.notionalUsd <= 0) return null;
+
+  const entryFeeUsd = feeBreakdown ? feeBreakdown.entryLeg.feeUsd : preview.takerFeeUsd;
+  const entryRateLabel = feeBreakdown
+    ? formatFeeRatePct(feeBreakdown.entryLeg.rate)
+    : isFutures
+      ? '0.05%'
+      : '0.10%';
+  const takerRateLabel = feeBreakdown
+    ? formatFeeRatePct(feeBreakdown.effectiveTakerRate)
+    : isFutures
+      ? '0.05%'
+      : '0.10%';
+  const makerSavingsUsd = feeBreakdown
+    ? Math.max(
+        0,
+        feeBreakdown.notionalEntryUsd *
+          (feeBreakdown.effectiveTakerRate - feeBreakdown.effectiveMakerRate)
+      )
+    : preview.makerFeeSavingsUsd;
+  const slNativeExtraUsd =
+    feeBreakdown && feeBreakdown.slLeg.isExchangeNative
+      ? feeBreakdown.slLeg.feeUsd
+      : 0;
+  const slRoundTripUsd = feeBreakdown ? feeBreakdown.roundTripSlFeeUsd : entryFeeUsd;
+  const slMarginPct = feeBreakdown ? feeBreakdown.slRoundTripPctOfMargin : 0;
 
   return (
     <div
@@ -143,16 +178,53 @@ export const LivePnlAndRRBar: React.FC<LivePnlAndRRBarProps> = ({
         )}
       </div>
 
-      {preview.makerFeeSavingsUsd >= 0.01 && (
-        <div className="flex items-center justify-between text-[9.5px] text-gray-400 pt-0.5 border-t border-white/5">
-          {orderType === 'SmartPeg' ? (
+      {(feeBreakdown?.hasPositionSize || makerSavingsUsd >= 0.01) && (
+        <div className="flex items-center justify-between gap-1.5 flex-wrap text-[9.5px] text-gray-400 pt-0.5 border-t border-white/5">
+          {feeBreakdown ? (
+            <>
+              <span>
+                Fee:{' '}
+                <strong className="text-white">{formatFeeUsd(slRoundTripUsd)}</strong>{' '}
+                <span className="text-gray-500">
+                  (E:{entryRateLabel}
+                  {feeBreakdown.slLeg.enabled
+                    ? ` + SL:${formatFeeRatePct(feeBreakdown.slLeg.rate)}`
+                    : ''}
+                  )
+                </span>
+                {isFutures && slMarginPct > 0 && (
+                  <span
+                    className={`ml-1 font-bold ${
+                      slMarginPct >= 5
+                        ? 'text-rose-300'
+                        : slMarginPct >= 2.5
+                          ? 'text-amber-300'
+                          : 'text-cyan-300'
+                    }`}
+                  >
+                    • {slMarginPct.toFixed(2)}% Mgn
+                  </span>
+                )}
+              </span>
+              {feeBreakdown.slLeg.isExchangeNative && feeBreakdown.smartChaseSlSavingsUsd >= 0.005 ? (
+                <span className="text-amber-300 font-semibold">
+                  🛡️ Native SL: {formatFeeUsd(slNativeExtraUsd)} (Chase saves{' '}
+                  {formatFeeUsd(feeBreakdown.smartChaseSlSavingsUsd)})
+                </span>
+              ) : orderType === 'SmartPeg' && makerSavingsUsd >= 0.005 ? (
+                <span className="text-emerald-300 font-semibold">
+                  ⚡ SmartPeg saves {formatFeeUsd(makerSavingsUsd)} vs Taker ({takerRateLabel})
+                </span>
+              ) : null}
+            </>
+          ) : orderType === 'SmartPeg' ? (
             <span className="text-amber-300 font-semibold">
-              ⚡ SmartPeg Maker saving ~${preview.makerFeeSavingsUsd.toFixed(2)} vs Market {isFutures ? 'Taker (0.05%)' : 'Taker (0.10%)'}
+              ⚡ SmartPeg Maker saving ~${makerSavingsUsd.toFixed(2)} vs Market {isFutures ? 'Taker (0.05%)' : 'Taker (0.10%)'}
             </span>
           ) : (
             <span>
-              Est. Fee: ~${preview.takerFeeUsd.toFixed(2)} •{' '}
-              <span className="text-amber-300/90">SmartPeg saves ~${preview.makerFeeSavingsUsd.toFixed(2)}</span>
+              Est. Fee: ~${entryFeeUsd.toFixed(2)} •{' '}
+              <span className="text-amber-300/90">SmartPeg saves ~${makerSavingsUsd.toFixed(2)}</span>
             </span>
           )}
         </div>

@@ -19,8 +19,15 @@ import {
   TradePnlPreview,
 } from '../../../utils/riskAndPnlCalculator';
 import { OrderbookWall, WallTargetsSummary } from '../../../utils/liquidityWallMagnet';
+import {
+  formatFeeRatePct,
+  formatFeeUsd,
+  TradeFeeBreakdown,
+  TradingFeeProfile,
+} from '../../../utils/tradeFeeCalculator';
 import { TakeProfitWallSnapButton } from './LiquidityWallMagnetControls';
 import { AntiWickSlControls } from './RiskSizeAndPnlControls';
+import { TradeFeeEstimatorPanel } from './TradeFeeEstimatorPanel';
 
 export interface TpBracketConfig {
   enabled: boolean;
@@ -86,6 +93,14 @@ interface BracketTpSlTabPanelProps {
   formatDisplayPrice: (val: number | undefined | null) => string;
   onSnapTpToWall: (frontRunPrice: number, wall: OrderbookWall) => void;
   tradePnlPreview: TradePnlPreview;
+  feeBreakdown?: TradeFeeBreakdown;
+  feeProfile?: TradingFeeProfile;
+  bnbDiscountEnabled?: boolean;
+  onToggleBnbDiscount?: () => void;
+  onRefreshFees?: () => void;
+  isLoadingFees?: boolean;
+  onChangeLeverage?: (lev: number) => void;
+  scalesNotionalWithLeverage?: boolean;
   isThermalGuardActive: boolean;
 }
 
@@ -134,6 +149,14 @@ export const BracketTpSlTabPanel: React.FC<BracketTpSlTabPanelProps> = ({
   formatDisplayPrice,
   onSnapTpToWall,
   tradePnlPreview,
+  feeBreakdown,
+  feeProfile,
+  bnbDiscountEnabled = false,
+  onToggleBnbDiscount,
+  onRefreshFees,
+  isLoadingFees = false,
+  onChangeLeverage,
+  scalesNotionalWithLeverage = true,
   isThermalGuardActive,
 }) => {
   const [showChaseAdvanced, setShowChaseAdvanced] = useState(false);
@@ -312,6 +335,14 @@ export const BracketTpSlTabPanel: React.FC<BracketTpSlTabPanelProps> = ({
                 </span>
               )}
             </div>
+            {feeBreakdown && feeBreakdown.netSlMaxLossUsd !== null && feeBreakdown.roundTripSlFeeUsd > 0 && (
+              <div className="flex items-center justify-between text-[8.5px] text-gray-400 mt-0.5 pt-0.5 border-t border-white/5">
+                <span>Net incl. fee</span>
+                <span className="text-rose-200 font-bold">
+                  -{formatFeeUsd(feeBreakdown.netSlMaxLossUsd)}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* TP Readout Pill */}
@@ -351,6 +382,19 @@ export const BracketTpSlTabPanel: React.FC<BracketTpSlTabPanelProps> = ({
                 </span>
               )}
             </div>
+            {feeBreakdown && feeBreakdown.netTpProfitUsd !== null && feeBreakdown.roundTripTpFeeUsd > 0 && (
+              <div className="flex items-center justify-between text-[8.5px] text-gray-400 mt-0.5 pt-0.5 border-t border-white/5">
+                <span>Net after fee</span>
+                <span
+                  className={`font-bold ${
+                    feeBreakdown.isNetTpNegative ? 'text-rose-300' : 'text-emerald-200'
+                  }`}
+                >
+                  {feeBreakdown.netTpProfitUsd >= 0 ? '+' : '-'}
+                  {formatFeeUsd(Math.abs(feeBreakdown.netTpProfitUsd))}
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -888,7 +932,17 @@ export const BracketTpSlTabPanel: React.FC<BracketTpSlTabPanelProps> = ({
                     )}
                   </div>
                   <span className="block text-[9px] text-gray-400 mt-0.5 leading-tight">
-                    On Binance Book • 24/7 Safe
+                    On Exchange Book •{' '}
+                    {feeBreakdown ? (
+                      <span className="text-amber-300 font-mono font-bold">
+                        Taker {formatFeeRatePct(feeBreakdown.effectiveTakerRate)}
+                        {feeBreakdown.hasPositionSize
+                          ? ` (${formatFeeUsd(feeBreakdown.nativeSlExitFeeUsd)})`
+                          : ''}
+                      </span>
+                    ) : (
+                      '24/7 Safe'
+                    )}
                   </span>
                 </button>
 
@@ -920,7 +974,17 @@ export const BracketTpSlTabPanel: React.FC<BracketTpSlTabPanelProps> = ({
                     )}
                   </div>
                   <span className="block text-[9px] text-gray-400 mt-0.5 leading-tight">
-                    Bot Maker Loop • 0% Fee
+                    Bot Maker Loop •{' '}
+                    {feeBreakdown ? (
+                      <span className="text-emerald-300 font-mono font-bold">
+                        Maker {formatFeeRatePct(feeBreakdown.effectiveMakerRate)}
+                        {feeBreakdown.hasPositionSize
+                          ? ` (${formatFeeUsd(feeBreakdown.smartChaseSlExitFeeUsd)})`
+                          : ''}
+                      </span>
+                    ) : (
+                      'Maker Fee'
+                    )}
                   </span>
                 </button>
               </div>
@@ -1121,6 +1185,39 @@ export const BracketTpSlTabPanel: React.FC<BracketTpSlTabPanelProps> = ({
                   )}
                 </span>
               </div>
+
+              {/* Live Auto Fee & Leverage Impact Estimator */}
+              {feeBreakdown && feeProfile && (
+                <TradeFeeEstimatorPanel
+                  breakdown={feeBreakdown}
+                  feeProfile={feeProfile}
+                  bnbDiscountEnabled={bnbDiscountEnabled}
+                  onToggleBnbDiscount={() => onToggleBnbDiscount?.()}
+                  onRefreshFees={onRefreshFees}
+                  isLoadingFees={isLoadingFees}
+                  leverage={leverage}
+                  onChangeLeverage={onChangeLeverage}
+                  scalesNotionalWithLeverage={scalesNotionalWithLeverage}
+                  onSwitchSlToSmartChase={() =>
+                    setSlConfig((prev) => ({
+                      ...prev,
+                      type: prev.type === 'trailing' ? 'trailing_chase' : 'smart_chase',
+                      mode: prev.mode === 'atr' ? 'percentage' : prev.mode,
+                      value:
+                        prev.mode === 'atr'
+                          ? getSmartGapValue('percentage', false)
+                          : prev.value,
+                    }))
+                  }
+                  showBreakevenSyncButton={slConfig.autoBreakevenEnabled}
+                  onSyncBreakevenFeeBuffer={(bufferPct) =>
+                    setSlConfig((prev) => ({
+                      ...prev,
+                      autoBreakevenBufferPct: bufferPct,
+                    }))
+                  }
+                />
+              )}
             </div>
 
             {/* B. Stop Distance / ATR + Monitor Window */}
@@ -1704,6 +1801,21 @@ export const BracketTpSlTabPanel: React.FC<BracketTpSlTabPanelProps> = ({
           </div>
         )}
       </div>
+
+      {/* Always-available Auto Fee Estimator when Stop-Loss is OFF */}
+      {!slConfig.enabled && feeBreakdown && feeProfile && (
+        <TradeFeeEstimatorPanel
+          breakdown={feeBreakdown}
+          feeProfile={feeProfile}
+          bnbDiscountEnabled={bnbDiscountEnabled}
+          onToggleBnbDiscount={() => onToggleBnbDiscount?.()}
+          onRefreshFees={onRefreshFees}
+          isLoadingFees={isLoadingFees}
+          leverage={leverage}
+          onChangeLeverage={onChangeLeverage}
+          scalesNotionalWithLeverage={scalesNotionalWithLeverage}
+        />
+      )}
 
       {/* Empty Tip Banner when both legs are OFF */}
       {!tpConfig.enabled && !slConfig.enabled && (

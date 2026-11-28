@@ -121,6 +121,26 @@ export interface MlLivePreviewResponse {
   updated_at?: number;
 }
 
+export interface TradingFeeResponse {
+  symbol: string;
+  exchange: string;
+  market_type: 'spot' | 'usdm_futures' | 'coinm_futures';
+  is_futures: boolean;
+  is_inverse: boolean;
+  base: string;
+  quote: string;
+  settle: string;
+  maker_rate: number;
+  taker_rate: number;
+  bnb_discount_supported: boolean;
+  bnb_discount_rate: number;
+  bnb_burn_active: boolean | null;
+  source: 'live_api' | 'market_meta' | 'estimated_default';
+  tier_label: string;
+  cached?: boolean;
+  updated_at?: number;
+}
+
 // In-flight request coalescing & 350ms micro-cache to prevent multi-component polling storms
 const _inflightPolls = new Map<string, Promise<any>>();
 const _pollMicroCache = new Map<string, { ts: number; data: any }>();
@@ -180,6 +200,20 @@ export const manualTradeService = {
           `/trading/api-key-balance/${apiKeyId}?symbol=${encodeURIComponent(symbol)}${forceRefresh ? '&force_refresh=true' : ''}`
         );
         return response.data as FastBalanceResponse;
+      },
+      forceRefresh
+    );
+  },
+
+  getTradingFees: async (apiKeyId: number, symbol: string, forceRefresh: boolean = false) => {
+    const key = `fee:${apiKeyId}:${symbol.trim().toUpperCase()}`;
+    return _coalescedPoll(
+      key,
+      async () => {
+        const response = await api.get(
+          `/trading/api-key-fees/${apiKeyId}?symbol=${encodeURIComponent(symbol)}${forceRefresh ? '&force_refresh=true' : ''}`
+        );
+        return response.data as TradingFeeResponse;
       },
       forceRefresh
     );

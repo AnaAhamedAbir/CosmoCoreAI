@@ -18,6 +18,8 @@ import {
   calculateTradePnlAndRRPreview,
   calculateDragLineDeltaUsd,
 } from '../../../utils/riskAndPnlCalculator';
+import { calculateTradeFeeBreakdown } from '../../../utils/tradeFeeCalculator';
+import { useTradingFeeProfile } from '../../../hooks/useTradingFeeProfile';
 import {
   RiskSizingSubBar,
   LivePnlAndRRBar,
@@ -2139,7 +2141,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     }
   }, [sizingMode, riskSizing.baseAmount, sizeMode]);
 
-  // Derived total base amount currently configured (falls back to 100% available balance if size input is empty)
+  // Derived total base amount currently configured (falls back to selected % balance if size input is empty)
   const currentBaseAmount = React.useMemo(() => {
     if (sizingMode !== 'standard') {
       return riskSizing.baseAmount;
@@ -2157,9 +2159,48 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
           ? ((balanceData.quote_free || 0) * pctFactor) / p
           : (balanceData.base_free || 0) * pctFactor;
       }
+      const effLev = Math.max(1, Number(leverage) || 1);
+      if (reduceOnly && positionData && positionData.amount > 0) {
+        return positionData.amount * pctFactor;
+      }
+      if (isInverseFutures) {
+        return (balanceData.base_free || 0) * 0.99 * effLev * pctFactor;
+      }
+      return ((balanceData.quote_free || 0) * 0.985 * effLev * pctFactor) / p;
     }
     return 0;
-  }, [sizingMode, riskSizing.baseAmount, size, sizeMode, effectiveOrderPrice, effectiveCurrentPrice, limitPrice, balanceData, selectedPercent, isFutures, tradeSide]);
+  }, [
+    sizingMode,
+    riskSizing.baseAmount,
+    size,
+    sizeMode,
+    effectiveOrderPrice,
+    effectiveCurrentPrice,
+    limitPrice,
+    balanceData,
+    selectedPercent,
+    isFutures,
+    isInverseFutures,
+    leverage,
+    reduceOnly,
+    positionData,
+    tradeSide,
+  ]);
+
+  const {
+    feeProfile,
+    isLoadingFees,
+    bnbDiscountEnabled,
+    setBnbDiscountEnabled,
+    refreshFees,
+  } = useTradingFeeProfile({
+    apiKeyId: selectedApi,
+    symbol: activeSymbol,
+    exchangeId: activeExchangeId,
+    isFutures,
+    isInverse: isInverseFutures,
+    enabled: isOpen,
+  });
 
   const tradePnlPreview = React.useMemo(() => {
     const refPx = effectiveOrderPrice || effectiveCurrentPrice || Number(limitPrice) || 0;
@@ -2173,6 +2214,45 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       isFutures,
     });
   }, [currentBaseAmount, effectiveOrderPrice, effectiveCurrentPrice, limitPrice, tradeSide, tpConfig, slConfig, orderType, isFutures]);
+
+  const tradeFeeBreakdown = React.useMemo(() => {
+    const refPx = effectiveOrderPrice || effectiveCurrentPrice || Number(limitPrice) || 0;
+    return calculateTradeFeeBreakdown({
+      symbol: activeSymbol,
+      exchangeId: activeExchangeId,
+      feeProfile,
+      bnbDiscountEnabled,
+      isFutures,
+      isInverse: isInverseFutures,
+      leverage,
+      baseAmount: currentBaseAmount,
+      entryPrice: refPx,
+      tpPrice: tradePnlPreview.tpPrice,
+      slPrice: tradePnlPreview.slPrice,
+      side: tradeSide,
+      orderType,
+      tpConfig,
+      slConfig,
+    });
+  }, [
+    activeSymbol,
+    activeExchangeId,
+    feeProfile,
+    bnbDiscountEnabled,
+    isFutures,
+    isInverseFutures,
+    leverage,
+    currentBaseAmount,
+    effectiveOrderPrice,
+    effectiveCurrentPrice,
+    limitPrice,
+    tradePnlPreview.tpPrice,
+    tradePnlPreview.slPrice,
+    tradeSide,
+    orderType,
+    tpConfig,
+    slConfig,
+  ]);
 
   // Derived effective iceberg visible quantity in base asset
   const effectiveIcebergQty = React.useMemo(() => {
@@ -6480,6 +6560,14 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             formatDisplayPrice={formatDisplayPrice}
                             onSnapTpToWall={handleSnapTpToWall}
                             tradePnlPreview={tradePnlPreview}
+                            feeBreakdown={tradeFeeBreakdown}
+                            feeProfile={feeProfile}
+                            bnbDiscountEnabled={bnbDiscountEnabled}
+                            onToggleBnbDiscount={() => setBnbDiscountEnabled((prev) => !prev)}
+                            onRefreshFees={refreshFees}
+                            isLoadingFees={isLoadingFees}
+                            onChangeLeverage={setLeverage}
+                            scalesNotionalWithLeverage={sizingMode === 'standard' && Boolean(selectedPercent)}
                             isThermalGuardActive={isThermalGuardActive}
                           />
                         </div>
@@ -6596,6 +6684,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         preview={tradePnlPreview}
                         orderType={orderType}
                         isFutures={isFutures}
+                        feeBreakdown={tradeFeeBreakdown}
                       />
 
                       {/* Primary Execute + Drag-to-Chart CTA & Inline TP/SL Handles */}

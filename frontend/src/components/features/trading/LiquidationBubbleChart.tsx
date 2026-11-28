@@ -93,6 +93,18 @@ const LiquidationBubbleChart: React.FC<LiquidationBubbleChartProps> = ({
         [data, targetSym],
     );
 
+    const xDomain = useMemo<[number | 'auto', number | 'auto']>(() => {
+        const times = [
+            ...candles.map((c) => c.time),
+            ...bubbleData.map((b) => b.time),
+        ].filter((t) => Number.isFinite(t) && t > 0);
+        if (times.length === 0) return ['auto', 'auto'];
+        const minT = Math.min(...times);
+        const maxT = Math.max(...times);
+        const pad = Math.max(60_000, Math.round((maxT - minT) * 0.04));
+        return [minT - pad, maxT + pad];
+    }, [candles, bubbleData]);
+
     const summary = useMemo(() => {
         let longUsd = 0;
         let shortUsd = 0;
@@ -200,7 +212,7 @@ const LiquidationBubbleChart: React.FC<LiquidationBubbleChartProps> = ({
                         <XAxis
                             type="number"
                             dataKey="time"
-                            domain={['auto', 'auto']}
+                            domain={xDomain}
                             tickFormatter={(unixTime) => new Date(unixTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             tick={{ fontSize: 10, fill: '#64748b' }}
                             axisLine={false}

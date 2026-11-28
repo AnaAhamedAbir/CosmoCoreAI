@@ -122,6 +122,7 @@ const StandardLiquidationView: React.FC<StandardLiquidationViewProps> = ({
     const drawnLinesRef = useRef<any[]>([]);
     const containerRef = useRef<HTMLDivElement>(null);
     const lastAlertEventIdRef = useRef<number | null>(null);
+    const audioCtxRef = useRef<AudioContext | null>(null);
 
     const [isChartFullScreen, setIsChartFullScreen] = useState(false);
     const [widgetKey, setWidgetKey] = useState(Date.now());
@@ -130,6 +131,9 @@ const StandardLiquidationView: React.FC<StandardLiquidationViewProps> = ({
     const [soundAlert, setSoundAlert] = useState(false);
     const [isResizing, setIsResizing] = useState(false);
     const [highlightLevelInput, setHighlightLevelInput] = useState('');
+    const [isDesktop, setIsDesktop] = useState<boolean>(() =>
+        typeof window !== 'undefined' ? window.innerWidth >= 1024 : true,
+    );
 
     // Fallback store values only if rendered standalone without LiquidationMap parent props
     const { globalExchange, globalSymbol } = useMarketStore();
@@ -172,7 +176,13 @@ const StandardLiquidationView: React.FC<StandardLiquidationViewProps> = ({
 
     const effectiveOraclePrice = wsPrice > 0 ? wsPrice : godModeState?.current_price || 0;
 
-    // Optional Whale Sound Alert via Web Audio API
+    useEffect(() => {
+        const onResize = () => setIsDesktop(window.innerWidth >= 1024);
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+    }, []);
+
+    // Optional Whale Sound Alert via shared Web Audio API context
     useEffect(() => {
         if (!soundAlert || liveFeed.length === 0) return;
         const latest = liveFeed[0];
@@ -182,7 +192,13 @@ const StandardLiquidationView: React.FC<StandardLiquidationViewProps> = ({
             try {
                 const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
                 if (AudioCtx) {
-                    const ctx = new AudioCtx();
+                    if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+                        audioCtxRef.current = new AudioCtx();
+                    }
+                    const ctx = audioCtxRef.current;
+                    if (ctx.state === 'suspended') {
+                        void ctx.resume();
+                    }
                     const osc = ctx.createOscillator();
                     const gain = ctx.createGain();
                     osc.type = 'sine';
@@ -198,6 +214,14 @@ const StandardLiquidationView: React.FC<StandardLiquidationViewProps> = ({
             }
         }
     }, [liveFeed, soundAlert, minLiquidationThreshold]);
+
+    useEffect(() => {
+        return () => {
+            if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+                void audioCtxRef.current.close().catch(() => {});
+            }
+        };
+    }, []);
 
     const toggleFullScreen = () => {
         setIsChartFullScreen((prev) => !prev);
@@ -574,11 +598,14 @@ const StandardLiquidationView: React.FC<StandardLiquidationViewProps> = ({
             </div>
 
             {/* Main Split Workspace */}
-            <div ref={containerRef} className="flex-1 flex gap-3 relative min-h-0">
+            <div ref={containerRef} className="flex-1 flex flex-col lg:flex-row gap-3 relative min-h-0 overflow-y-auto lg:overflow-hidden">
                 {isResizing && <div className="absolute inset-0 z-50 cursor-col-resize" />}
 
                 {/* Left: Main Chart Container */}
-                <div className="h-full flex flex-col relative min-w-0" style={{ width: `${chartWidth}%` }}>
+                <div
+                    className="h-[420px] lg:h-full flex flex-col relative min-w-0 shrink-0 lg:shrink"
+                    style={{ width: isDesktop ? `${chartWidth}%` : '100%' }}
+                >
                     <Card className="flex-1 min-h-0 relative !p-0 overflow-hidden border-slate-200 dark:border-white/10 shadow-lg bg-white dark:bg-[#05070C] rounded-2xl group">
                         {/* View Switcher & Oracle Pill (Top Left) */}
                         <div className="absolute top-3.5 left-3.5 z-20 flex items-center gap-2.5 flex-wrap">
@@ -701,7 +728,7 @@ const StandardLiquidationView: React.FC<StandardLiquidationViewProps> = ({
 
                 {/* Split Resizer */}
                 <div
-                    className="w-1.5 cursor-col-resize flex items-center justify-center group flex-shrink-0"
+                    className="hidden lg:flex w-1.5 cursor-col-resize items-center justify-center group flex-shrink-0"
                     onMouseDown={handleMouseDown}
                 >
                     <div
@@ -712,7 +739,10 @@ const StandardLiquidationView: React.FC<StandardLiquidationViewProps> = ({
                 </div>
 
                 {/* Right Quant Dock: Kill Feed / Pool Ladder / Analytics */}
-                <div className="h-full flex flex-col min-w-0" style={{ width: `calc(${100 - chartWidth}% - 18px)` }}>
+                <div
+                    className="h-[360px] lg:h-full flex flex-col min-w-0 shrink-0 lg:shrink"
+                    style={{ width: isDesktop ? `calc(${100 - chartWidth}% - 18px)` : '100%' }}
+                >
                     <Card className="flex-1 flex flex-col min-h-0 !p-0 border-slate-200 dark:border-white/10 shadow-lg bg-white dark:bg-[#05070C] rounded-2xl overflow-hidden">
                         {/* Tab Switcher */}
                         <div className="flex border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/40 shrink-0">

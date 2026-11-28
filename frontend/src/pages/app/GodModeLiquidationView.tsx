@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { CandlestickSeries, createChart, createSeriesMarkers, IChartApi, ISeriesApi } from 'lightweight-charts';
+import { CandlestickSeries, createChart, createSeriesMarkers, IChartApi, IPriceLine, ISeriesApi } from 'lightweight-charts';
 import Card from '@/components/common/Card';
 import { GodModeState, LiquidationPoolHorizon, useGodModeStream } from '../../hooks/useGodModeData';
 import { LiquidationRenderer } from '../../components/features/market/LiquidationRenderer';
@@ -60,9 +60,10 @@ const GodModeLiquidationView: React.FC<GodModeLiquidationViewProps> = ({
     const chartRef = useRef<IChartApi | null>(null);
     const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
     const markersPluginRef = useRef<any>(null);
+    const priceLinesRef = useRef<IPriceLine[]>([]);
     const lastCandleTimeRef = useRef<any>(null);
     const candlesRef = useRef<any[]>([]);
-    const [, setChartReadyTick] = useState(0);
+    const [chartReadyTick, setChartReadyTick] = useState(0);
 
     // Initialize Lightweight Chart immediately (non-blocking)
     useEffect(() => {
@@ -136,6 +137,7 @@ const GodModeLiquidationView: React.FC<GodModeLiquidationViewProps> = ({
         return () => {
             cancelled = true;
             resizeObserver.disconnect();
+            priceLinesRef.current = [];
             chart.remove();
             chartRef.current = null;
             seriesRef.current = null;
@@ -196,10 +198,42 @@ const GodModeLiquidationView: React.FC<GodModeLiquidationViewProps> = ({
         }
     }, [state]);
 
+    // Render Tracked Levels (highlightedLevels) on God Mode chart
+    useEffect(() => {
+        const series = seriesRef.current;
+        if (!series) return;
+
+        for (const line of priceLinesRef.current) {
+            try {
+                series.removePriceLine(line);
+            } catch {}
+        }
+        priceLinesRef.current = [];
+
+        for (const price of highlightedLevels) {
+            if (!Number.isFinite(price) || price <= 0) continue;
+            try {
+                const digits = price < 1 ? 4 : 2;
+                const line = series.createPriceLine({
+                    price,
+                    color: '#FBBF24',
+                    lineWidth: 2,
+                    lineStyle: 2,
+                    axisLabelVisible: true,
+                    title: `Target $${price.toLocaleString(undefined, { maximumFractionDigits: digits })}`,
+                });
+                priceLinesRef.current.push(line);
+            } catch {}
+        }
+    }, [highlightedLevels, chartReadyTick]);
+
     const handlePinLevel = (price: number) => {
         if (!Number.isFinite(price) || price <= 0) return;
         const rounded = Number(price.toFixed(price < 1 ? 4 : 2));
-        if (!highlightedLevels.includes(rounded)) {
+        const exists = highlightedLevels.some((l) => Math.abs(l - rounded) / rounded < 0.0002);
+        if (exists) {
+            setHighlightedLevels(highlightedLevels.filter((l) => Math.abs(l - rounded) / rounded >= 0.0002));
+        } else {
             setHighlightedLevels([...highlightedLevels, rounded].sort((a, b) => b - a));
         }
     };
@@ -211,6 +245,7 @@ const GodModeLiquidationView: React.FC<GodModeLiquidationViewProps> = ({
         { key: 'liquidationShowBubbles', label: 'Bubbles', enabled: Boolean(indicatorSettings.liquidationShowBubbles) },
         { key: 'liquidationShowDeepWalls', label: 'Deep L2', enabled: indicatorSettings.liquidationShowDeepWalls !== false },
         { key: 'liquidationShowTrajectory', label: 'Trajectory', enabled: indicatorSettings.liquidationShowTrajectory !== false },
+        { key: 'liquidationShowTrueCVD', label: 'True CVD', enabled: Boolean(indicatorSettings.liquidationShowTrueCVD) },
         { key: 'liquidationShowSpoofing', label: 'Spoof', enabled: indicatorSettings.liquidationShowSpoofing !== false },
         { key: 'liquidationShowGEX', label: 'GEX', enabled: indicatorSettings.liquidationShowGEX !== false },
         { key: 'liquidationShowSmartMoneyHUD', label: 'SM HUD', enabled: indicatorSettings.liquidationShowSmartMoneyHUD !== false },
@@ -221,6 +256,7 @@ const GodModeLiquidationView: React.FC<GodModeLiquidationViewProps> = ({
     const smartMoney = state?.smart_money ?? 50;
     const dumbMoney = state?.dumb_money ?? 50;
     const cof = state?.candle_orderflow;
+    const gex = state?.gex_data;
 
     return (
         <div className="flex flex-col h-full gap-3 overflow-hidden animate-fade-in-up">
@@ -228,7 +264,12 @@ const GodModeLiquidationView: React.FC<GodModeLiquidationViewProps> = ({
             <div className="flex-shrink-0 flex flex-col gap-2">
                 <div className="bg-rose-50 dark:bg-black text-rose-600 dark:text-rose-500 font-mono text-[10px] py-1 px-4 rounded-xl border border-rose-500/20 flex flex-wrap justify-between items-center gap-2 tracking-widest uppercase">
                     <span>SYSTEM OVERRIDE: GOD MODE // INSTITUTIONAL ORDERFLOW MATRIX ({activeHorizon.toUpperCase()} POOLS)</span>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                        {gex && (gex.call_wall > 0 || gex.put_wall > 0) && (
+                            <span className="text-[10px] font-bold text-cyan-700 dark:text-cyan-300">
+                                GEX Call {formatPairPrice(gex.call_wall)} | Put {formatPairPrice(gex.put_wall)}
+                            </span>
+                        )}
                         {cof && (
                             <span className="text-[10px] font-bold text-slate-700 dark:text-slate-200">
                                 1m Buy {cof.buy_pct.toFixed(0)}% | 1m Δ {formatCompactUsd(cof.bar_delta_usd)}
@@ -496,7 +537,7 @@ const GodModeLiquidationView: React.FC<GodModeLiquidationViewProps> = ({
                                     showBubbles={Boolean(indicatorSettings.liquidationShowBubbles)}
                                     intensityScale={indicatorSettings.liquidationHeatmapIntensity || 75}
                                     useTrailingLiquidity={trailingLiquidityEnabled}
-                                    showTrueCVD={indicatorSettings.liquidationShowTrueCVD !== false}
+                                    showTrueCVD={Boolean(indicatorSettings.liquidationShowTrueCVD)}
                                     showSpoofing={indicatorSettings.liquidationShowSpoofing !== false}
                                     showGEX={indicatorSettings.liquidationShowGEX !== false}
                                     showBookmap={indicatorSettings.liquidationShowBookmap !== false}
@@ -565,6 +606,29 @@ const GodModeLiquidationView: React.FC<GodModeLiquidationViewProps> = ({
                                 </div>
                             </div>
                         </div>
+
+                        {highlightedLevels.length > 0 && (
+                            <div className="px-3 py-1.5 border-t border-slate-200 dark:border-white/10 bg-slate-50/90 dark:bg-black/60 flex items-center gap-2 overflow-x-auto no-scrollbar shrink-0">
+                                <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 dark:text-gray-400 shrink-0">
+                                    Tracked:
+                                </span>
+                                {highlightedLevels.map((lvl) => (
+                                    <span
+                                        key={lvl}
+                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 text-[10px] font-mono font-bold shrink-0"
+                                    >
+                                        ${lvl.toLocaleString()}
+                                        <button
+                                            type="button"
+                                            onClick={() => setHighlightedLevels(highlightedLevels.filter((x) => x !== lvl))}
+                                            className="hover:text-rose-500"
+                                        >
+                                            &times;
+                                        </button>
+                                    </span>
+                                ))}
+                            </div>
+                        )}
                     </Card>
                 </div>
 

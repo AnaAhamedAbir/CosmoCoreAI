@@ -252,7 +252,7 @@ export const LiveLiquidityPoolChart: React.FC<LiveLiquidityPoolChartProps> = ({
     return (
         <div className="relative w-full h-full">
             {/* Layer Switcher Bar (Top Right before Fullscreen btn) */}
-            <div className="absolute top-3.5 right-14 z-20 hidden sm:flex items-center gap-1.5 bg-white/90 dark:bg-black/65 backdrop-blur-md p-1 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm">
+            <div className="absolute top-3.5 right-14 z-20 flex items-center gap-1 overflow-x-auto max-w-[52%] sm:max-w-none bg-white/90 dark:bg-black/65 backdrop-blur-md p-1 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm no-scrollbar">
                 {layers.map((layer) => (
                     <button
                         key={String(layer.key)}

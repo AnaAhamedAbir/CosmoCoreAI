@@ -11,7 +11,7 @@ from app.services.liquidity_absorption_service import liquidity_absorption_servi
 from app.services.subminute_candle_recorder import subminute_candle_recorder
 from app.services.l2_heatmap_recorder import l2_heatmap_recorder
 from app.services.footprint_recorder import footprint_recorder
-from app.utils.candle_time import parse_timestamp_ms
+from app.helpers.candle_time import parse_timestamp_ms
 
 logger = logging.getLogger(__name__)
 

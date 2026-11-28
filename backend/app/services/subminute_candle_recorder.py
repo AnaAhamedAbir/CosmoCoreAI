@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import aiohttp
 
 from app.core.redis import redis_manager
-from app.utils.candle_time import parse_timestamp_ms
+from app.helpers.candle_time import parse_timestamp_ms
 
 logger = logging.getLogger(__name__)
 

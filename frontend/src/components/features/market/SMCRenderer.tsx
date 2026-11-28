@@ -8,6 +8,7 @@ import type {
     SeriesAttachedParameter
 } from 'lightweight-charts';
 import { CanvasRenderingTarget2D } from 'fancy-canvas';
+import { safeDetachPrimitive } from '@/utils/chartLifecycle';
 import type { SMCResult, SMCSettings } from '../../../utils/smartMoneyConcepts';
 
 const COLORS = {
@@ -462,9 +463,7 @@ export const SMCRenderer: React.FC<SMCRendererProps> = ({
         series.attachPrimitive(primitive);
 
         return () => {
-            try {
-                series.detachPrimitive(primitive);
-            } catch (e) {}
+            safeDetachPrimitive(chart, series, primitive);
             primitiveRef.current = null;
         };
     }, [chart, series]);

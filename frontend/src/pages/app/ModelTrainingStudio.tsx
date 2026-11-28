@@ -25,13 +25,13 @@ const ModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = ({ ret
     return (
         <div className="h-full flex flex-col relative w-full min-h-0">
             {/* Pro SaaS Top Desk Mode Switcher Bar */}
-            <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 mb-2 border-b border-slate-200 dark:border-slate-800/80 flex-shrink-0">
+            <div className="cosmo-studio-topbar flex flex-wrap items-center justify-between gap-2 pb-2.5 mb-2 border-b border-slate-200 dark:border-slate-800/80 flex-shrink-0">
                 <div className="flex items-center gap-2">
                     <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase tracking-wider bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/25">
                         <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
                         ML TRAINING WORKBENCH
                     </span>
-                    <span className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:inline">
+                    <span className="cosmo-studio-topbar-sub text-[11px] text-slate-500 dark:text-slate-400 hidden sm:inline">
                         Institutional Feature Engineering, Hyperparameter Optimization &amp; 1-Click Deployment
                     </span>
                 </div>

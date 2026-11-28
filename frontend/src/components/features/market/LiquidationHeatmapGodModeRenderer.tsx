@@ -8,6 +8,7 @@ import type {
     SeriesAttachedParameter,
 } from 'lightweight-charts';
 import { CanvasRenderingTarget2D } from 'fancy-canvas';
+import { safeDetachPrimitive } from '@/utils/chartLifecycle';
 
 interface LiquidationHeatmapGodModeRendererProps {
     chart: IChartApi | null;
@@ -168,9 +169,7 @@ export const LiquidationHeatmapGodModeRenderer: React.FC<LiquidationHeatmapGodMo
         primitive.updateParams(data, visible);
 
         return () => {
-            try {
-                series.detachPrimitive(primitive);
-            } catch {}
+            safeDetachPrimitive(chart, series, primitive);
             primitiveRef.current = null;
         };
     }, [chart, series]);

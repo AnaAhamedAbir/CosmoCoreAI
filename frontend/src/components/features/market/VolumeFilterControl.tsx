@@ -80,7 +80,7 @@ export const VolumeFilterControl: React.FC<VolumeFilterControlProps> = ({
 
     return (
         <div className="flex items-center gap-2 bg-slate-100 dark:bg-[#0b101d] px-2.5 py-1 rounded-xl border border-slate-200 dark:border-white/10">
-            <span className="inline-flex items-center gap-1 text-[10.5px] font-mono font-black uppercase tracking-wider text-slate-600 dark:text-gray-300 whitespace-nowrap">
+            <span className="cosmo-whale-filter-label inline-flex items-center gap-1 text-[10.5px] font-mono font-black uppercase tracking-wider text-slate-600 dark:text-gray-300 whitespace-nowrap">
                 <Filter className="w-3 h-3 text-amber-500" />
                 <span className="hidden sm:inline">Whale Filter</span>
             </span>
@@ -141,7 +141,7 @@ export const VolumeFilterControl: React.FC<VolumeFilterControlProps> = ({
                 step="1"
                 value={valueToSlider(threshold)}
                 onChange={(e) => onThresholdChange(sliderToValue(parseFloat(e.target.value)))}
-                className="w-16 sm:w-20 h-1 bg-slate-300 dark:bg-white/15 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                className="cosmo-whale-slider w-16 sm:w-20 h-1 bg-slate-300 dark:bg-white/15 rounded-lg appearance-none cursor-pointer accent-amber-500"
             />
             <input
                 type="text"

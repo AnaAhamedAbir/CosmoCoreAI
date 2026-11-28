@@ -6,6 +6,7 @@ import { LiquidationRenderer } from '../../components/features/market/Liquidatio
 import { SmartMoneyHUD } from '../../components/features/market/SmartMoneyHUD';
 import { marketDepthService } from '../../services/marketDepthService';
 import { calculateGodModeSignal } from '../../utils/godModeSignal';
+import { isChartDisposed, safeRemoveChart } from '@/utils/chartLifecycle';
 import { useBotStore } from '../../store/botStore';
 import { useUIStore } from '../../store/uiStore';
 import { useMarketStore } from '../../store/marketStore';
@@ -114,7 +115,7 @@ const GodModeLiquidationView: React.FC<GodModeLiquidationViewProps> = ({
                     .filter((c) => Number.isFinite(c.open) && Number.isFinite(c.close))
                     .sort((a, b) => Number(a.time) - Number(b.time));
 
-                if (formatted.length > 0) {
+                if (!cancelled && !isChartDisposed(chart) && formatted.length > 0) {
                     lastCandleTimeRef.current = formatted[formatted.length - 1].time;
                     candlesRef.current = formatted;
                     setCandleTimes(formatted.map((c) => Number(c.time)));
@@ -126,6 +127,7 @@ const GodModeLiquidationView: React.FC<GodModeLiquidationViewProps> = ({
             .catch((e) => console.error('Failed to fetch history for GodMode chart', e));
 
         const resizeObserver = new ResizeObserver((entries) => {
+            if (cancelled || isChartDisposed(chart)) return;
             if (entries.length === 0 || entries[0].target !== chartContainerRef.current) return;
             const newRect = entries[0].contentRect;
             if (newRect.width > 0 && newRect.height > 0) {
@@ -138,7 +140,7 @@ const GodModeLiquidationView: React.FC<GodModeLiquidationViewProps> = ({
             cancelled = true;
             resizeObserver.disconnect();
             priceLinesRef.current = [];
-            chart.remove();
+            safeRemoveChart(chart);
             chartRef.current = null;
             seriesRef.current = null;
         };

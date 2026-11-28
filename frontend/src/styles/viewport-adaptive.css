@@ -25,13 +25,17 @@ html.display-compact-hd:not(.mobile-phone-ui):not(.display-mode-native),
 html.display-standard-hd:not(.mobile-phone-ui):not(.display-mode-native) {
   /* Sidebar width adapts smoothly instead of taking 288px on narrow displays */
   & aside.w-72 {
-    width: var(--shell-sidebar-w, 220px) !important;
+    width: var(--shell-sidebar-w, 196px) !important;
+  }
+
+  & aside.w-20 {
+    width: 4.25rem !important;
   }
 
   /* Compact sidebar logo & nav items so all categories stay accessible */
   & aside .h-\[136px\].w-\[136px\] {
-    height: 88px !important;
-    width: 88px !important;
+    height: 76px !important;
+    width: 76px !important;
   }
 
   & aside .p-6 {

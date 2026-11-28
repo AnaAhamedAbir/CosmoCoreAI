@@ -8,6 +8,7 @@ import {
     SeriesAttachedParameter
 } from 'lightweight-charts';
 import { CanvasRenderingTarget2D } from 'fancy-canvas';
+import { safeDetachPrimitive } from '@/utils/chartLifecycle';
 import { SessionData } from '@/utils/indicators';
 import { IndicatorSettings, SessionSettings } from './IndicatorSelector';
 
@@ -305,9 +306,7 @@ export const SessionsRenderer: React.FC<SessionsRendererProps> = ({ chart, serie
         series.attachPrimitive(primitive);
 
         return () => {
-            try {
-                series.detachPrimitive(primitive);
-            } catch (e) {}
+            safeDetachPrimitive(chart, series, primitive);
             primitiveRef.current = null;
         };
     }, [chart, series]);

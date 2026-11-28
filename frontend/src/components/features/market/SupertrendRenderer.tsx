@@ -8,6 +8,7 @@ import {
     SeriesAttachedParameter
 } from 'lightweight-charts';
 import { CanvasRenderingTarget2D } from 'fancy-canvas';
+import { safeDetachPrimitive } from '@/utils/chartLifecycle';
 import { SupertrendDataPoint } from '../../../utils/indicators';
 
 interface SupertrendRendererProps {
@@ -287,11 +288,7 @@ export const SupertrendRenderer: React.FC<SupertrendRendererProps> = ({
         series.attachPrimitive(primitive);
 
         return () => {
-            try {
-                series.detachPrimitive(primitive);
-            } catch (e) {
-                // Ignore detachment error if series already destroyed
-            }
+            safeDetachPrimitive(chart, series, primitive);
             primitiveRef.current = null;
         };
     }, [chart, series]);

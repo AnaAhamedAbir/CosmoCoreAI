@@ -9,6 +9,7 @@ import {
     SeriesAttachedParameter
 } from 'lightweight-charts';
 import { CanvasRenderingTarget2D } from 'fancy-canvas';
+import { safeDetachPrimitive } from '@/utils/chartLifecycle';
 import { LuxIctConfigs, LuxIctResult } from '../../../utils/luxIctConcepts';
 
 interface LuxIctRendererProps {
@@ -333,9 +334,7 @@ export const LuxIctRenderer: React.FC<LuxIctRendererProps> = ({
         series.attachPrimitive(primitive);
 
         return () => {
-            try {
-                series.detachPrimitive(primitive);
-            } catch (e) {}
+            safeDetachPrimitive(chart, series, primitive);
             primitiveRef.current = null;
         };
     }, [chart, series]);

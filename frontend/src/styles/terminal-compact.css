@@ -1,0 +1,154 @@
+/* ============================================================================
+   MODULAR TERMINAL & STUDIO COMPACT LAYOUT LAYER
+   ============================================================================
+   Ensures high-density institutional terminals (Wallhunter_Bot & Model Training
+   Studio) keep their 1920x1080 single-row toolbar & multi-column proportions
+   on 1366x768 and 1440-1600 screens without wrapping toolbars onto extra rows
+   or squishing the main chart / configuration columns.
+   ============================================================================ */
+
+html.display-compact-hd:not(.mobile-phone-ui):not(.display-mode-native):not(.display-mode-comfort),
+html.display-standard-hd:not(.mobile-phone-ui):not(.display-mode-native):not(.display-mode-comfort) {
+  /* --------------------------------------------------------------------------
+     A. Wallhunter_Bot (OrderFlowHeatmap + HeatmapSubNav)
+     Prevent header & subnav from wrapping onto 4 rows on <=1600px monitors.
+     -------------------------------------------------------------------------- */
+  & .cosmo-heatmap-header {
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    scrollbar-width: none;
+    padding: 0.25rem 0.5rem !important;
+    gap: 0.35rem !important;
+  }
+
+  & .cosmo-heatmap-header::-webkit-scrollbar,
+  & .cosmo-heatmap-subnav::-webkit-scrollbar,
+  & .cosmo-heatmap-panel-bar::-webkit-scrollbar {
+    display: none;
+  }
+
+  & .cosmo-heatmap-header > div {
+    flex-wrap: nowrap !important;
+    flex-shrink: 0 !important;
+    gap: 0.3rem !important;
+  }
+
+  & .cosmo-heatmap-header button {
+    white-space: nowrap !important;
+  }
+
+  & .cosmo-heatmap-subnav {
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    scrollbar-width: none;
+    padding: 0.2rem 0.5rem !important;
+    gap: 0.35rem !important;
+  }
+
+  & .cosmo-heatmap-subnav > div {
+    flex-wrap: nowrap !important;
+    flex-shrink: 0 !important;
+    gap: 0.25rem !important;
+  }
+
+  & .cosmo-heatmap-subnav button {
+    white-space: nowrap !important;
+  }
+
+  & .cosmo-heatmap-panel-bar {
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    scrollbar-width: none;
+    padding: 0.2rem 0.5rem !important;
+    gap: 0.35rem !important;
+  }
+
+  & .cosmo-heatmap-panel-bar > div {
+    flex-wrap: nowrap !important;
+    flex-shrink: 0 !important;
+  }
+
+  & .cosmo-heatmap-grid-wrap {
+    padding: 0.35rem !important;
+  }
+
+  /* --------------------------------------------------------------------------
+     B. Model Training Studio (Crypto & Forex Desks)
+     Keep top bar, desk header, KPI strip, and footer slim so the 3 columns
+     get maximum vertical height just like 1920x1080.
+     -------------------------------------------------------------------------- */
+  & .cosmo-studio-topbar {
+    padding-bottom: 0.35rem !important;
+    margin-bottom: 0.35rem !important;
+  }
+
+  & .cosmo-studio-topbar-sub {
+    display: none !important;
+  }
+
+  & .cosmo-studio-header {
+    flex-wrap: nowrap !important;
+    padding: 0.4rem 0.65rem !important;
+    gap: 0.5rem !important;
+  }
+
+  & .cosmo-studio-header > div:last-child {
+    flex-wrap: nowrap !important;
+    flex-shrink: 0 !important;
+  }
+
+  & .cosmo-studio-header-sub {
+    display: none !important;
+  }
+
+  & .cosmo-studio-kpi-ribbon > div {
+    padding: 0.35rem 0.55rem !important;
+  }
+
+  & .cosmo-studio-workbench {
+    padding: 0.45rem !important;
+  }
+
+  & .cosmo-studio-col-header {
+    padding: 0.45rem 0.75rem !important;
+  }
+
+  & .cosmo-studio-col-body {
+    padding: 0.625rem !important;
+  }
+
+  & .cosmo-studio-col-body > * + * {
+    margin-top: 0.625rem !important;
+  }
+
+  & .cosmo-studio-footer {
+    padding-top: 0.45rem !important;
+    margin-top: 0.35rem !important;
+  }
+
+  & .cosmo-studio-launch-btn {
+    padding-top: 0.5rem !important;
+    padding-bottom: 0.5rem !important;
+  }
+}
+
+/* Extra-tight 1366x768 Compact HD refinements */
+html.display-compact-hd:not(.mobile-phone-ui):not(.display-mode-native):not(.display-mode-comfort) {
+  & .cosmo-whale-filter-label {
+    display: none !important;
+  }
+
+  & .cosmo-whale-slider {
+    width: 3.25rem !important;
+  }
+
+  & .cosmo-studio-root {
+    gap: 0.35rem !important;
+  }
+
+  & .cosmo-studio-root > * + * {
+    margin-top: 0.35rem !important;
+  }
+}

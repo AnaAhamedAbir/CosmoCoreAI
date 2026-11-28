@@ -9,6 +9,7 @@ import {
     SeriesAttachedParameter
 } from 'lightweight-charts';
 import { CanvasRenderingTarget2D } from 'fancy-canvas';
+import { safeDetachPrimitive } from '@/utils/chartLifecycle';
 import { TrendFinderResult } from '../../../utils/indicators';
 
 interface TrendFinderRendererProps {
@@ -327,9 +328,7 @@ export const TrendFinderRenderer: React.FC<TrendFinderRendererProps> = ({
                 }
                 initedRef.current = false;
             }
-            try {
-                series.detachPrimitive(primitive);
-            } catch (e) {}
+            safeDetachPrimitive(chart, series, primitive);
             primitiveRef.current = null;
         };
     }, [chart, series]);

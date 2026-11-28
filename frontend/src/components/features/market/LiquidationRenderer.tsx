@@ -10,6 +10,7 @@ import type {
 import { CanvasRenderingTarget2D } from 'fancy-canvas';
 import { GodModeState } from '../../../hooks/useGodModeData';
 import { getThermalProfile, isThermalGuardActive, subscribeThermalProfile } from '@/utils/deviceProfile';
+import { isChartDisposed, safeDetachPrimitive } from '@/utils/chartLifecycle';
 
 interface LiquidationRendererProps {
     chart: IChartApi | null;
@@ -1816,7 +1817,7 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
         };
 
         const animate = (timestamp: number) => {
-            if (!hasActiveAnimations()) {
+            if (isChartDisposed(chart) || !hasActiveAnimations()) {
                 animRafIdRef.current = null;
                 return;
             }
@@ -1928,8 +1929,14 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
 
         return () => {
             scheduleAnimationRef.current = () => {};
-            chart.unsubscribeCrosshairMove(crosshairHandler);
-            chart.unsubscribeClick(clickHandler);
+            if (!isChartDisposed(chart)) {
+                try {
+                    chart.unsubscribeCrosshairMove(crosshairHandler);
+                    chart.unsubscribeClick(clickHandler);
+                } catch {
+                    // Ignore if chart/series already disposed
+                }
+            }
             if (typeof document !== 'undefined') {
                 document.removeEventListener('visibilitychange', handleVisibilityChange);
             }
@@ -1937,11 +1944,7 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
                 cancelAnimationFrame(animRafIdRef.current);
                 animRafIdRef.current = null;
             }
-            try {
-                series.detachPrimitive(primitive);
-            } catch {
-                // Ignore if chart/series already disposed
-            }
+            safeDetachPrimitive(chart, series, primitive);
             primitiveRef.current = null;
         };
     }, [chart, series]);

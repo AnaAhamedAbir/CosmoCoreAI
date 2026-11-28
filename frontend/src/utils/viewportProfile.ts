@@ -120,12 +120,12 @@ export function computeViewportTokens(
   if (mode === 'comfort') {
     const compact = tier === 'compact-hd';
     return {
-      rootFontPx: tier === 'qhd-4k' ? 17 : 16,
-      sidebarExpandedPx: compact ? 232 : tier === 'standard-hd' ? 256 : 288,
-      headerHeightPx: compact ? 52 : 56,
-      mainPaddingPx: compact ? 14 : tier === 'standard-hd' ? 20 : 32,
-      panelGapPx: compact ? 14 : 20,
-      cardPaddingPx: compact ? 16 : 20,
+      rootFontPx: tier === 'qhd-4k' ? 17 : compact ? 15.5 : 16,
+      sidebarExpandedPx: compact ? 228 : tier === 'standard-hd' ? 252 : 288,
+      headerHeightPx: compact ? 48 : 56,
+      mainPaddingPx: compact ? 12 : tier === 'standard-hd' ? 20 : 32,
+      panelGapPx: compact ? 12 : 20,
+      cardPaddingPx: compact ? 14 : 20,
       chartHeightMd: compact ? 'clamp(220px, 34vh, 260px)' : '256px',
       chartHeightLg: compact ? 'clamp(250px, 40vh, 300px)' : '288px',
     };
@@ -136,24 +136,26 @@ export function computeViewportTokens(
   switch (tier) {
     case 'compact-hd':
       return {
-        rootFontPx: isFit ? 14.5 : 15,
-        sidebarExpandedPx: isFit ? 210 : 220,
-        headerHeightPx: isFit ? 44 : 48,
-        mainPaddingPx: isFit ? 8 : 12,
-        panelGapPx: isFit ? 8 : 12,
-        cardPaddingPx: isFit ? 12 : 14,
+        // 1366x768 (~71% width / ~68% height of 1920x1080):
+        // Scale rem proportionally so 1920x1080 multi-column & single-row layouts fit cleanly.
+        rootFontPx: isFit ? 11.5 : 12.5,
+        sidebarExpandedPx: isFit ? 184 : 196,
+        headerHeightPx: isFit ? 38 : 42,
+        mainPaddingPx: isFit ? 6 : 8,
+        panelGapPx: isFit ? 6 : 8,
+        cardPaddingPx: isFit ? 8 : 10,
         chartHeightMd: 'clamp(200px, 32vh, 256px)',
         chartHeightLg: 'clamp(224px, 38vh, 288px)',
       };
 
     case 'standard-hd':
       return {
-        rootFontPx: isFit ? 15 : 15.5,
-        sidebarExpandedPx: isFit ? 228 : 244,
-        headerHeightPx: isFit ? 48 : 52,
-        mainPaddingPx: isFit ? 12 : 16,
-        panelGapPx: isFit ? 12 : 16,
-        cardPaddingPx: isFit ? 14 : 18,
+        rootFontPx: isFit ? 13 : 14,
+        sidebarExpandedPx: isFit ? 210 : 228,
+        headerHeightPx: isFit ? 42 : 46,
+        mainPaddingPx: isFit ? 8 : 12,
+        panelGapPx: isFit ? 10 : 12,
+        cardPaddingPx: isFit ? 12 : 14,
         chartHeightMd: 'clamp(220px, 34vh, 264px)',
         chartHeightLg: 'clamp(248px, 39vh, 296px)',
       };

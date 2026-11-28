@@ -61,7 +61,7 @@ export const HeatmapSubNav: React.FC<HeatmapSubNavProps> = ({
     onToggleMarkPrice,
 }) => {
     return (
-        <div className="flex flex-wrap items-center justify-between bg-slate-50/90 dark:bg-[#050811] border-b border-slate-200 dark:border-white/10 px-3 py-1.5 gap-2">
+        <div className="cosmo-heatmap-subnav flex flex-wrap items-center justify-between bg-slate-50/90 dark:bg-[#050811] border-b border-slate-200 dark:border-white/10 px-3 py-1.5 gap-2">
             {/* Left: 1-Click Core L2 Overlay Toggles + OrderFlow Suite + ML Engine */}
             <div className="flex flex-wrap items-center gap-1.5">
                 <div className="flex items-center gap-1 bg-white dark:bg-[#0b101d] p-0.5 rounded-xl border border-slate-200 dark:border-white/10">

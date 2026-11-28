@@ -1084,9 +1084,9 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
     };
 
     return (
-        <div data-viewport-lock="true" className="h-full flex flex-col space-y-2.5 relative overflow-hidden">
+        <div data-viewport-lock="true" className="cosmo-studio-root h-full flex flex-col space-y-2.5 relative overflow-hidden">
             {/* Pro SaaS Command Header */}
-            <header className="flex flex-wrap items-center justify-between gap-2.5 z-20 px-3 py-2.5 rounded-2xl bg-white dark:bg-[#070B14] border border-slate-200 dark:border-slate-800/80 shadow-sm flex-shrink-0">
+            <header className="cosmo-studio-header flex flex-wrap items-center justify-between gap-2.5 z-20 px-3 py-2.5 rounded-2xl bg-white dark:bg-[#070B14] border border-slate-200 dark:border-slate-800/80 shadow-sm flex-shrink-0">
                 <div className="flex items-center gap-3 min-w-0">
                     <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-500/20 to-indigo-500/20 border border-cyan-500/35 flex items-center justify-center flex-shrink-0">
                         <BrainCircuit className="w-4 h-4 text-cyan-500 dark:text-cyan-400" />
@@ -1106,7 +1106,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                 {isTraining ? 'TRAINING ACTIVE' : isRetrainMode ? 'FINE-TUNE MODE' : 'PIPELINE READY'}
                             </span>
                         </div>
-                        <div className="text-slate-500 dark:text-slate-400 text-[11px] truncate mt-0.5">
+                        <div className="cosmo-studio-header-sub text-slate-500 dark:text-slate-400 text-[11px] truncate mt-0.5">
                             {isRetrainMode ? (
                                 <>
                                     Target Checkpoint: <span className="text-purple-600 dark:text-purple-300 font-mono font-bold">{retrainModelName || retrainModelId}</span> · Append features or transfer weights
@@ -1158,7 +1158,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
             </header>
 
             {/* Institutional Pipeline Telemetry KPI Ribbon */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 flex-shrink-0">
+            <div className="cosmo-studio-kpi-ribbon grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 flex-shrink-0">
                 <div className="px-3 py-2 rounded-xl bg-white dark:bg-[#070B14] border border-slate-200 dark:border-slate-800/80 flex items-center justify-between">
                     <div className="min-w-0">
                         <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">01 · Target Asset</span>
@@ -1239,11 +1239,11 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
 
             <div className="flex-1 flex flex-col min-h-0 relative z-10">
                 {/* Configuration Workbench */}
-                <div className="w-full flex flex-col bg-white dark:bg-[#070B14] border border-slate-200 dark:border-slate-800/80 rounded-2xl p-3.5 laptop:p-3 shadow-sm relative overflow-hidden h-full">
+                <div className="cosmo-studio-workbench w-full flex flex-col bg-white dark:bg-[#070B14] border border-slate-200 dark:border-slate-800/80 rounded-2xl p-3.5 laptop:p-3 shadow-sm relative overflow-hidden h-full">
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 laptop:gap-3.5 flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
                         {/* COLUMN 1: Core Parameters */}
                         <div className={`${mobileColumnTab !== 'all' && mobileColumnTab !== 'core' ? 'hidden lg:flex' : 'flex'} flex-col h-full bg-slate-50/60 dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800/90 border-t-2 border-t-cyan-500 rounded-2xl overflow-hidden`}>
-                            <div className="px-4 py-3 bg-slate-100/80 dark:bg-[#070B14] border-b border-slate-200 dark:border-slate-800/80 flex items-center justify-between flex-shrink-0 relative z-20">
+                            <div className="cosmo-studio-col-header px-4 py-3 bg-slate-100/80 dark:bg-[#070B14] border-b border-slate-200 dark:border-slate-800/80 flex items-center justify-between flex-shrink-0 relative z-20">
                                 <h3 className="text-xs font-bold text-cyan-600 dark:text-cyan-400 flex items-center gap-2 uppercase tracking-wider">
                                     <Settings className="w-4 h-4" /> 01 · Core Parameters &amp; Split
                                 </h3>
@@ -1251,7 +1251,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                     {predictionTarget.toUpperCase()}
                                 </span>
                             </div>
-                            <div className="p-4 space-y-5 overflow-y-auto custom-scrollbar h-full">
+                            <div className="cosmo-studio-col-body p-4 space-y-5 overflow-y-auto custom-scrollbar h-full">
                                 <div className="grid grid-cols-2 gap-4 items-end">
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Asset & Exchange</label>
@@ -1565,7 +1565,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
 
                         {/* COLUMN 2: Neural Architecture */}
                         <div className={`${mobileColumnTab !== 'all' && mobileColumnTab !== 'neural' ? 'hidden lg:flex' : 'flex'} flex-col h-full bg-slate-50/60 dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800/90 border-t-2 border-t-indigo-500 rounded-2xl overflow-hidden`}>
-                            <div className="px-4 py-3 bg-slate-100/80 dark:bg-[#070B14] border-b border-slate-200 dark:border-slate-800/80 flex items-center justify-between flex-shrink-0 relative z-20">
+                            <div className="cosmo-studio-col-header px-4 py-3 bg-slate-100/80 dark:bg-[#070B14] border-b border-slate-200 dark:border-slate-800/80 flex items-center justify-between flex-shrink-0 relative z-20">
                                 <h3 className="text-xs font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-2 uppercase tracking-wider">
                                     <Cpu className="w-4 h-4" /> 02 · Neural Architecture
                                 </h3>
@@ -1573,7 +1573,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                     {isEnsemble ? `Ensemble (${ensembleMethod})` : algorithm}
                                 </span>
                             </div>
-                            <div className="p-4 space-y-5 overflow-y-auto custom-scrollbar h-full">
+                            <div className="cosmo-studio-col-body p-4 space-y-5 overflow-y-auto custom-scrollbar h-full">
 
                         <div>
                             <div className="flex items-center justify-between mb-2">
@@ -1939,7 +1939,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
 
                         {/* COLUMN 3: Data Engine & Features */}
                         <div className={`${mobileColumnTab !== 'all' && mobileColumnTab !== 'data' ? 'hidden lg:flex' : 'flex'} flex-col h-full bg-slate-50/60 dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800/90 border-t-2 border-t-emerald-500 rounded-2xl overflow-hidden`}>
-                            <div className="px-4 py-3 bg-slate-100/80 dark:bg-[#070B14] border-b border-slate-200 dark:border-slate-800/80 flex items-center justify-between flex-shrink-0 relative z-20">
+                            <div className="cosmo-studio-col-header px-4 py-3 bg-slate-100/80 dark:bg-[#070B14] border-b border-slate-200 dark:border-slate-800/80 flex items-center justify-between flex-shrink-0 relative z-20">
                                 <h3 className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-2 uppercase tracking-wider">
                                     <Database className="w-4 h-4" /> 03 · Data Engine &amp; Features
                                 </h3>
@@ -1947,7 +1947,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                     {allStudioFeatures.length} features
                                 </span>
                             </div>
-                            <div className="p-4 space-y-5 overflow-y-auto custom-scrollbar h-full">
+                            <div className="cosmo-studio-col-body p-4 space-y-5 overflow-y-auto custom-scrollbar h-full">
                                 <AdvancedAIToolsPanel 
                                     isTraining={isTraining} 
                                     onOpenCorrelation={() => setShowCorrelationModal(true)} 
@@ -3261,7 +3261,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                         </div>
                     </div>
 
-                    <div className="pt-3 mt-2 relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-slate-200 dark:border-slate-800/80">
+                    <div className="cosmo-studio-footer pt-3 mt-2 relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-slate-200 dark:border-slate-800/80">
                         <div className="hidden md:flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-mono truncate">
                             <span className="w-2 h-2 rounded-full bg-cyan-400 flex-shrink-0" />
                             <span className="truncate">
@@ -3274,7 +3274,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                     type="button"
                                     onClick={handleStartTraining}
                                     disabled={!symbol || (dataSource === 'hybrid_deep' && (isHybridScraping || !selectedHybridFile))}
-                                    className={`w-full py-3 px-6 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2.5 transition-colors shadow-md cursor-pointer ${
+                                    className={`cosmo-studio-launch-btn w-full py-3 px-6 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2.5 transition-colors shadow-md cursor-pointer ${
                                         (!symbol || (dataSource === 'hybrid_deep' && (isHybridScraping || !selectedHybridFile)))
                                             ? 'opacity-50 cursor-not-allowed bg-slate-200 dark:bg-slate-800 text-slate-500'
                                             : isRetrainMode

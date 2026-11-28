@@ -688,9 +688,9 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
 
     return (
         <>
-            <div data-viewport-lock="true" className="h-full flex flex-col space-y-2.5 relative overflow-hidden">
+            <div data-viewport-lock="true" className="cosmo-studio-root h-full flex flex-col space-y-2.5 relative overflow-hidden">
             {/* Pro SaaS Command Header */}
-            <header className="flex flex-wrap items-center justify-between gap-2.5 z-10 px-3 py-2.5 rounded-2xl bg-white dark:bg-[#070B14] border border-slate-200 dark:border-slate-800/80 shadow-sm flex-shrink-0">
+            <header className="cosmo-studio-header flex flex-wrap items-center justify-between gap-2.5 z-10 px-3 py-2.5 rounded-2xl bg-white dark:bg-[#070B14] border border-slate-200 dark:border-slate-800/80 shadow-sm flex-shrink-0">
                 <div className="flex items-center gap-3 min-w-0">
                     <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-teal-500/20 to-emerald-500/20 border border-teal-500/35 flex items-center justify-center flex-shrink-0">
                         <Globe className="w-4 h-4 text-teal-600 dark:text-teal-400" />
@@ -708,7 +708,7 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
                                 {isTraining ? 'TRAINING ACTIVE' : 'TRADFI READY'}
                             </span>
                         </div>
-                        <p className="text-slate-500 dark:text-slate-400 text-[11px] truncate mt-0.5">
+                        <p className="cosmo-studio-header-sub text-slate-500 dark:text-slate-400 text-[11px] truncate mt-0.5">
                             Institutional Macro-Economic, Triple-Barrier &amp; Tick-Enhanced Smart Money Modeling
                         </p>
                     </div>
@@ -725,7 +725,7 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
             </header>
 
             {/* Institutional Forex Pipeline Telemetry KPI Strip */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 flex-shrink-0">
+            <div className="cosmo-studio-kpi-ribbon grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 flex-shrink-0">
                 <div className="px-3 py-2 rounded-xl bg-white dark:bg-[#070B14] border border-slate-200 dark:border-slate-800/80 flex items-center justify-between">
                     <div className="min-w-0">
                         <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">01 · Currency Pair</span>
@@ -805,7 +805,7 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
             </div>
 
             <div className="flex-1 flex flex-col min-h-0 relative z-10">
-                <div className="w-full flex flex-col bg-white dark:bg-[#070B14] border border-slate-200 dark:border-slate-800/80 rounded-2xl p-3.5 laptop:p-3 shadow-sm relative overflow-hidden h-full">
+                <div className="cosmo-studio-workbench w-full flex flex-col bg-white dark:bg-[#070B14] border border-slate-200 dark:border-slate-800/80 rounded-2xl p-3.5 laptop:p-3 shadow-sm relative overflow-hidden h-full">
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 laptop:gap-3.5 flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
                         
                         {/* COLUMN 1: Core Parameters (Modularized) */}
@@ -1204,7 +1204,7 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
 
                     </div>
                     
-                    <div className="pt-3 mt-2 relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-slate-200 dark:border-slate-800/80">
+                    <div className="cosmo-studio-footer pt-3 mt-2 relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-slate-200 dark:border-slate-800/80">
                         <div className="hidden md:flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-mono truncate">
                             <span className="w-2 h-2 rounded-full bg-teal-400 flex-shrink-0" />
                             <span className="truncate">
@@ -1234,7 +1234,7 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
                                     type="button"
                                     onClick={handleStartTraining}
                                     disabled={isTraining}
-                                    className={`w-full py-3 px-6 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2.5 transition-colors shadow-md bg-gradient-to-r from-teal-600 via-cyan-600 to-indigo-600 hover:from-teal-500 hover:via-cyan-500 hover:to-indigo-500 text-white border border-teal-400/30 cursor-pointer ${isTraining ? 'opacity-50 cursor-wait' : ''}`}
+                                    className={`cosmo-studio-launch-btn w-full py-3 px-6 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2.5 transition-colors shadow-md bg-gradient-to-r from-teal-600 via-cyan-600 to-indigo-600 hover:from-teal-500 hover:via-cyan-500 hover:to-indigo-500 text-white border border-teal-400/30 cursor-pointer ${isTraining ? 'opacity-50 cursor-wait' : ''}`}
                                 >
                                     <Play className="w-4 h-4 fill-current" />
                                     <span>Launch TradFi Deep Training Pipeline</span>

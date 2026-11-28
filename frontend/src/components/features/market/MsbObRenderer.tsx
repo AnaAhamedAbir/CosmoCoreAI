@@ -8,6 +8,7 @@ import {
     SeriesAttachedParameter
 } from 'lightweight-charts';
 import { CanvasRenderingTarget2D } from 'fancy-canvas';
+import { safeDetachPrimitive } from '@/utils/chartLifecycle';
 import { MsbObResult } from '../../../utils/indicators';
 
 interface MsbObRendererProps {
@@ -286,9 +287,7 @@ export const MsbObRenderer: React.FC<MsbObRendererProps> = ({
         series.attachPrimitive(primitive);
 
         return () => {
-            try {
-                series.detachPrimitive(primitive);
-            } catch (e) {}
+            safeDetachPrimitive(chart, series, primitive);
             primitiveRef.current = null;
         };
     }, [chart, series]);

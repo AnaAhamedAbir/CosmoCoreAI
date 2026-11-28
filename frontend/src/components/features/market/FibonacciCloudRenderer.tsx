@@ -8,6 +8,7 @@ import {
     SeriesAttachedParameter
 } from 'lightweight-charts';
 import { CanvasRenderingTarget2D } from 'fancy-canvas';
+import { safeDetachPrimitive } from '@/utils/chartLifecycle';
 
 export interface FibonacciLevel {
     level: number;
@@ -205,11 +206,7 @@ export const FibonacciCloudRenderer: React.FC<FibonacciCloudRendererProps> = ({ 
         series.attachPrimitive(primitive);
 
         return () => {
-            try {
-                series.detachPrimitive(primitive);
-            } catch (e) {
-                // Ignore if already destroyed
-            }
+            safeDetachPrimitive(chart, series, primitive);
             primitiveRef.current = null;
         };
     }, [chart, series]);

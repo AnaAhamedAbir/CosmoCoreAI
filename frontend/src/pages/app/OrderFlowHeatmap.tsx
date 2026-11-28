@@ -30,6 +30,7 @@ import { FibonacciCloudRenderer, FibonacciData } from '../../components/features
 import { IchimokuRenderer } from '../../components/features/market/IchimokuRenderer';
 import { calculateQuantumAi, QuantumAiResult } from '../../utils/quantumAi';
 import { calculateGodModeSignal } from '../../utils/godModeSignal';
+import { safeRemoveChart } from '@/utils/chartLifecycle';
 import { IndicatorSelector, IndicatorSettings } from '../../components/features/market/IndicatorSelector';
 import { MACDRenderer } from '../../components/features/market/MACDRenderer';
 import { calculateEMA, calculateBollingerBands, BollingerBandsDataPoint, calculateMACD, calculateRSI, updateEMA, updateBollingerBands, updateRSI, calculateIchimoku, IchimokuDataPoint, calculateAdaptiveTrendFinder, TrendFinderResult, calculateUTBotAlerts, UTBotDataPoint, calculateSessions, SessionData, calculateSupertrend, SupertrendDataPoint, calculateMsbOb, MsbObResult, calculateWickRejectionSR, WickSRResult, calculateVWAPSD, VWAPSDDataPoint, calculateMTFEMA, DEFAULT_EMA_TIMEFRAMES, intervalToSeconds } from '../../utils/indicators';
@@ -1440,7 +1441,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                 try { chart.removeSeries(s); } catch {}
             });
             emaSeriesMapRef.current.clear();
-            chart.remove();
+            safeRemoveChart(chart);
 
             // Cleanup refs so they respawn cleanly on the newly created chart instance
             chartRef.current = null;
@@ -6257,7 +6258,7 @@ const OrderFlowChartPanel = React.memo<{
                 }`
             }
         >
-            <div className={`${panelDeviceProfile.isPhoneMobileUI ? 'px-2 py-1.5 gap-1.5' : 'px-3 py-1.5 gap-2'} border-b border-slate-200 dark:border-white/10 bg-slate-50/80 dark:bg-[#050811] flex justify-between items-center`}>
+            <div className={`cosmo-heatmap-panel-bar ${panelDeviceProfile.isPhoneMobileUI ? 'px-2 py-1.5 gap-1.5' : 'px-3 py-1.5 gap-2'} border-b border-slate-200 dark:border-white/10 bg-slate-50/80 dark:bg-[#050811] flex justify-between items-center`}>
                 <div className={`flex ${panelDeviceProfile.isPhoneMobileUI ? 'flex-nowrap overflow-x-auto hide-scrollbar gap-1.5' : 'flex-wrap items-center gap-1.5'} items-center min-w-0`}>
                     {allChartsCount > 1 && (
                         <button
@@ -7465,7 +7466,7 @@ const OrderFlowHeatmap: React.FC = () => {
             >
                 <div className="h-[2px] w-full bg-gradient-to-r from-cyan-400 via-indigo-500 to-emerald-400 opacity-90" />
 
-                <header className="relative z-20 flex-shrink-0 px-3 py-2 flex-wrap gap-2.5 border-b border-slate-200 dark:border-white/10 flex justify-between items-center bg-white dark:bg-[#070b14]">
+                <header className="cosmo-heatmap-header relative z-20 flex-shrink-0 px-3 py-2 flex-wrap gap-2.5 border-b border-slate-200 dark:border-white/10 flex justify-between items-center bg-white dark:bg-[#070b14]">
                     {/* Left: Pair, Interval, Indicators & Live Price Pill */}
                     <div className="flex flex-wrap items-center gap-2">
                         <HeatmapSymbolSelector symbol={symbol} exchange={exchange} onSymbolChange={setSymbol} onExchangeChange={setExchange} />
@@ -7784,7 +7785,7 @@ const OrderFlowHeatmap: React.FC = () => {
             )}
 
 
-            <div className="flex-1 min-h-0 flex flex-col p-2.5 laptop:p-2 overflow-y-auto hide-scrollbar relative bg-slate-100 dark:bg-[#04070e]">
+            <div className="cosmo-heatmap-grid-wrap flex-1 min-h-0 flex flex-col p-2.5 laptop:p-2 overflow-y-auto hide-scrollbar relative bg-slate-100 dark:bg-[#04070e]">
                 {/* RENDER GRID OF CHARTS */}
                 <div className={`flex-1 w-full grid gap-3 ${allCharts.length === 1 ? 'grid-cols-1' : allCharts.length === 2 ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1 lg:grid-cols-2 grid-rows-2'}`}>
                     {allCharts.map((c, idx) => {

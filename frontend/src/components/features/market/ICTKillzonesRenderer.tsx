@@ -8,6 +8,7 @@ import type {
     SeriesAttachedParameter
 } from 'lightweight-charts';
 import { CanvasRenderingTarget2D } from 'fancy-canvas';
+import { safeDetachPrimitive } from '@/utils/chartLifecycle';
 import { ICTResult } from '../../../utils/ictKillzones';
 
 interface ICTKillzonesRendererProps {
@@ -306,9 +307,7 @@ export const ICTKillzonesRenderer: React.FC<ICTKillzonesRendererProps> = ({
         series.attachPrimitive(primitive);
 
         return () => {
-            try {
-                series.detachPrimitive(primitive);
-            } catch (e) {}
+            safeDetachPrimitive(chart, series, primitive);
             primitiveRef.current = null;
         };
     }, [chart, series]);

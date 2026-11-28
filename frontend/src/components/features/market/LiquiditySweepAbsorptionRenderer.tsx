@@ -8,6 +8,7 @@ import type {
     SeriesAttachedParameter,
 } from 'lightweight-charts';
 import { CanvasRenderingTarget2D } from 'fancy-canvas';
+import { safeDetachPrimitive } from '@/utils/chartLifecycle';
 import type { LiquidityAbsorptionZone } from '@/hooks/useLiquiditySweepAbsorption';
 
 interface LiquiditySweepAbsorptionRendererProps {
@@ -390,11 +391,7 @@ export const LiquiditySweepAbsorptionRenderer: React.FC<LiquiditySweepAbsorption
             } catch {
                 // ignore
             }
-            try {
-                series.detachPrimitive(primitive);
-            } catch {
-                // ignore if chart unmounted
-            }
+            safeDetachPrimitive(chart, series, primitive);
             primitiveRef.current = null;
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps

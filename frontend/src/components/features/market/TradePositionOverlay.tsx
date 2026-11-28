@@ -563,6 +563,8 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
       interactionHost.addEventListener('wheel', triggerSync, { passive: true });
       interactionHost.addEventListener('pointermove', handlePointerMove, { passive: true });
       interactionHost.addEventListener('pointerup', triggerSync, { passive: true });
+      interactionHost.addEventListener('touchmove', triggerSync, { passive: true });
+      interactionHost.addEventListener('touchend', triggerSync, { passive: true });
       interactionHost.addEventListener('dblclick', triggerSync, { passive: true });
     }
 
@@ -584,6 +586,8 @@ export const TradePositionOverlay: React.FC<TradePositionOverlayProps> = React.m
         interactionHost.removeEventListener('wheel', triggerSync);
         interactionHost.removeEventListener('pointermove', handlePointerMove);
         interactionHost.removeEventListener('pointerup', triggerSync);
+        interactionHost.removeEventListener('touchmove', triggerSync);
+        interactionHost.removeEventListener('touchend', triggerSync);
         interactionHost.removeEventListener('dblclick', triggerSync);
       }
       ro?.disconnect();

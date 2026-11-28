@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '@/context/ThemeContext';
+import { isThermalGuardActive } from '@/utils/deviceProfile';
 import { formatCompactOrderflowNumber } from '../../../utils/orderflowMath';
 
 export interface TooltipCandleData {
@@ -146,10 +147,12 @@ export const CandlestickTooltip: React.FC<CandlestickTooltipProps> = ({
                         left: renderPos.x,
                         top: renderPos.y,
                     }}
-                    className={`absolute z-50 pointer-events-none min-w-[208px] backdrop-blur-xl ${
+                    className={`absolute z-50 pointer-events-none min-w-[208px] ${
+                        isThermalGuardActive() ? '' : 'backdrop-blur-xl'
+                    } ${
                         isDark
-                            ? 'bg-slate-950/88 text-slate-200 shadow-2xl'
-                            : 'bg-white/95 text-slate-800 shadow-xl'
+                            ? 'bg-slate-950/92 text-slate-200 shadow-2xl'
+                            : 'bg-white/96 text-slate-800 shadow-xl'
                     } border ${borderColorClass} rounded-xl p-3 flex flex-col gap-2 font-mono text-[11px]`}
                 >
                     {/* Header: Date & Time */}

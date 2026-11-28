@@ -19,6 +19,7 @@ import { HeatmapSymbolSelector } from '../../components/features/market/HeatmapS
 import { TimeframeSelector } from '../../components/features/market/TimeframeSelector';
 import { VolumeFilterControl } from '../../components/features/market/VolumeFilterControl';
 import { LiquidityHeatmapRenderer, HeatmapDataPoint, HeatmapPalette } from '../../components/features/market/LiquidityHeatmapRenderer';
+import { ChartWatermark } from '../../components/features/market/ChartWatermark';
 import { VolumeProfileWidget, VPVRData } from '../../components/features/market/VolumeProfileWidget';
 import { CVDChart, CVDDataPoint } from '../../components/features/market/CVDChart';
 import { FootprintRenderer, FootprintCandleData, FootprintDataTick, FootprintMode } from '../../components/features/market/FootprintRenderer';
@@ -521,9 +522,10 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
 
         const chart = createChart(chartContainerRef.current, {
             layout: {
+                // Keep transparent so Binance-style CosmoQuant watermark (z-[1]) and L2 Heatmap (z-[2]) render strictly behind candles
                 background: {
                     type: 'solid',
-                    color: showHeatmapOverlayRef.current ? 'transparent' : (isDark ? '#000000' : '#ffffff'),
+                    color: 'transparent',
                 } as any,
                 textColor: isDark ? '#94a3b8' : '#334155',
                 fontSize: 14, // larger price-scale tags (live price tag etc.)
@@ -551,13 +553,14 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                 mouseWheel: true,
                 pressedMouseMove: true,
                 horzTouchDrag: true,
-                vertTouchDrag: false,
+                // MUST be true in Lightweight Charts v5 so 1-finger vertical touch drag on the right price axis stretches/compresses candles!
+                vertTouchDrag: true,
             },
             handleScale: {
-                axisPressedMouseMove: true,
+                axisPressedMouseMove: { time: true, price: true },
+                axisDoubleClickReset: { time: true, price: true },
                 mouseWheel: true,
                 pinch: true,
-                axisDoubleClickReset: true,
             },
             kineticScroll: {
                 touch: isTouchScreen,
@@ -740,6 +743,8 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         chart.timeScale().subscribeSizeChange(handleScaleCollisionCheck);
         containerEl?.addEventListener('wheel', handlePriceAxisGesture, { passive: true });
         containerEl?.addEventListener('pointerup', handlePriceAxisGesture, { passive: true });
+        containerEl?.addEventListener('touchmove', handlePriceAxisGesture, { passive: true });
+        containerEl?.addEventListener('touchend', handlePriceAxisGesture, { passive: true });
         emaSeriesRef.current = emaSeries;
         bbUpperSeriesRef.current = bbUpperSeries;
         bbMiddleSeriesRef.current = bbMiddleSeries;
@@ -1242,7 +1247,8 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         // Re-measure axis widths whenever Lightweight Charts resizes timeScale (e.g. price digit width or left scale toggle)
         chart.timeScale().subscribeSizeChange(measureAxisOffsets);
 
-        // Left-Edge Historical Scrollback Pagination: smoothly load older candles when user scrolls near the left edge
+        // Left-Edge Historical Scrollback Pagination (leaner 1800-bar RAM cap on mobile/tablet Chrome, 3500 on PC)
+        const maxScrollbackBars = isThermalGuardActive() ? 1800 : 3500;
         let isLoadingOlderHistory = false;
         let olderHistoryExhausted = false;
         const handleHistoricalScrollback = (logicalRange: any) => {
@@ -1255,7 +1261,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                 typeof logicalRange.from !== 'number' ||
                 logicalRange.from > 12 ||
                 allCandlesRef.current.length === 0 ||
-                allCandlesRef.current.length >= 3500
+                allCandlesRef.current.length >= maxScrollbackBars
             ) {
                 return;
             }
@@ -1276,7 +1282,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                     }
                     const currentRange = chart.timeScale().getVisibleLogicalRange();
                     const prevCount = allCandlesRef.current.length;
-                    const merged = sanitizeAndSortCandles([...olderSanitized, ...allCandlesRef.current]).slice(-3500);
+                    const merged = sanitizeAndSortCandles([...olderSanitized, ...allCandlesRef.current]).slice(-maxScrollbackBars);
                     const addedCount = merged.length - prevCount;
                     if (addedCount <= 0) {
                         olderHistoryExhausted = true;
@@ -1373,8 +1379,15 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                 isBackfilling = false;
             }
         };
+        const handleOnlineBackfill = () => {
+            hiddenAtMs = Date.now() - Math.max(parseIntervalToMs(interval) * 3, 20000);
+            handleVisibilityBackfill();
+        };
         if (typeof document !== 'undefined') {
             document.addEventListener('visibilitychange', handleVisibilityBackfill);
+        }
+        if (typeof window !== 'undefined') {
+            window.addEventListener('online', handleOnlineBackfill);
         }
 
         return () => {
@@ -1382,6 +1395,9 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             clearTimeout(axisInitTimer);
             if (typeof document !== 'undefined') {
                 document.removeEventListener('visibilitychange', handleVisibilityBackfill);
+            }
+            if (typeof window !== 'undefined') {
+                window.removeEventListener('online', handleOnlineBackfill);
             }
             if ((window as any)._quickTradeDragHandlers?.[quickDragKey]?.start === handleQuickTradeDragStart) {
                 delete (window as any)._quickTradeDragHandlers[quickDragKey];
@@ -1398,6 +1414,8 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             resizeObserver.disconnect();
             containerEl?.removeEventListener('wheel', handlePriceAxisGesture);
             containerEl?.removeEventListener('pointerup', handlePriceAxisGesture);
+            containerEl?.removeEventListener('touchmove', handlePriceAxisGesture);
+            containerEl?.removeEventListener('touchend', handlePriceAxisGesture);
             try {
                 chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleScaleCollisionCheck);
                 chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleHistoricalScrollback);
@@ -1464,14 +1482,14 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         };
     }, [symbol, interval, exchange, chartId]);
 
-    // Dynamically apply theme & Bookmap transparent-background changes (lets Heatmap glow strictly BEHIND candles)
+    // Dynamically apply theme changes while preserving transparent canvas background for CosmoQuant watermark + L2 Heatmap
     useEffect(() => {
         if (!chartRef.current) return;
         chartRef.current.applyOptions({
             layout: {
                 background: {
                     type: 'solid',
-                    color: showHeatmapOverlay ? 'transparent' : (isDark ? '#000000' : '#ffffff'),
+                    color: 'transparent',
                 } as any,
                 textColor: isDark ? '#94a3b8' : '#334155',
             },
@@ -3937,6 +3955,13 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             const y = clientY - chartRect.top;
             if (x < 0 || x > chartRect.width || y < 0 || y > chartRect.height) return false;
 
+            // Never hijack clicks/touches on the right or left price-axis columns so mouse & 1-finger vertical candle zoom ALWAYS works!
+            const rightAxisW = Math.max(54, chartRef.current?.priceScale('right')?.width?.() || 68);
+            const leftAxisW = chartRef.current?.priceScale('left')?.width?.() || 0;
+            if (x >= chartRect.width - rightAxisW || (leftAxisW > 0 && x <= leftAxisW)) {
+                return false;
+            }
+
             const clickedOrder = findClosestOrderAtY(y, isTouch ? 24 : 10);
             if (!clickedOrder) return false;
 
@@ -4039,9 +4064,14 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                     mouseWheel: true,
                     pressedMouseMove: true,
                     horzTouchDrag: true,
-                    vertTouchDrag: false,
+                    vertTouchDrag: true,
                 },
-                handleScale: true,
+                handleScale: {
+                    axisPressedMouseMove: { time: true, price: true },
+                    axisDoubleClickReset: { time: true, price: true },
+                    mouseWheel: true,
+                    pinch: true,
+                },
             });
         };
 
@@ -4599,10 +4629,16 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
     return (
         <div ref={chartSplitContainerRef} className="w-full h-full flex flex-col absolute inset-0 bg-white dark:bg-[#000000]">
             <div className="flex-1 min-h-0 relative bg-white dark:bg-[#000000]">
+                {/* Binance-style centered CosmoQuant watermark strictly behind Heatmap & Candlesticks */}
+                <ChartWatermark
+                    leftAxisOffset={axisOffsets.left}
+                    rightAxisOffset={axisOffsets.right}
+                    compact={deviceProfile.isPhoneMobileUI}
+                />
                 {/* Bookmap-style L2 Heatmap Layer rendered strictly BEHIND transparent-background Candlesticks */}
                 {showHeatmapOverlay && (
                     <div
-                        className="absolute inset-0 z-[1] pointer-events-none overflow-hidden"
+                        className="absolute inset-0 z-[2] pointer-events-none overflow-hidden"
                         style={{ right: axisOffsets.right, bottom: 26 }}
                     >
                         <LiquidityHeatmapRenderer
@@ -4617,9 +4653,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                 )}
                 <div
                     ref={chartContainerRef}
-                    className={`w-full h-full absolute inset-0 z-[5] touch-none select-none ${
-                        showHeatmapOverlay ? 'bg-transparent' : 'bg-white dark:bg-[#000000]'
-                    }`}
+                    className="w-full h-full absolute inset-0 z-[5] touch-none select-none bg-transparent"
                 />
                 <CandlestickTooltip
                     candle={tooltipData}
@@ -4631,7 +4665,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                 {/* Compact Pro Order Flow Controls (only shown when Heatmap or Footprint is active; avoids BB HUD overlap) */}
                 {(showHeatmapOverlay || showFootprint) && (
                     <div
-                        className="absolute z-30 flex flex-wrap items-center gap-1.5 pointer-events-auto"
+                        className={`absolute z-30 flex flex-wrap items-center ${deviceProfile.isPhoneMobileUI ? 'gap-1 max-w-[75%]' : 'gap-1.5'} pointer-events-auto`}
                         style={{
                             left: Math.max(8, axisOffsets.left + 8),
                             top: indicatorSettings.showBB && bbData.length > 0 ? 78 : 8,

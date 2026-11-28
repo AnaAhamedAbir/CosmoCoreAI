@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useCallback } from 'react';
 import { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { useTheme } from '@/context/ThemeContext';
+import { isThermalGuardActive } from '@/utils/deviceProfile';
 import { formatCompactOrderflowNumber } from '../../../utils/orderflowMath';
 
 export type HeatmapPalette = 'emerald-amber' | 'bookmap' | 'ice-fire' | 'viridis';
@@ -134,7 +135,8 @@ export const LiquidityHeatmapRenderer: React.FC<LiquidityHeatmapRendererProps> =
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const maxDpr = isThermalGuardActive() ? 1.35 : 2;
+        const dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
         const cssW = canvas.clientWidth || canvas.parentElement?.clientWidth || 0;
         const cssH = canvas.clientHeight || canvas.parentElement?.clientHeight || 0;
         if (cssW <= 0 || cssH <= 0) return;
@@ -364,7 +366,7 @@ export const LiquidityHeatmapRenderer: React.FC<LiquidityHeatmapRendererProps> =
         timeScale.subscribeVisibleLogicalRangeChange(requestDraw);
         timeScale.subscribeSizeChange(requestDraw);
 
-        // Redraw on vertical price-axis drag / wheel zoom / double-click auto-scale reset
+        // Redraw on vertical price-axis drag / wheel zoom / 1-finger touch axis stretch / double-click reset
         const chartRoot = parent.parentElement;
         const handlePriceGesture = () => requestDraw();
         const handlePointerDrag = (e: PointerEvent) => {
@@ -373,6 +375,8 @@ export const LiquidityHeatmapRenderer: React.FC<LiquidityHeatmapRendererProps> =
         chartRoot?.addEventListener('wheel', handlePriceGesture, { passive: true });
         chartRoot?.addEventListener('pointermove', handlePointerDrag, { passive: true });
         chartRoot?.addEventListener('pointerup', handlePriceGesture, { passive: true });
+        chartRoot?.addEventListener('touchmove', handlePriceGesture, { passive: true });
+        chartRoot?.addEventListener('touchend', handlePriceGesture, { passive: true });
         chartRoot?.addEventListener('dblclick', handlePriceGesture, { passive: true });
 
         requestDraw();
@@ -386,6 +390,8 @@ export const LiquidityHeatmapRenderer: React.FC<LiquidityHeatmapRendererProps> =
             chartRoot?.removeEventListener('wheel', handlePriceGesture);
             chartRoot?.removeEventListener('pointermove', handlePointerDrag);
             chartRoot?.removeEventListener('pointerup', handlePriceGesture);
+            chartRoot?.removeEventListener('touchmove', handlePriceGesture);
+            chartRoot?.removeEventListener('touchend', handlePriceGesture);
             chartRoot?.removeEventListener('dblclick', handlePriceGesture);
             try {
                 timeScale.unsubscribeVisibleTimeRangeChange(requestDraw);

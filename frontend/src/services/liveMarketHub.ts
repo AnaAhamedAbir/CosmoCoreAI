@@ -112,6 +112,7 @@ interface SharedMarketConnection {
     healthTimer: ReturnType<typeof setInterval> | null;
     unsubscribeDragEnd: (() => void) | null;
     visibilityHandler: (() => void) | null;
+    onlineHandler: (() => void) | null;
     disposed: boolean;
     lastDirectTradeTs: number;
     lastDirectTradeAt: number;
@@ -439,9 +440,10 @@ function emitLiveTradeTick(
             : normalizedTick;
     }
 
-    // Lossless per-trade batch queue for institutional CVD & Footprint consumers (preserves exact price, side, volume, ts)
+    // Lossless per-trade batch queue for institutional CVD & Footprint consumers (capped tighter on mobile/tablet Chrome)
     if (channel.tradeBatchListeners.size > 0 && (typeof document === 'undefined' || !document.hidden)) {
-        if (channel.pendingTradeBatch.length < 500) {
+        const batchCap = isThermalGuardActive() ? 200 : 500;
+        if (channel.pendingTradeBatch.length < batchCap) {
             channel.pendingTradeBatch.push(normalizedTick);
         }
     }
@@ -759,6 +761,7 @@ function createSharedConnection(symbol: string, exchange: string): SharedMarketC
         healthTimer: null,
         unsubscribeDragEnd: null,
         visibilityHandler: null,
+        onlineHandler: null,
         disposed: false,
         lastDirectTradeTs: 0,
         lastDirectTradeAt: 0,
@@ -855,6 +858,16 @@ function createSharedConnection(symbol: string, exchange: string): SharedMarketC
 
     if (typeof document !== 'undefined') {
         document.addEventListener('visibilitychange', conn.visibilityHandler);
+    }
+
+    // Mobile/tablet Chrome over VPS: immediately recover sockets on WiFi <-> 4G/5G handoff
+    conn.onlineHandler = () => {
+        if (!conn.disposed) {
+            conn.forceReconnect();
+        }
+    };
+    if (typeof window !== 'undefined') {
+        window.addEventListener('online', conn.onlineHandler);
     }
 
     conn.connectToBackend = () => {
@@ -1233,6 +1246,10 @@ function disposeSharedConnection(conn: SharedMarketConnection) {
     if (conn.visibilityHandler && typeof document !== 'undefined') {
         document.removeEventListener('visibilitychange', conn.visibilityHandler);
         conn.visibilityHandler = null;
+    }
+    if (conn.onlineHandler && typeof window !== 'undefined') {
+        window.removeEventListener('online', conn.onlineHandler);
+        conn.onlineHandler = null;
     }
     if (conn.flushTimer) {
         clearTimeout(conn.flushTimer);

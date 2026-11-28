@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useCallback } from 'react';
 import { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { useTheme } from '@/context/ThemeContext';
+import { isThermalGuardActive } from '@/utils/deviceProfile';
 import { computeVpvrValueArea, formatCompactOrderflowNumber } from '../../../utils/orderflowMath';
 
 export interface VPVRData {
@@ -56,7 +57,8 @@ export const VolumeProfileWidget: React.FC<VolumeProfileWidgetProps> = ({
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const maxDpr = isThermalGuardActive() ? 1.35 : 2;
+        const dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
         const cssW = canvas.clientWidth || canvas.parentElement?.clientWidth || 0;
         const cssH = canvas.clientHeight || canvas.parentElement?.clientHeight || 0;
         if (cssW <= 0 || cssH <= 0) return;
@@ -251,6 +253,8 @@ export const VolumeProfileWidget: React.FC<VolumeProfileWidgetProps> = ({
         chartRoot?.addEventListener('wheel', requestDraw, { passive: true });
         chartRoot?.addEventListener('pointermove', handlePointerDrag, { passive: true });
         chartRoot?.addEventListener('pointerup', requestDraw, { passive: true });
+        chartRoot?.addEventListener('touchmove', requestDraw, { passive: true });
+        chartRoot?.addEventListener('touchend', requestDraw, { passive: true });
         chartRoot?.addEventListener('dblclick', requestDraw, { passive: true });
 
         requestDraw();
@@ -264,6 +268,8 @@ export const VolumeProfileWidget: React.FC<VolumeProfileWidgetProps> = ({
             chartRoot?.removeEventListener('wheel', requestDraw);
             chartRoot?.removeEventListener('pointermove', handlePointerDrag);
             chartRoot?.removeEventListener('pointerup', requestDraw);
+            chartRoot?.removeEventListener('touchmove', requestDraw);
+            chartRoot?.removeEventListener('touchend', requestDraw);
             chartRoot?.removeEventListener('dblclick', requestDraw);
             try {
                 timeScale.unsubscribeVisibleTimeRangeChange(requestDraw);
